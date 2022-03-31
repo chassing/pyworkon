@@ -1,0 +1,4 @@
+textual
+rich
+prompt-toolkit
+prompt-toolkit-action-completer
