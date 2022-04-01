@@ -1,0 +1,6 @@
+class ProjectNotFound(Exception):
+    ...
+
+
+class RunError(Exception):
+    ...
