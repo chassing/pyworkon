@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "pyworkon"
+version = "0.1.0"
+description = "Software Development Project Management Tool"
+authors = ["Christian Assing <chris@ca-net.org>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/chassing/pyworkon"
+repository = "https://github.com/chassing/pyworkon"
+classifiers = [
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Libraries :: Python Modules"
+]
+
+[tool.poetry.urls]
+"Bug Tracker" = "https://github.com/chassing/pyworkon/issues"
+
+[tool.poetry.dependencies]
+python = ">=3.9.0,<4.0.0"
+prompt-toolkit = "^3.0.28"
+prompt-toolkit-action-completer = "^1.1.1"
+rich = "^12.1.0"
+pydantic = "^1.9.0"
+PyYAML = "^6.0"
+asgiref = "^3.5.0"
+
+[tool.poetry.dev-dependencies]
+black = "^22.3.0"
+flake8 = "^4.0.1"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+pyworkon = 'pyworkon.__main__:run'
+
+[tool.poetry.plugins."pipx.run"]
+rich-cli = 'pyworkon.__main__:run'

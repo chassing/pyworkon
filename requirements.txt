@@ -1,7 +1,0 @@
-textual
-rich
-prompt-toolkit
-prompt-toolkit-action-completer
-pydantic
-invoke
-pyyaml
