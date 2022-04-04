@@ -1,10 +1,11 @@
 import getpass
 import pwd
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict
 
 import yaml
-from pydantic import BaseSettings
+from pydantic import BaseModel, BaseSettings, HttpUrl
 
 from .isit import XDG_CACHE_HOME, XDG_CONFIG_HOME
 
@@ -24,12 +25,27 @@ def yaml_config_settings_source(settings: BaseSettings) -> Dict[str, Any]:
     return {}
 
 
+class ProviderType(Enum):
+    github = "github"
+    gitlab = "gitlab"
+    bitbucket = "bitbucket"
+
+
+class Provider(BaseModel):
+    name: str
+    type: ProviderType = ProviderType.github
+    api_url: HttpUrl
+    username: str
+    password: str
+
+
 class Config(BaseSettings):
     prompt_sign: str = "🖖🏻"
     history_file: Path = CACHE_HOME / "history"
     workspace_dir: Path = Path.home() / "workspace"
     workon_command: str = pwd.getpwnam(getpass.getuser()).pw_shell
     workon_pre_command: str = ""
+    providers: list[Provider] = []
 
     class Config:
         extra = "ignore"

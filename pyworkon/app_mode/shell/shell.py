@@ -5,7 +5,7 @@ from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
-from ..config import config
+from ...config import config
 from .actions import completer
 
 
@@ -18,6 +18,7 @@ class PyWorkonShell:
             config.prompt_sign,
             completer=completer,
             complete_in_thread=True,
+            complete_while_typing=True,
             history=FileHistory(config.history_file),
             auto_suggest=AutoSuggestFromHistory(),
         )

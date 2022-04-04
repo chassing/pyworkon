@@ -16,4 +16,4 @@ class ActionCompleter(_ActionCompleter):
         return await func(*args, **kwargs)
 
 
-completer = ActionCompleter()
+completer = ActionCompleter(fuzzy_tolerance=50)

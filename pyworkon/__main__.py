@@ -1,4 +1,4 @@
-from .shell import PyWorkonShell
+from .app_mode.shell import PyWorkonShell
 
 # from .tui import PyWorkonTui
 
