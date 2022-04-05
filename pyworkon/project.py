@@ -10,7 +10,6 @@ from rich import print
 from .config import config
 from .exceptions import ProjectNotFound
 from .providers import get_provider
-from .utils import TempEnv
 
 log = logging.getLogger(__name__)
 
@@ -58,11 +57,8 @@ class Project:
         )
 
         entry_command = " && ".join(commands)
-
         log.debug(f"Project entry command: {entry_command}")
-        print(f"Project entry command: {entry_command}")
-        with TempEnv({}):
-            run(entry_command, shell=True)
+        run(entry_command, shell=True)
 
 
 class ProjectManager:
