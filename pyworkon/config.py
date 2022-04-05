@@ -5,9 +5,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 import yaml
-from pydantic import BaseModel, BaseSettings, HttpUrl
-
 from appdirs import AppDirs
+from pydantic import BaseModel, BaseSettings, HttpUrl
 
 appdirs = AppDirs("pyworkon", "ca-net")
 
@@ -44,6 +43,7 @@ class Provider(BaseModel):
 class Config(BaseSettings):
     prompt_sign: str = "🖖🏻"
     history_file: Path = user_cache_dir / "history"
+    db: Path = user_cache_dir / "db"
     workspace_dir: Path = Path.home() / "workspace"
     workon_command: str = pwd.getpwnam(getpass.getuser()).pw_shell
     workon_pre_command: str = ""

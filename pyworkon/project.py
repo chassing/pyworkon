@@ -4,10 +4,11 @@ from pathlib import Path
 from subprocess import CalledProcessError, run
 from urllib.parse import urlparse
 
-from asyncstdlib import lru_cache
+import orm
 from rich import print
 
-from .config import ProviderType, config
+from .config import Provider, ProviderType, config
+from .db import Db
 from .exceptions import ProjectNotFound, UnknownRepositoryUrl
 from .providers import get_provider
 
@@ -63,11 +64,10 @@ class Project:
 
 class ProjectManager:
     def __init__(self):
-        self._projects = {}
+        self.db = Db()
 
-    @lru_cache(maxsize=32)
-    async def list(self) -> list[Project]:
-        for provider in config.providers:
+    async def sync(self, provider: Provider):
+        async with self.db as db:
             async with get_provider(provider) as _api:
                 for p in await _api.projects():
                     if provider.type == ProviderType.github:
@@ -82,22 +82,22 @@ class ProjectManager:
                         if not repository_url:
                             raise UnknownRepositoryUrl(f"{project_id} doesn't have an ssh clone url configured!")
 
-                    self._projects[project_id] = Project(id=project_id, repository_url=repository_url)
+                    await db.project_update_or_create(project_id=project_id, repository_url=repository_url)
 
-        return self._projects.values()
+    async def list(self) -> list[Project]:
+        async with self.db as db:
+            return [Project(id=p.project_id, repository_url=p.repository_url) for p in await db.projects()]
 
-    async def get(self, project_id, repository_url=None):
+    async def get(self, project_id, repository_url=None) -> Project:
         if repository_url:
             return Project(id=project_id, repository_url=repository_url)
 
-        if not self._projects:
-            # init project cache first
-            await self.list()
-
-        try:
-            return self._projects[project_id]
-        except KeyError:
-            raise ProjectNotFound(f"{project_id} not found")
+        async with self.db as db:
+            try:
+                p = await db.project(project_id)
+                return Project(id=p.project_id, repository_url=p.repository_url)
+            except orm.exceptions.NoMatch:
+                raise ProjectNotFound(f"{project_id} not found")
 
     async def enter(self, project_id__or__url):
         if re.match(r"https?://", project_id__or__url):
