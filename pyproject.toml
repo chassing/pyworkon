@@ -26,6 +26,7 @@ asgiref = "^3.5.0"
 httpx = "^0.22.0"
 uplink-httpx = "^2.0"
 asyncstdlib = "^3.10.4"
+appdirs = "^1.4.4"
 
 [tool.poetry.dev-dependencies]
 black = "^22.3.0"

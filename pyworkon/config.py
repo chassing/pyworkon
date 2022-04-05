@@ -7,20 +7,22 @@ from typing import Any, Dict
 import yaml
 from pydantic import BaseModel, BaseSettings, HttpUrl
 
-from .isit import XDG_CACHE_HOME, XDG_CONFIG_HOME
+from appdirs import AppDirs
 
-CONFIG_HOME = XDG_CONFIG_HOME / "pyworkon"
-CONFIG_HOME.mkdir(parents=True, exist_ok=True)
-CONFIG_FILE = CONFIG_HOME / "config.yaml"
+appdirs = AppDirs("pyworkon", "ca-net")
 
-CACHE_HOME = XDG_CACHE_HOME / "pyworkon"
-CACHE_HOME.mkdir(parents=True, exist_ok=True)
+user_config_dir = Path(appdirs.user_config_dir)
+user_config_dir.mkdir(parents=True, exist_ok=True)
+user_config_file = user_config_dir / "config.yaml"
+
+user_cache_dir = Path(appdirs.user_cache_dir)
+user_cache_dir.mkdir(parents=True, exist_ok=True)
 
 
 def yaml_config_settings_source(settings: BaseSettings) -> Dict[str, Any]:
     encoding = settings.__config__.env_file_encoding
-    if CONFIG_FILE.exists():
-        cfg = yaml.safe_load(CONFIG_FILE.read_text(encoding))
+    if user_config_file.exists():
+        cfg = yaml.safe_load(user_config_file.read_text(encoding))
         return cfg if cfg else {}
     return {}
 
@@ -41,7 +43,7 @@ class Provider(BaseModel):
 
 class Config(BaseSettings):
     prompt_sign: str = "🖖🏻"
-    history_file: Path = CACHE_HOME / "history"
+    history_file: Path = user_cache_dir / "history"
     workspace_dir: Path = Path.home() / "workspace"
     workon_command: str = pwd.getpwnam(getpass.getuser()).pw_shell
     workon_pre_command: str = ""
