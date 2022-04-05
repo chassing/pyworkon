@@ -19,6 +19,9 @@ class PyWorkonShell:
             completer=completer,
             complete_in_thread=True,
             complete_while_typing=True,
+            # disabled because validators are executed in an asyncio loop and this breaks the async_to_sync(...) parameter calls
+            # validator=completer.get_validator(),
+            validate_while_typing=False,
             history=FileHistory(config.history_file),
             auto_suggest=AutoSuggestFromHistory(),
         )

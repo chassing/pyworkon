@@ -1,4 +1,5 @@
 from asgiref.sync import async_to_sync
+from rich import print
 
 from ....exceptions import ProjectNotFound
 from ....project import project_manager
@@ -11,8 +12,12 @@ async def _project_list(*args, **kwargs) -> list[str]:
 
 @completer.action("workon")
 @completer.param(async_to_sync(_project_list))
-async def workon(project_id__or__url: str):
+async def workon(project_id__or__url: str = None):
     """Bootstrap and enter a project."""
+    if not project_id__or__url:
+        print("[b red]Please provide a project ID or an URL to a repository![/]")
+        return
+
     try:
         await project_manager.enter(project_id__or__url)
     except ProjectNotFound:
