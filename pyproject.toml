@@ -28,6 +28,7 @@ appdirs = "^1.4.4"
 orm = {extras = ["sqlite"], version = "^0.3.1"}
 python-nubia = "^0.2b5"
 fuzzyfinder = "^2.1.0"
+rich-click = "^1.3.0"
 
 [tool.poetry.dev-dependencies]
 black = "^22.3.0"

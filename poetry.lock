@@ -123,7 +123,7 @@ unicode_backport = ["unicodedata2"]
 name = "click"
 version = "8.1.2"
 description = "Composable command line interface toolkit"
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=3.7"
 
@@ -134,7 +134,7 @@ colorama = {version = "*", markers = "platform_system == \"Windows\""}
 name = "colorama"
 version = "0.4.4"
 description = "Cross-platform colored terminal text."
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
@@ -691,6 +691,22 @@ pygments = ">=2.6.0,<3.0.0"
 jupyter = ["ipywidgets (>=7.5.1,<8.0.0)"]
 
 [[package]]
+name = "rich-click"
+version = "1.3.0"
+description = "Format click help output nicely with rich"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[package.dependencies]
+click = ">=7"
+rich = ">=10"
+
+[package.extras]
+dev = ["pre-commit"]
+typer = ["typer (>=0.4)"]
+
+[[package]]
 name = "ruamel.yaml"
 version = "0.17.21"
 description = "ruamel.yaml is a YAML parser/emitter that supports roundtrip preservation of comments, seq/map flow style, and map key order"
@@ -898,7 +914,7 @@ python-versions = "*"
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.9.0,<4.0.0"
-content-hash = "60293eb53b3ed8c734f7a77054ac9cf2bb9ea6b5a7a1f54545c4276626e4bfd3"
+content-hash = "dfe534cecf9d7f5990acc0194c9dbfab792e6b79e42feeb8e6b78ecf23a6ebd7"
 
 [metadata.files]
 aiosqlite = [
@@ -1302,6 +1318,10 @@ rfc3986 = [
 rich = [
     {file = "rich-12.1.0-py3-none-any.whl", hash = "sha256:b60ff99f4ff7e3d1d37444dee2b22fdd941c622dbc37841823ec1ce7f058b263"},
     {file = "rich-12.1.0.tar.gz", hash = "sha256:198ae15807a7c1bf84ceabf662e902731bf8f874f9e775e2289cab02bb6a4e30"},
+]
+rich-click = [
+    {file = "rich-click-1.3.0.tar.gz", hash = "sha256:13985c97e723fd156f53b9d3f66418d4dd588161b55661fb60ee52e568341747"},
+    {file = "rich_click-1.3.0-py3-none-any.whl", hash = "sha256:dbe52db129f5295ce7680ebc646c9da5ef5fb1a116a6d6e01ea6cb97334fe102"},
 ]
 "ruamel.yaml" = [
     {file = "ruamel.yaml-0.17.21-py3-none-any.whl", hash = "sha256:742b35d3d665023981bd6d16b3d24248ce5df75fdb4e2924e93a05c1f8b61ca7"},
