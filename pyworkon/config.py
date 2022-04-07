@@ -42,12 +42,12 @@ class Provider(BaseModel):
 
 class Config(BaseSettings):
     prompt_sign: str = "🖖🏻"
-    history_file: Path = user_cache_dir / "history"
     db: Path = user_cache_dir / "db"
     workspace_dir: Path = Path.home() / "workspace"
     workon_command: str = pwd.getpwnam(getpass.getuser()).pw_shell
     workon_pre_command: str = ""
     providers: list[Provider] = []
+    debug: bool = False
 
     class Config:
         extra = "ignore"
