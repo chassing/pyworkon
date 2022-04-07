@@ -18,7 +18,6 @@ classifiers = [
 [tool.poetry.dependencies]
 python = ">=3.9.0,<4.0.0"
 prompt-toolkit = "^3.0.28"
-prompt-toolkit-action-completer = "^1.1.1"
 rich = "^12.1.0"
 pydantic = "^1.9.0"
 PyYAML = "^6.0"
@@ -27,6 +26,8 @@ httpx = "^0.22.0"
 uplink-httpx = "^2.0"
 appdirs = "^1.4.4"
 orm = {extras = ["sqlite"], version = "^0.3.1"}
+python-nubia = "^0.2b5"
+fuzzyfinder = "^2.1.0"
 
 [tool.poetry.dev-dependencies]
 black = "^22.3.0"
