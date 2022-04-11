@@ -1,9 +1,8 @@
 import argparse
-import contextlib
 import logging
 import sys
 import textwrap
-from typing import Any, Union
+from typing import Any, Callable
 
 from nubia import PluginInterface, context
 from nubia.internal import cmdloader
@@ -24,22 +23,21 @@ class ShellContext(context.Context):
         tokens = [(Token.String, config.prompt_sign), (Token.Colon, "")]
         return tokens
 
-    def print(self, text, printer=rich_print):
+    def print(self, text, printer: Callable = rich_print):
         """Print message dependend on quiet command line argument."""
         if self.args.quiet:
             return
         printer(text)
 
-    def progress_spinner(self) -> Union[Progress, contextlib.nullcontext]:
+    def progress_spinner(self) -> Progress:
         """Display shiny progress spinner."""
-        if self.args.quiet:
-            return contextlib.nullcontext()
         return Progress(
             SpinnerColumn(),
             "[progress.description]{task.description}",
             BarColumn(),
             "[progress.percentage]{task.percentage:>3.0f}%",
             TimeElapsedColumn(),
+            disable=self.args.quiet,
         )
 
     @property

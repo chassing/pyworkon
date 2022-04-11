@@ -2,7 +2,6 @@ from typing import Union
 
 from nubia import argument, command, context
 from pydantic import HttpUrl
-from rich import print
 from rich.prompt import Prompt
 from rich.table import Table
 
@@ -45,7 +44,7 @@ class ProviderCommand:
         table.add_column("User")
         for p in config.providers:
             table.add_row(p.name, p.type.value, p.api_url, p.username)
-        print(table)
+        self._ctx.print(table)
 
     @command
     @argument("name", description="Provider Name")
