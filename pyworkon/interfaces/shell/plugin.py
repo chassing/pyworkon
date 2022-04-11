@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import logging
 import sys
 import textwrap
@@ -8,6 +9,8 @@ from nubia import PluginInterface, context
 from nubia.internal import cmdloader
 from nubia.internal.io import logger
 from pygments.token import Token
+from rich import print as rich_print
+from rich.progress import BarColumn, Progress, SpinnerColumn, TimeElapsedColumn
 
 from ...config import config
 from .command import AutoCommand
@@ -20,6 +23,42 @@ class ShellContext(context.Context):
         """Override interactive prompt."""
         tokens = [(Token.String, config.prompt_sign), (Token.Colon, "")]
         return tokens
+
+    def print(self, text, printer=rich_print):
+        """Print message dependend on quiet command line argument."""
+        if self.args.quiet:
+            return
+        printer(text)
+
+    def progress_spinner(self) -> Progress | contextlib.nullcontext:
+        """Display shiny progress spinner."""
+        if self.args.quiet:
+            return contextlib.nullcontext()
+        return Progress(
+            SpinnerColumn(),
+            "[progress.description]{task.description}",
+            BarColumn(),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            TimeElapsedColumn(),
+        )
+
+    @property
+    def is_interactive(self):
+        return self._is_interactive
+
+    def on_interactive(self, args):
+        """
+        A callback that gets called when the shell is started interactive-mode,
+        the args argument contains the ArgumentParser result.
+        """
+        self._is_interactive = True
+
+    def on_cli(self, cmd, args):
+        """
+        A callback that gets called when the shell is started cli-mode,
+        the args argument contains the ArgumentParser result.
+        """
+        self._is_interactive = False
 
 
 class ShellPlugin(PluginInterface):

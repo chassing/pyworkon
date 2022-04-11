@@ -44,6 +44,11 @@ class Db:
 
     async def project_update_or_create(self, project_id, repository_url) -> Project:
         """Insert/Update a project."""
-        return await Project.objects.update_or_create(
+        project, _ = await Project.objects.update_or_create(
             project_id=project_id, defaults={"repository_url": repository_url}
         )
+        return project
+
+    async def delete_projects(self, provider: str) -> None:
+        """Delete projects."""
+        await Project.objects.filter(Project.columns.project_id.startswith(f"{provider}/")).delete()

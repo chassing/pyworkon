@@ -7,9 +7,11 @@ from .models import Repository, Workspace
 class BitbucketApi:
     """Bitucket REST interface."""
 
-    def __init__(self, url, username, password):
+    API_URL = "https://api.bitbucket.org"
+
+    def __init__(self, api_url, username, password):
         """Init."""
-        self._api = BitbucketConsumer(base_url=url, client=HttpxClient(), auth=(username, password))
+        self._api = BitbucketConsumer(base_url=api_url, client=HttpxClient(), auth=(username, password))  # type: ignore
         self._username = username
 
     async def __aenter__(self):

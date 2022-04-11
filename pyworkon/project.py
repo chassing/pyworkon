@@ -84,6 +84,10 @@ class ProjectManager:
 
                     await db.project_update_or_create(project_id=project_id, repository_url=repository_url)
 
+    async def remove_projects(self, provider: Provider):
+        async with self.db as db:
+            await db.delete_projects(provider=provider.name)
+
     async def list(self) -> list[Project]:
         async with self.db as db:
             return [Project(id=p.project_id, repository_url=p.repository_url) for p in await db.projects()]

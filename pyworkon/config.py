@@ -1,4 +1,5 @@
 import getpass
+import json
 import pwd
 from enum import Enum
 from pathlib import Path
@@ -57,6 +58,9 @@ class Config(BaseSettings):
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
             return (init_settings, env_settings, yaml_config_settings_source)
+
+    def save(self):
+        user_config_file.write_text(yaml.dump(json.loads(self.json())), encoding=self.__config__.env_file_encoding)
 
 
 config = Config()
