@@ -28,7 +28,7 @@ class BitbucketApi:
         await self._api.__aexit__()
 
     async def workspaces(self) -> list[Workspace]:
-        workspaces = []
+        workspaces: list[Workspace] = []
         page = 1
         total_size = 0
         while not workspaces or len(workspaces) < total_size:
@@ -44,7 +44,7 @@ class BitbucketApi:
         for ws in await self.workspaces():
             page = 1
             total_size = 0
-            ws_repos = []
+            ws_repos: list[Repository] = []
             while not ws_repos or len(ws_repos) < total_size:
                 repos = await self._api.repositories(workspace=ws.uuid, page=page, pagelen=100)
                 total_size = repos.size

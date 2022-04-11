@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel, HttpUrl
 
@@ -10,8 +11,8 @@ class PaginationBase(BaseModel):
     size: int
     page: int
     pagelen: int = 100
-    next: HttpUrl | None = None
-    previous: HttpUrl | None = None
+    next: Optional[HttpUrl] = None
+    previous: Optional[HttpUrl] = None
 
 
 class Workspace(BaseModel):
@@ -20,7 +21,7 @@ class Workspace(BaseModel):
     slug: str
     is_private: bool
     created_on: datetime
-    updated_on: datetime | None = None
+    updated_on: Optional[datetime] = None
 
 
 class Workspaces(PaginationBase):
@@ -49,9 +50,9 @@ class RepositoryLinks(BaseModel):
 
 
 class Owner(BaseModel):
-    account_id: str | None = None
-    display_name: str | None = None
-    nickname: str | None = None
+    account_id: Optional[str] = None
+    display_name: Optional[str] = None
+    nickname: Optional[str] = None
     type: str = "user"
     uuid: str
 
@@ -75,9 +76,9 @@ class Repository(BaseModel):
     name: str
     description: str = ""
     created_on: datetime
-    updated_on: datetime | None = None
+    updated_on: Optional[datetime] = None
     size: int
-    language: str | None = None
+    language: Optional[str] = None
     has_issues: bool = False
     has_wiki: bool = False
     fork_policy: ForkPolicy = ForkPolicy.allow_forks

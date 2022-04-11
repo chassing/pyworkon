@@ -22,7 +22,7 @@ class GitLabConsumer(ContextConsumer):
     """https://docs.gitlab.com/"""
 
     @uplink.get("api/v4/projects")
-    def projects(self, membership: uplink.Query(type=bool), per_page: uplink.Query = "100") -> list[Repository]:
+    def projects(self, membership: uplink.Query(type=bool), per_page: uplink.Query = "100") -> list[Repository]:  # type: ignore
         """Get all user projects.
 
         Pagination is done via http headers in reply and I'm to lazy to implement that.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, HttpUrl
 
@@ -22,7 +23,7 @@ class Repository(BaseModel):
     http_url_to_repo: HttpUrl  # 'https://gitlab.com/assing/pyworkon.git'
     web_url: HttpUrl  # 'https://gitlab.com/assing/pyworkon'
     readme_url: HttpUrl  # 'https://gitlab.com/assing/pyworkon/-/blob/main/README.md'
-    avatar_url: HttpUrl | None
+    avatar_url: Optional[HttpUrl] = None
     forks_count: int  # 0
     star_count: int  # 1
     last_activity_at: datetime  # '2021-11-26T08:28:28.518Z'

@@ -3,7 +3,7 @@ import contextlib
 import logging
 import sys
 import textwrap
-from typing import Any
+from typing import Any, Union
 
 from nubia import PluginInterface, context
 from nubia.internal import cmdloader
@@ -30,7 +30,7 @@ class ShellContext(context.Context):
             return
         printer(text)
 
-    def progress_spinner(self) -> Progress | contextlib.nullcontext:
+    def progress_spinner(self) -> Union[Progress, contextlib.nullcontext]:
         """Display shiny progress spinner."""
         if self.args.quiet:
             return contextlib.nullcontext()

@@ -1,4 +1,6 @@
-from typing import Any, Iterable
+from __future__ import annotations
+
+from typing import Any, Iterable, Union
 
 import databases
 import orm
@@ -8,7 +10,7 @@ from .config import config
 database = databases.Database(f"sqlite:///{str(config.db)}")
 models = orm.ModelRegistry(database=database)
 
-RichReprResult = Iterable[Any | tuple[Any] | tuple[str, Any] | tuple[str, Any, Any]]
+RichReprResult = Iterable[Union[Any, tuple[Any], tuple[str, Any], tuple[str, Any, Any]]]
 
 
 class Project(orm.Model):
