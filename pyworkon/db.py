@@ -1,3 +1,5 @@
+from typing import Any, Iterable
+
 import databases
 import orm
 
@@ -5,6 +7,8 @@ from .config import config
 
 database = databases.Database(f"sqlite:///{str(config.db)}")
 models = orm.ModelRegistry(database=database)
+
+RichReprResult = Iterable[Any | tuple[Any] | tuple[str, Any] | tuple[str, Any, Any]]
 
 
 class Project(orm.Model):
@@ -15,6 +19,11 @@ class Project(orm.Model):
         "project_id": orm.String(max_length=100),
         "repository_url": orm.String(max_length=255),
     }
+
+    def __rich_repr__(self) -> "RichReprResult":
+        """Get fields for Rich library"""
+        for k in self.fields.keys():
+            yield k, getattr(self, k)
 
 
 class Db:

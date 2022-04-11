@@ -49,3 +49,6 @@ rich-cli = 'pyworkon.__main__:run'
 target-version = ['py310']
 skip-string-normalization = false
 line-length = 120
+
+[tool.pyright]
+reportMissingTypeStubs = true

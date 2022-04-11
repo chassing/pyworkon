@@ -2,7 +2,7 @@ import getpass
 import pwd
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import yaml
 from appdirs import AppDirs
@@ -18,7 +18,7 @@ user_cache_dir = Path(appdirs.user_cache_dir)
 user_cache_dir.mkdir(parents=True, exist_ok=True)
 
 
-def yaml_config_settings_source(settings: BaseSettings) -> Dict[str, Any]:
+def yaml_config_settings_source(settings: BaseSettings) -> dict[str, Any]:
     encoding = settings.__config__.env_file_encoding
     if user_config_file.exists():
         cfg = yaml.safe_load(user_config_file.read_text(encoding))

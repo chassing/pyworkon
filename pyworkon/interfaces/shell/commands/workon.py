@@ -14,7 +14,7 @@ async def _project_list(*args, **kwargs) -> list[str]:
 @argument(
     "project_id", name="id", description="Project ID or URL to repository", choices=async_to_sync(_project_list)()
 )
-async def workon(project_id: str = None):
+async def workon(project_id: str):
     """Bootstrap and enter a project."""
     if not project_id:
         print("[b red]Please provide a project ID or an URL to a repository![/]")

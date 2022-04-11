@@ -4,10 +4,11 @@ Improved AutoCommandCompletion class - added fuzzyfinder search
 based on https://github.com/facebookincubator/python-nubia/blob/main/nubia/internal/completion.py
 """
 
+import enum
 from typing import Iterable
 
 import pyparsing as pp
-from fuzzyfinder import fuzzyfinder
+from fuzzyfinder.main import fuzzyfinder
 from nubia.internal.cmdbase import AutoCommand as _AutoCommand
 from nubia.internal.completion import AutoCommandCompletion as _AutoCommandCompletion
 from nubia.internal.completion import TokenParse
@@ -39,7 +40,7 @@ class AutoCommandCompletion(_AutoCommandCompletion):
 
 class AutoCommand(_AutoCommand):
     def get_completions(self, _: str, document: Document, complete_event: CompleteEvent) -> Iterable[Completion]:
-        if self._is_super_command:
+        if self._is_super_command:  # type: ignore
             exploded = document.text.lstrip().split(" ", 1)
             # Are we at the first word? we expect a sub-command here
             if len(exploded) <= 1:

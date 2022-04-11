@@ -76,4 +76,4 @@ class ShellPlugin(PluginInterface):
     def get_commands(self):
         from . import commands
 
-        return [AutoCommand(cmd) for cmd in cmdloader.load_commands(commands)]
+        return [AutoCommand(cmd) for cmd in cmdloader.load_commands(commands)]  # type: ignore

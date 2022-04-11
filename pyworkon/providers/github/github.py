@@ -7,9 +7,11 @@ from .models import Repository
 class GitHubApi:
     """GitHub REST interface."""
 
+    URL = "https://api.github.com"
+
     def __init__(self, url, username, password):
         """Init."""
-        self._api = GitHubConsumer(base_url=url, client=HttpxClient(), auth=(username, password))
+        self._api = GitHubConsumer(base_url=url, client=HttpxClient(), auth=(username, password))  # type: ignore
         self._username = username
 
     async def __aenter__(self):

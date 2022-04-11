@@ -111,15 +111,17 @@ class ProjectManager:
         project = await self.get(project_id=project_id, repository_url=repository_url)
         await project.enter()
 
-    def _url_to_project_id(url: str):
+    def _url_to_project_id(self, url: str):
         """Convert given url in project_id.
 
         E.g.:
             https://github.com/chassing/linux-sysadmin-interview-questions.git -> github/chassing/linux-sysadmin-interview-questions
         """
-        url = urlparse(url)
-        provider = url.hostname.split(".")[-2]
-        path = url.path.lstrip("/").removesuffix(".git")
+        parsed_url = urlparse(url)
+        if not parsed_url.hostname:
+            raise Exception("URL parse error")
+        provider = parsed_url.hostname.split(".")[-2]
+        path = parsed_url.path.lstrip("/").removesuffix(".git")
         return f"{provider}/{path}"
 
 
