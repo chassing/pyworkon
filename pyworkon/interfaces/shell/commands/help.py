@@ -1,3 +1,4 @@
+import enum
 import textwrap
 
 from nubia.internal import parser
@@ -89,7 +90,13 @@ def run_interactive(self, _0, args, _2):
                 )
                 options_table.add_column(style="bold cyan", no_wrap=True)
                 for arg in cmd.arguments.values():
-                    choices = textwrap.shorten(", ".join(arg.choices), width=100, placeholder="...")
+                    choices = None
+                    if arg.choices:
+                        choices = textwrap.shorten(
+                            ", ".join([c.value if isinstance(c, enum.Enum) else str(c) for c in arg.choices]),
+                            width=100,
+                            placeholder="...",
+                        )
                     arg_values = "\n[Values: " + choices + "]" if choices else ""
                     options_table.add_row(arg.name, f"{arg.description}{arg_values}")
                 help_msg = Group(_make_command_help(cmd.command.help), Padding(options_table, (1, 0, 0, 0)))

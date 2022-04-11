@@ -33,7 +33,9 @@ class AutoCommandCompletion(_AutoCommandCompletion):
                     start_position=-len(parsed_token.last_value),
                 )
                 # CA: added fuzzyfinder
-                for choice in fuzzyfinder(parsed_token.last_value, arg.choices)
+                for choice in fuzzyfinder(
+                    parsed_token.last_value, [c.value if isinstance(c, enum.Enum) else str(c) for c in arg.choices]
+                )
             ]
         return super()._prepare_args_completions(parsed_command, last_token)
 
