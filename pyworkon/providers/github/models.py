@@ -235,7 +235,7 @@ class Repository(BaseModel):
     )
     pulls_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/pulls{/number}")
     releases_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/releases{/id}")
-    ssh_url: Optional[str] = Field(None, example="git@github.com:octocat/Hello-World.git")
+    ssh_url: str = Field(None, example="git@github.com:octocat/Hello-World.git")
     stargazers_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/stargazers")
     statuses_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/statuses/{sha}")
     subscribers_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/subscribers")

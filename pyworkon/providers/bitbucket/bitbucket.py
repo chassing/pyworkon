@@ -1,7 +1,12 @@
+import logging
+
 from uplink_httpx import HttpxClient
 
+from ..models import Project
 from .consumer import BitbucketConsumer
 from .models import Repository, Workspace
+
+log = logging.getLogger(__name__)
 
 
 class BitbucketApi:
@@ -9,8 +14,9 @@ class BitbucketApi:
 
     API_URL = "https://api.bitbucket.org"
 
-    def __init__(self, api_url, username, password):
+    def __init__(self, name, api_url, username, password):
         """Init."""
+        self._name = name
         self._api = BitbucketConsumer(base_url=api_url, client=HttpxClient(), auth=(username, password))  # type: ignore
         self._username = username
 
@@ -32,8 +38,9 @@ class BitbucketApi:
             page += 1
         return workspaces
 
-    async def projects(self) -> list[Repository]:
-        repositories = []
+    async def projects(self) -> list[Project]:
+        repositories: list[Repository] = []
+        projects: list[Project] = []
         for ws in await self.workspaces():
             page = 1
             total_size = 0
@@ -44,4 +51,16 @@ class BitbucketApi:
                 ws_repos += repos.values
                 page += 1
             repositories += ws_repos
-        return repositories
+
+        for repo in repositories:
+            project_id = f"{self._name}/{repo.full_name}"
+            ssh_url = None
+            for link in repo.links.clone:
+                if link.name.lower() == "ssh":
+                    ssh_url = link.href
+            if not ssh_url:
+                log.error(f"{project_id} doesn't have an ssh clone url configured!")
+                continue
+
+            projects.append(Project(project_id=project_id, repository_url=ssh_url))
+        return projects

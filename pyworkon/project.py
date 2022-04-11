@@ -7,9 +7,9 @@ from urllib.parse import urlparse
 import orm
 from rich import print
 
-from .config import Provider, ProviderType, config
+from .config import Provider, config
 from .db import Db
-from .exceptions import ProjectNotFound, UnknownRepositoryUrl
+from .exceptions import ProjectNotFound
 from .providers import get_provider
 
 log = logging.getLogger(__name__)
@@ -70,19 +70,7 @@ class ProjectManager:
         async with self.db as db:
             async with get_provider(provider) as _api:
                 for p in await _api.projects():
-                    if provider.type == ProviderType.github:
-                        project_id = f"{provider.name}/{p.full_name}"
-                        repository_url = p.ssh_url
-                    if provider.type == ProviderType.bitbucket:
-                        project_id = f"{provider.name}/{p.full_name}"
-                        repository_url = None
-                        for link in p.links.clone:
-                            if link.name.lower() == "ssh":
-                                repository_url = link.href
-                        if not repository_url:
-                            raise UnknownRepositoryUrl(f"{project_id} doesn't have an ssh clone url configured!")
-
-                    await db.project_update_or_create(project_id=project_id, repository_url=repository_url)
+                    await db.project_update_or_create(project_id=p.project_id, repository_url=p.repository_url)
 
     async def remove_projects(self, provider: Provider):
         async with self.db as db:
@@ -90,7 +78,7 @@ class ProjectManager:
 
     async def list(self) -> list[Project]:
         async with self.db as db:
-            return [Project(id=p.project_id, repository_url=p.repository_url) for p in await db.projects()]
+            return [Project(id=p.project_id, repository_url=p.repository_url) for p in await db.projects()]  # type: ignore
 
     async def get(self, project_id, repository_url=None) -> Project:
         if repository_url:
@@ -99,7 +87,7 @@ class ProjectManager:
         async with self.db as db:
             try:
                 p = await db.project(project_id)
-                return Project(id=p.project_id, repository_url=p.repository_url)
+                return Project(id=p.project_id, repository_url=p.repository_url)  # type: ignore
             except orm.exceptions.NoMatch:
                 raise ProjectNotFound(f"{project_id} not found")
 

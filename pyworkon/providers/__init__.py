@@ -18,7 +18,10 @@ PROVIDER_MAPPING = {
 def get_provider(provider: Provider) -> Union[GitHubApi, GitLabApi, BitbucketApi]:
     try:
         return PROVIDER_MAPPING[provider.type](
-            api_url=provider.api_url, username=provider.username, password=provider.password
+            name=provider.name,
+            api_url=provider.api_url,
+            username=provider.username,
+            password=provider.password,
         )
     except KeyError:
         raise UnknownProviderType(f"{provider.name}: {provider.type=} not supported")
