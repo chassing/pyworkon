@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 
 class Project:
-    def __init__(self, id, repository_url) -> None:
+    def __init__(self, id, repository_url=None) -> None:
         self.id = id
         self.repository_url = repository_url
 
@@ -31,18 +31,16 @@ class Project:
     def project_home(self):
         return config.workspace_dir / self.id
 
+    @property
+    def is_local(self):
+        return self.project_home.exists()
+
     async def enter(self):
         """Enter project."""
 
-        if not self.project_home.exists():
-            print(
-                f"[green]cloning repository {self.repository_url} to {self.project_home}. This may take a while ...[/]"
-            )
-            try:
-                run(["git", "clone", self.repository_url, self.project_home], check=True)
-            except CalledProcessError:
-                print(f"[b red]cloning {self.repository_url} failed[/]")
-                return
+        if not self.is_local:
+            print("[b red]Project has no local working directory (not cloned yet?)[/]")
+            return
 
         workon_pre_command = [config.workon_pre_command] if config.workon_pre_command else []
         commands = (
@@ -61,6 +59,20 @@ class Project:
         log.debug(f"Project entry command: {entry_command}")
         run(entry_command, shell=True)
 
+    async def clone(self):
+        """Clone project."""
+
+        if self.is_local:
+            print("[b red]Project directory exists already! Use 'workon' instead![/]")
+            return
+
+        print(f"[green]Cloning repository {self.repository_url} to {self.project_home}. This may take a while ...[/]")
+        try:
+            run(["git", "clone", self.repository_url, self.project_home], check=True)
+        except CalledProcessError:
+            print(f"[b red]Cloning {self.repository_url} failed[/]")
+            return
+
 
 class ProjectManager:
     def __init__(self):
@@ -70,7 +82,8 @@ class ProjectManager:
         async with self.db as db:
             async with get_provider(provider) as _api:
                 for p in await _api.projects():
-                    await db.project_update_or_create(project_id=p.project_id, repository_url=p.repository_url)
+                    proj = Project(id=p.project_id, repository_url=p.repository_url)
+                    await db.project_update_or_create(project_id=proj.id, repository_url=proj.repository_url)
 
     async def remove_projects(self, provider: Provider):
         async with self.db as db:
@@ -91,7 +104,11 @@ class ProjectManager:
             except orm.exceptions.NoMatch:
                 raise ProjectNotFound(f"{project_id} not found")
 
-    async def enter(self, project_id__or__url):
+    async def enter(self, project_id):
+        project = await self.get(project_id=project_id)
+        await project.enter()
+
+    async def clone(self, project_id__or__url):
         if re.match(r"https?://", project_id__or__url):
             # treat it as an URL to another github/bitbucket/gitlab repository :)
             repository_url = project_id__or__url
@@ -101,7 +118,7 @@ class ProjectManager:
             project_id = project_id__or__url
 
         project = await self.get(project_id=project_id, repository_url=repository_url)
-        await project.enter()
+        await project.clone()
 
     def _url_to_project_id(self, url: str):
         """Convert given url in project_id.
