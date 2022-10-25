@@ -22,7 +22,7 @@ rich = "^12.1.0"
 pydantic = "^1.9.0"
 PyYAML = "^6.0"
 asgiref = "^3.5.0"
-httpx = "^0.22.0"
+httpx = ">0.22.0"
 uplink-httpx = "^2.0"
 appdirs = "^1.4.4"
 orm = {extras = ["sqlite"], version = "^0.3.1"}
