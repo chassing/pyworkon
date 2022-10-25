@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/chassing/pyworkon/compare/v0.1.0...v0.1.1) (2022-10-25)
+
+
+### Bug Fixes
+
+* **deps:** bump httpx ([fe49040](https://github.com/chassing/pyworkon/commit/fe4904006ea1c0ec633a145267d5280fdc6fab59))
+
 ## 0.1.0 (2022-10-25)
 
 
