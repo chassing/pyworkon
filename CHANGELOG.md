@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/chassing/pyworkon/compare/v0.1.1...v0.1.2) (2022-12-14)
+
+
+### Bug Fixes
+
+* **gitlab:** default_branch is optional ([d5e4f76](https://github.com/chassing/pyworkon/commit/d5e4f76a88f4693df02ed1ce4b2181ab2de2b643))
+
 ## [0.1.1](https://github.com/chassing/pyworkon/compare/v0.1.0...v0.1.1) (2022-10-25)
 
 
