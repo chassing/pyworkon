@@ -4,7 +4,10 @@ from uplink_httpx import HttpxClient
 
 from ..models import Project
 from .consumer import BitbucketConsumer
-from .models import Repository, Workspace
+from .models import (
+    Repository,
+    Workspace,
+)
 
 log = logging.getLogger(__name__)
 

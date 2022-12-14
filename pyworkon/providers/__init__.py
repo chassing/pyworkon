@@ -1,7 +1,11 @@
 from typing import Type
+
 from pydantic import HttpUrl
 
-from ..config import Provider, ProviderType
+from ..config import (
+    Provider,
+    ProviderType,
+)
 from ..exceptions import UnknownProviderType
 from .bitbucket import BitbucketApi
 from .github import GitHubApi

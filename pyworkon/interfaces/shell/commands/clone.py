@@ -1,5 +1,8 @@
 from asgiref.sync import async_to_sync
-from nubia import argument, command
+from nubia import (
+    argument,
+    command,
+)
 from rich import print
 
 from ....exceptions import ProjectNotFound

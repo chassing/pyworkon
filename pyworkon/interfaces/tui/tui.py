@@ -1,5 +1,10 @@
 from textual.app import App
-from textual.widgets import Footer, Header, Placeholder, ScrollView
+from textual.widgets import (
+    Footer,
+    Header,
+    Placeholder,
+    ScrollView,
+)
 
 from ..project import Project
 from .widgets.project_tree import ProjectTree

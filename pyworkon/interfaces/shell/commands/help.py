@@ -3,8 +3,14 @@ import textwrap
 
 from nubia.internal import parser
 from nubia.internal.commands.help import HelpCommand
-from nubia.internal.exceptions import CommandError, UnknownCommand
-from rich.console import Console, Group
+from nubia.internal.exceptions import (
+    CommandError,
+    UnknownCommand,
+)
+from rich.console import (
+    Console,
+    Group,
+)
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table

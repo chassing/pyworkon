@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Iterable, Union
+from typing import (
+    Any,
+    Iterable,
+    Union,
+)
 
 import databases
 import orm

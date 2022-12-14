@@ -12,7 +12,10 @@ from fuzzyfinder.main import fuzzyfinder
 from nubia.internal.cmdbase import AutoCommand as _AutoCommand
 from nubia.internal.completion import AutoCommandCompletion as _AutoCommandCompletion
 from nubia.internal.completion import TokenParse
-from prompt_toolkit.completion import CompleteEvent, Completion
+from prompt_toolkit.completion import (
+    CompleteEvent,
+    Completion,
+)
 from prompt_toolkit.document import Document
 
 

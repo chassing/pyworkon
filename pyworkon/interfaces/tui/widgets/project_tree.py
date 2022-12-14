@@ -7,7 +7,12 @@ from rich.text import Text
 from rich.tree import Tree
 from textual import events
 from textual.reactive import Reactive
-from textual.widgets import NodeID, TreeClick, TreeControl, TreeNode
+from textual.widgets import (
+    NodeID,
+    TreeClick,
+    TreeControl,
+    TreeNode,
+)
 
 from ...project import Project
 

@@ -2,14 +2,25 @@ import argparse
 import logging
 import sys
 import textwrap
-from typing import Any, Callable
+from typing import (
+    Any,
+    Callable,
+)
 
-from nubia import PluginInterface, context
+from nubia import (
+    PluginInterface,
+    context,
+)
 from nubia.internal import cmdloader
 from nubia.internal.io import logger
 from pygments.token import Token
 from rich import print as rich_print
-from rich.progress import BarColumn, Progress, SpinnerColumn, TimeElapsedColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TimeElapsedColumn,
+)
 
 from ...config import config
 from .command import AutoCommand

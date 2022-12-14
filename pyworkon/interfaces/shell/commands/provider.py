@@ -1,11 +1,19 @@
 from typing import Union
 
-from nubia import argument, command, context
+from nubia import (
+    argument,
+    command,
+    context,
+)
 from pydantic import HttpUrl
 from rich.prompt import Prompt
 from rich.table import Table
 
-from ....config import Provider, ProviderType, config
+from ....config import (
+    Provider,
+    ProviderType,
+    config,
+)
 from ....project import project_manager
 from ....providers import get_default_url
 from ..plugin import ShellContext

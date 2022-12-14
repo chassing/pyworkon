@@ -7,7 +7,11 @@ from typing import Any
 
 import yaml
 from appdirs import AppDirs
-from pydantic import BaseModel, BaseSettings, HttpUrl
+from pydantic import (
+    BaseModel,
+    BaseSettings,
+    HttpUrl,
+)
 
 appdirs = AppDirs("pyworkon", "ca-net")
 

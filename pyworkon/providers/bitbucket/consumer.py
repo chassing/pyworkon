@@ -3,7 +3,10 @@ import logging
 import uplink
 from uplink_httpx import ContextConsumer
 
-from .models import Repositories, Workspaces
+from .models import (
+    Repositories,
+    Workspaces,
+)
 
 log = logging.getLogger(__name__)
 

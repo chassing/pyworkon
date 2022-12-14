@@ -1,13 +1,19 @@
 import logging
 import re
 from pathlib import Path
-from subprocess import CalledProcessError, run
+from subprocess import (
+    CalledProcessError,
+    run,
+)
 from urllib.parse import urlparse
 
 import orm
 from rich import print
 
-from .config import Provider, config
+from .config import (
+    Provider,
+    config,
+)
 from .db import Db
 from .exceptions import ProjectNotFound
 from .providers import get_provider
