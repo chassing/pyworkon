@@ -34,6 +34,6 @@ def get_provider(provider: Provider) -> GitHubApi | GitLabApi | BitbucketApi:
 
 def get_default_url(provider_type: ProviderType) -> HttpUrl:
     try:
-        return HttpUrl(PROVIDER_MAPPING[provider_type].API_URL)
+        return HttpUrl(url=PROVIDER_MAPPING[provider_type].API_URL, scheme="https")
     except KeyError:
         raise UnknownProviderType(f"{provider_type=} not supported")
