@@ -33,5 +33,10 @@ class GitHubApi:
                 break
 
         for repo in repos:
-            projects.append(Project(project_id=f"{self._name}/{repo.full_name}", repository_url=repo.ssh_url))
+            projects.append(
+                Project(
+                    project_id=f"{self._name}/{repo.full_name}",
+                    repository_url=repo.ssh_url,
+                )
+            )
         return projects

@@ -11,7 +11,9 @@ from .bitbucket import BitbucketApi
 from .github import GitHubApi
 from .gitlab import GitLabApi
 
-PROVIDER_MAPPING: dict[ProviderType, Type[GitHubApi] | Type[GitLabApi] | Type[BitbucketApi]] = {
+PROVIDER_MAPPING: dict[
+    ProviderType, Type[GitHubApi] | Type[GitLabApi] | Type[BitbucketApi]
+] = {
     ProviderType.github: GitHubApi,
     ProviderType.gitlab: GitLabApi,
     ProviderType.bitbucket: BitbucketApi,

@@ -19,19 +19,39 @@ class SimpleUser(BaseModel):
     login: Optional[str] = Field(None, example="octocat")
     id: Optional[int] = Field(None, example=1)
     node_id: Optional[str] = Field(None, example="MDQ6VXNlcjE=")
-    avatar_url: Optional[str] = Field(None, example="https://github.com/images/error/octocat_happy.gif")
+    avatar_url: Optional[str] = Field(
+        None, example="https://github.com/images/error/octocat_happy.gif"
+    )
     gravatar_id: Optional[str] = Field(None, example="41d064eb2195891e12d0413f63227ea7")
     url: Optional[str] = Field(None, example="https://api.github.com/users/octocat")
     html_url: Optional[str] = Field(None, example="https://github.com/octocat")
-    followers_url: Optional[str] = Field(None, example="https://api.github.com/users/octocat/followers")
-    following_url: Optional[str] = Field(None, example="https://api.github.com/users/octocat/following{/other_user}")
-    gists_url: Optional[str] = Field(None, example="https://api.github.com/users/octocat/gists{/gist_id}")
-    starred_url: Optional[str] = Field(None, example="https://api.github.com/users/octocat/starred{/owner}{/repo}")
-    subscriptions_url: Optional[str] = Field(None, example="https://api.github.com/users/octocat/subscriptions")
-    organizations_url: Optional[str] = Field(None, example="https://api.github.com/users/octocat/orgs")
-    repos_url: Optional[str] = Field(None, example="https://api.github.com/users/octocat/repos")
-    events_url: Optional[str] = Field(None, example="https://api.github.com/users/octocat/events{/privacy}")
-    received_events_url: Optional[str] = Field(None, example="https://api.github.com/users/octocat/received_events")
+    followers_url: Optional[str] = Field(
+        None, example="https://api.github.com/users/octocat/followers"
+    )
+    following_url: Optional[str] = Field(
+        None, example="https://api.github.com/users/octocat/following{/other_user}"
+    )
+    gists_url: Optional[str] = Field(
+        None, example="https://api.github.com/users/octocat/gists{/gist_id}"
+    )
+    starred_url: Optional[str] = Field(
+        None, example="https://api.github.com/users/octocat/starred{/owner}{/repo}"
+    )
+    subscriptions_url: Optional[str] = Field(
+        None, example="https://api.github.com/users/octocat/subscriptions"
+    )
+    organizations_url: Optional[str] = Field(
+        None, example="https://api.github.com/users/octocat/orgs"
+    )
+    repos_url: Optional[str] = Field(
+        None, example="https://api.github.com/users/octocat/repos"
+    )
+    events_url: Optional[str] = Field(
+        None, example="https://api.github.com/users/octocat/events{/privacy}"
+    )
+    received_events_url: Optional[str] = Field(
+        None, example="https://api.github.com/users/octocat/received_events"
+    )
     type: Optional[str] = Field(None, example="User")
     site_admin: Optional[bool] = None
     starred_at: Optional[str] = Field(None, example='"2020-07-09T00:17:55Z"')
@@ -169,39 +189,58 @@ class TemplateRepository(BaseModel):
 
 
 class Repository(BaseModel):
-    id: Optional[int] = Field(None, description="Unique identifier of the repository", example=42)
+    id: Optional[int] = Field(
+        None, description="Unique identifier of the repository", example=42
+    )
     node_id: Optional[str] = Field(None, example="MDEwOlJlcG9zaXRvcnkxMjk2MjY5")
-    name: Optional[str] = Field(None, description="The name of the repository.", example="Team Environment")
+    name: Optional[str] = Field(
+        None, description="The name of the repository.", example="Team Environment"
+    )
     full_name: Optional[str] = Field(None, example="octocat/Hello-World")
     license: Optional[LicenseSimple] = None
     organization: Optional[SimpleUser] = None
     forks: Optional[int] = None
     permissions: Optional[RepositoryPermissions] = None
     owner: Optional[SimpleUser] = None
-    private: Optional[bool] = Field(False, description="Whether the repository is private or public.")
-    html_url: Optional[str] = Field(None, example="https://github.com/octocat/Hello-World")
+    private: Optional[bool] = Field(
+        False, description="Whether the repository is private or public."
+    )
+    html_url: Optional[str] = Field(
+        None, example="https://github.com/octocat/Hello-World"
+    )
     description: Optional[str] = Field(None, example="This your first repo!")
     fork: Optional[bool] = None
-    url: Optional[str] = Field(None, example="https://api.github.com/repos/octocat/Hello-World")
+    url: Optional[str] = Field(
+        None, example="https://api.github.com/repos/octocat/Hello-World"
+    )
     archive_url: Optional[str] = Field(
-        None, example="http://api.github.com/repos/octocat/Hello-World/{archive_format}{/ref}"
+        None,
+        example="http://api.github.com/repos/octocat/Hello-World/{archive_format}{/ref}",
     )
     assignees_url: Optional[str] = Field(
         None, example="http://api.github.com/repos/octocat/Hello-World/assignees{/user}"
     )
-    blobs_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/git/blobs{/sha}")
+    blobs_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/git/blobs{/sha}"
+    )
     branches_url: Optional[str] = Field(
-        None, example="http://api.github.com/repos/octocat/Hello-World/branches{/branch}"
+        None,
+        example="http://api.github.com/repos/octocat/Hello-World/branches{/branch}",
     )
     collaborators_url: Optional[str] = Field(
-        None, example="http://api.github.com/repos/octocat/Hello-World/collaborators{/collaborator}"
+        None,
+        example="http://api.github.com/repos/octocat/Hello-World/collaborators{/collaborator}",
     )
     comments_url: Optional[str] = Field(
-        None, example="http://api.github.com/repos/octocat/Hello-World/comments{/number}"
+        None,
+        example="http://api.github.com/repos/octocat/Hello-World/comments{/number}",
     )
-    commits_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/commits{/sha}")
+    commits_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/commits{/sha}"
+    )
     compare_url: Optional[str] = Field(
-        None, example="http://api.github.com/repos/octocat/Hello-World/compare/{base}...{head}"
+        None,
+        example="http://api.github.com/repos/octocat/Hello-World/compare/{base}...{head}",
     )
     contents_url: Optional[str] = Field(
         None, example="http://api.github.com/repos/octocat/Hello-World/contents/{+path}"
@@ -209,56 +248,111 @@ class Repository(BaseModel):
     contributors_url: Optional[str] = Field(
         None, example="http://api.github.com/repos/octocat/Hello-World/contributors"
     )
-    deployments_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/deployments")
-    downloads_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/downloads")
-    events_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/events")
-    forks_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/forks")
-    git_commits_url: Optional[str] = Field(
-        None, example="http://api.github.com/repos/octocat/Hello-World/git/commits{/sha}"
+    deployments_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/deployments"
     )
-    git_refs_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/git/refs{/sha}")
-    git_tags_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/git/tags{/sha}")
-    git_url: Optional[str] = Field(None, example="git:github.com/octocat/Hello-World.git")
+    downloads_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/downloads"
+    )
+    events_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/events"
+    )
+    forks_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/forks"
+    )
+    git_commits_url: Optional[str] = Field(
+        None,
+        example="http://api.github.com/repos/octocat/Hello-World/git/commits{/sha}",
+    )
+    git_refs_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/git/refs{/sha}"
+    )
+    git_tags_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/git/tags{/sha}"
+    )
+    git_url: Optional[str] = Field(
+        None, example="git:github.com/octocat/Hello-World.git"
+    )
     issue_comment_url: Optional[str] = Field(
-        None, example="http://api.github.com/repos/octocat/Hello-World/issues/comments{/number}"
+        None,
+        example="http://api.github.com/repos/octocat/Hello-World/issues/comments{/number}",
     )
     issue_events_url: Optional[str] = Field(
-        None, example="http://api.github.com/repos/octocat/Hello-World/issues/events{/number}"
+        None,
+        example="http://api.github.com/repos/octocat/Hello-World/issues/events{/number}",
     )
-    issues_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/issues{/number}")
-    keys_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/keys{/key_id}")
-    labels_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/labels{/name}")
-    languages_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/languages")
-    merges_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/merges")
+    issues_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/issues{/number}"
+    )
+    keys_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/keys{/key_id}"
+    )
+    labels_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/labels{/name}"
+    )
+    languages_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/languages"
+    )
+    merges_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/merges"
+    )
     milestones_url: Optional[str] = Field(
-        None, example="http://api.github.com/repos/octocat/Hello-World/milestones{/number}"
+        None,
+        example="http://api.github.com/repos/octocat/Hello-World/milestones{/number}",
     )
     notifications_url: Optional[str] = Field(
-        None, example="http://api.github.com/repos/octocat/Hello-World/notifications{?since,all,participating}"
+        None,
+        example="http://api.github.com/repos/octocat/Hello-World/notifications{?since,all,participating}",
     )
-    pulls_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/pulls{/number}")
-    releases_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/releases{/id}")
+    pulls_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/pulls{/number}"
+    )
+    releases_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/releases{/id}"
+    )
     ssh_url: str = Field(None, example="git@github.com:octocat/Hello-World.git")
-    stargazers_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/stargazers")
-    statuses_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/statuses/{sha}")
-    subscribers_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/subscribers")
+    stargazers_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/stargazers"
+    )
+    statuses_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/statuses/{sha}"
+    )
+    subscribers_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/subscribers"
+    )
     subscription_url: Optional[str] = Field(
         None, example="http://api.github.com/repos/octocat/Hello-World/subscription"
     )
-    tags_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/tags")
-    teams_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/teams")
-    trees_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/git/trees{/sha}")
-    clone_url: Optional[str] = Field(None, example="https://github.com/octocat/Hello-World.git")
-    mirror_url: Optional[str] = Field(None, example="git:git.example.com/octocat/Hello-World")
-    hooks_url: Optional[str] = Field(None, example="http://api.github.com/repos/octocat/Hello-World/hooks")
-    svn_url: Optional[str] = Field(None, example="https://svn.github.com/octocat/Hello-World")
+    tags_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/tags"
+    )
+    teams_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/teams"
+    )
+    trees_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/git/trees{/sha}"
+    )
+    clone_url: Optional[str] = Field(
+        None, example="https://github.com/octocat/Hello-World.git"
+    )
+    mirror_url: Optional[str] = Field(
+        None, example="git:git.example.com/octocat/Hello-World"
+    )
+    hooks_url: Optional[str] = Field(
+        None, example="http://api.github.com/repos/octocat/Hello-World/hooks"
+    )
+    svn_url: Optional[str] = Field(
+        None, example="https://svn.github.com/octocat/Hello-World"
+    )
     homepage: Optional[str] = Field(None, example="https://github.com")
     language: Optional[str] = None
     forks_count: Optional[int] = Field(None, example=9)
     stargazers_count: Optional[int] = Field(None, example=80)
     watchers_count: Optional[int] = Field(None, example=80)
     size: Optional[int] = Field(None, example=108)
-    default_branch: Optional[str] = Field(None, description="The default branch of the repository.", example="master")
+    default_branch: Optional[str] = Field(
+        None, description="The default branch of the repository.", example="master"
+    )
     open_issues_count: Optional[int] = Field(None, example=0)
     is_template: Optional[bool] = Field(
         False,
@@ -266,35 +360,61 @@ class Repository(BaseModel):
         example=True,
     )
     topics: Optional[list[str]] = None
-    has_issues: Optional[bool] = Field(True, description="Whether issues are enabled.", example=True)
-    has_projects: Optional[bool] = Field(True, description="Whether projects are enabled.", example=True)
-    has_wiki: Optional[bool] = Field(True, description="Whether the wiki is enabled.", example=True)
+    has_issues: Optional[bool] = Field(
+        True, description="Whether issues are enabled.", example=True
+    )
+    has_projects: Optional[bool] = Field(
+        True, description="Whether projects are enabled.", example=True
+    )
+    has_wiki: Optional[bool] = Field(
+        True, description="Whether the wiki is enabled.", example=True
+    )
     has_pages: Optional[bool] = None
-    has_downloads: Optional[bool] = Field(True, description="Whether downloads are enabled.", example=True)
-    archived: Optional[bool] = Field(False, description="Whether the repository is archived.")
-    disabled: Optional[bool] = Field(None, description="Returns whether or not this repository disabled.")
-    visibility: Optional[str] = Field("public", description="The repository visibility: public, private, or internal.")
+    has_downloads: Optional[bool] = Field(
+        True, description="Whether downloads are enabled.", example=True
+    )
+    archived: Optional[bool] = Field(
+        False, description="Whether the repository is archived."
+    )
+    disabled: Optional[bool] = Field(
+        None, description="Returns whether or not this repository disabled."
+    )
+    visibility: Optional[str] = Field(
+        "public", description="The repository visibility: public, private, or internal."
+    )
     pushed_at: Optional[datetime] = Field(None, example="2011-01-26T19:06:43Z")
     created_at: Optional[datetime] = Field(None, example="2011-01-26T19:01:12Z")
     updated_at: Optional[datetime] = Field(None, example="2011-01-26T19:14:43Z")
     allow_rebase_merge: Optional[bool] = Field(
-        True, description="Whether to allow rebase merges for pull requests.", example=True
+        True,
+        description="Whether to allow rebase merges for pull requests.",
+        example=True,
     )
     template_repository: Optional[TemplateRepository] = None
     temp_clone_token: Optional[str] = None
     allow_squash_merge: Optional[bool] = Field(
-        True, description="Whether to allow squash merges for pull requests.", example=True
+        True,
+        description="Whether to allow squash merges for pull requests.",
+        example=True,
     )
     allow_auto_merge: Optional[bool] = Field(
-        False, description="Whether to allow Auto-merge to be used on pull requests.", example=False
+        False,
+        description="Whether to allow Auto-merge to be used on pull requests.",
+        example=False,
     )
     delete_branch_on_merge: Optional[bool] = Field(
-        False, description="Whether to delete head branches when pull requests are merged", example=False
+        False,
+        description="Whether to delete head branches when pull requests are merged",
+        example=False,
     )
     allow_merge_commit: Optional[bool] = Field(
-        True, description="Whether to allow merge commits for pull requests.", example=True
+        True,
+        description="Whether to allow merge commits for pull requests.",
+        example=True,
     )
-    allow_forking: Optional[bool] = Field(None, description="Whether to allow forking this repo")
+    allow_forking: Optional[bool] = Field(
+        None, description="Whether to allow forking this repo"
+    )
     subscribers_count: Optional[int] = None
     network_count: Optional[int] = None
     open_issues: Optional[int] = None

@@ -10,12 +10,17 @@ from ....project import project_manager
 
 
 async def _project_list(*args, **kwargs) -> list[str]:
-    return [str(project.id) for project in await project_manager.list() if project.is_local]
+    return [
+        str(project.id) for project in await project_manager.list() if project.is_local
+    ]
 
 
 @command("workon")
 @argument(
-    "project_id", name="id", description="Project ID or URL to repository", choices=async_to_sync(_project_list)()
+    "project_id",
+    name="id",
+    description="Project ID or URL to repository",
+    choices=async_to_sync(_project_list)(),
 )
 async def workon(project_id: str):
     """Bootstrap and enter a project."""

@@ -10,12 +10,19 @@ from ....project import project_manager
 
 
 async def _project_list(*args, **kwargs) -> list[str]:
-    return [str(project.id) for project in await project_manager.list() if not project.is_local]
+    return [
+        str(project.id)
+        for project in await project_manager.list()
+        if not project.is_local
+    ]
 
 
 @command("clone")
 @argument(
-    "project_id", name="id", description="Project ID or URL to repository", choices=async_to_sync(_project_list)()
+    "project_id",
+    name="id",
+    description="Project ID or URL to repository",
+    choices=async_to_sync(_project_list)(),
 )
 async def clone(project_id: str):
     """Clone a project."""

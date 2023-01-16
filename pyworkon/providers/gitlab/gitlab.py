@@ -27,6 +27,9 @@ class GitLabApi:
     async def projects(self) -> list[Project]:
         repos: list[Repository] = await self._api.projects(membership=True)
         return [
-            Project(project_id=f"{self._name}/{repo.path_with_namespace}", repository_url=repo.ssh_url_to_repo)
+            Project(
+                project_id=f"{self._name}/{repo.path_with_namespace}",
+                repository_url=repo.ssh_url_to_repo,
+            )
             for repo in repos
         ]

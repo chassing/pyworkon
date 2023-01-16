@@ -102,11 +102,18 @@ class ShellPlugin(PluginInterface):
             add_help=add_help,
         )
         opts_parser.add_argument(
-            "--verbose", "-v", action="count", default=0, help="Increase verbosity, can be specified multiple times"
+            "--verbose",
+            "-v",
+            action="count",
+            default=0,
+            help="Increase verbosity, can be specified multiple times",
         )
 
         opts_parser.add_argument(
-            "-f", "--force", action="store_true", help="Don't ask stupid questions, just do what I want!"
+            "-f",
+            "--force",
+            action="store_true",
+            help="Don't ask stupid questions, just do what I want!",
         )
         opts_parser.add_argument(
             "-q",

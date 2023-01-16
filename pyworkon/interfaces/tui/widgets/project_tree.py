@@ -40,7 +40,9 @@ class ProjectTree(TreeControl[TreeEntry]):
         label = "."
         super().__init__(label, data=None)
         self._tree = Tree(label, hide_root=True)
-        self.root: TreeNode[NodeDataType] = TreeNode(None, self.id, self, self._tree, label, TreeEntry(".", icon=""))
+        self.root: TreeNode[NodeDataType] = TreeNode(
+            None, self.id, self, self._tree, label, TreeEntry(".", icon="")
+        )
         self._tree.label = self.root
         self.nodes[NodeID(self.id)] = self.root
 
@@ -57,7 +59,9 @@ class ProjectTree(TreeControl[TreeEntry]):
 
     async def watch_hover_node(self, hover_node: NodeID) -> None:
         for node in self.nodes.values():
-            node.tree.guide_style = "bold not dim red" if node.id == hover_node else "black"
+            node.tree.guide_style = (
+                "bold not dim red" if node.id == hover_node else "black"
+            )
         self.refresh(layout=True)
 
     async def on_mount(self, event: events.Mount) -> None:
@@ -81,7 +85,9 @@ class ProjectTree(TreeControl[TreeEntry]):
             nodes[tree_entry.id] = self.id
 
         for project in self.projects:
-            await _add_project(self.root, TreeEntry(id=project.id, icon="📄", project=project))
+            await _add_project(
+                self.root, TreeEntry(id=project.id, icon="📄", project=project)
+            )
 
         self.refresh(layout=True)
 
@@ -91,7 +97,11 @@ class ProjectTree(TreeControl[TreeEntry]):
             "tree_node": node.id,
             "cursor": node.is_cursor,
         }
-        label = Text(node.data.label) if isinstance(node.data.label, str) else node.data.label
+        label = (
+            Text(node.data.label)
+            if isinstance(node.data.label, str)
+            else node.data.label
+        )
         if node.id == self.hover_node:
             label.stylize("underline")
         if not node.data.project:
@@ -106,7 +116,9 @@ class ProjectTree(TreeControl[TreeEntry]):
         if node.is_cursor and self.has_focus:
             label.stylize("reverse")
 
-        icon_label = Text(f"{node.data.icon} ", no_wrap=True, overflow="ellipsis") + label
+        icon_label = (
+            Text(f"{node.data.icon} ", no_wrap=True, overflow="ellipsis") + label
+        )
         icon_label.apply_meta(meta)
         return icon_label
 

@@ -57,4 +57,6 @@ class Db:
 
     async def delete_projects(self, provider: str) -> None:
         """Delete projects."""
-        await Project.objects.filter(Project.columns.project_id.startswith(f"{provider}/")).delete()
+        await Project.objects.filter(
+            Project.columns.project_id.startswith(f"{provider}/")
+        ).delete()

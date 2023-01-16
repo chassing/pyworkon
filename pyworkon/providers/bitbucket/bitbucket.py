@@ -49,7 +49,9 @@ class BitbucketApi:
             total_size = 0
             ws_repos: list[Repository] = []
             while not ws_repos or len(ws_repos) < total_size:
-                repos = await self._api.repositories(workspace=ws.uuid, page=page, pagelen=100)
+                repos = await self._api.repositories(
+                    workspace=ws.uuid, page=page, pagelen=100
+                )
                 total_size = repos.size
                 ws_repos += repos.values
                 page += 1

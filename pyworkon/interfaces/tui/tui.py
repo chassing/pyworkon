@@ -27,7 +27,11 @@ class PyWorkonTui(App):
         # In this a scroll view for the code and a directory tree
         self.body = ScrollView()
         self.project_tree = ProjectTree(
-            [Project("github/chassing/pyworkon"), Project("github/org/foobar"), Project("gitlab/chassing/juppi")]
+            [
+                Project("github/chassing/pyworkon"),
+                Project("github/org/foobar"),
+                Project("gitlab/chassing/juppi"),
+            ]
         )
 
         # Dock our widgets
@@ -35,7 +39,9 @@ class PyWorkonTui(App):
         await self.view.dock(Footer(), edge="bottom")
 
         # Note the directory is also in a scroll view
-        await self.view.dock(ScrollView(self.project_tree), edge="left", size=48, name="sidebar")
+        await self.view.dock(
+            ScrollView(self.project_tree), edge="left", size=48, name="sidebar"
+        )
         # await self.view.dock(self.body, edge="top")
         await self.view.dock(Placeholder(), edge="top")
         await self.set_focus(self.project_tree)

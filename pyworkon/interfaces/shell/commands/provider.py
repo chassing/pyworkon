@@ -27,7 +27,11 @@ class ProviderCommand:
         self._ctx: ShellContext = context.get_context()
 
     @command
-    @argument("provider", description="Provider name", choices=[p.name for p in config.providers] + ["all"])
+    @argument(
+        "provider",
+        description="Provider name",
+        choices=[p.name for p in config.providers] + ["all"],
+    )
     async def sync(self, provider: str):
         """Fetch projects from configured providers and cache them locally."""
         if provider == "all":
@@ -38,7 +42,9 @@ class ProviderCommand:
         with self._ctx.progress_spinner() as progress:
             sync_task = progress.add_task("Sync", total=len(providers))
             for p in providers:
-                self._ctx.print(f"Fetching projects from {p.name}", printer=progress.console.print)
+                self._ctx.print(
+                    f"Fetching projects from {p.name}", printer=progress.console.print
+                )
                 await project_manager.sync(p)
                 progress.advance(sync_task)
 
@@ -56,10 +62,21 @@ class ProviderCommand:
 
     @command
     @argument("name", description="Provider Name")
-    @argument("provider_type", name="type", description="Provider Type", choices=[pt for pt in ProviderType])
+    @argument(
+        "provider_type",
+        name="type",
+        description="Provider Type",
+        choices=[pt for pt in ProviderType],
+    )
     @argument("username", description="Username")
     @argument("api_url", description="API URL to self-hosted instance")
-    async def add(self, name: str, provider_type: ProviderType, username: str, api_url: Union[HttpUrl, None] = None):
+    async def add(
+        self,
+        name: str,
+        provider_type: ProviderType,
+        username: str,
+        api_url: Union[HttpUrl, None] = None,
+    ):
         """Configure an additional project provider."""
         if name in [p.name for p in config.providers]:
             self._ctx.print(f"[b red]{name=} already in use. Choose another one![/]")
@@ -72,12 +89,16 @@ class ProviderCommand:
         config.providers.append(provider)
         config.save()
         await self.sync(provider=name)
-        self._ctx.print(f"[green]New project provider {name=} has been added to the configuration.[/]")
+        self._ctx.print(
+            f"[green]New project provider {name=} has been added to the configuration.[/]"
+        )
         if self._ctx.is_interactive:
             self._ctx.print("Restart your shell to refresh caches!")
 
     @command
-    @argument("name", description="Provider Name", choices=[p.name for p in config.providers])
+    @argument(
+        "name", description="Provider Name", choices=[p.name for p in config.providers]
+    )
     async def rm(self, name: str):
         """Remove a project provider."""
         for i, provider in enumerate(list(config.providers)):
@@ -87,6 +108,8 @@ class ProviderCommand:
                 break
 
         config.save()
-        self._ctx.print(f"[green]Provider {name=} and cached projects have been removed from the configuration.[/]")
+        self._ctx.print(
+            f"[green]Provider {name=} and cached projects have been removed from the configuration.[/]"
+        )
         if self._ctx.is_interactive:
             self._ctx.print("Restart your shell to refresh caches!")

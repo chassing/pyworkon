@@ -64,7 +64,10 @@ class Config(BaseSettings):
             return (init_settings, env_settings, yaml_config_settings_source)
 
     def save(self):
-        user_config_file.write_text(yaml.dump(json.loads(self.json())), encoding=self.__config__.env_file_encoding)
+        user_config_file.write_text(
+            yaml.dump(json.loads(self.json())),
+            encoding=self.__config__.env_file_encoding,
+        )
 
 
 config = Config()

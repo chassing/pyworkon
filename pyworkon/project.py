@@ -48,7 +48,9 @@ class Project:
             print("[b red]Project has no local working directory (not cloned yet?)[/]")
             return
 
-        workon_pre_command = [config.workon_pre_command] if config.workon_pre_command else []
+        workon_pre_command = (
+            [config.workon_pre_command] if config.workon_pre_command else []
+        )
         commands = (
             [
                 f"PYWORKON_PROJECT_ID='{self.id}'",
@@ -72,7 +74,9 @@ class Project:
             print("[b red]Project directory exists already! Use 'workon' instead![/]")
             return
 
-        print(f"[green]Cloning repository {self.repository_url} to {self.project_home}. This may take a while ...[/]")
+        print(
+            f"[green]Cloning repository {self.repository_url} to {self.project_home}. This may take a while ...[/]"
+        )
         try:
             run(["git", "clone", self.repository_url, self.project_home], check=True)
         except CalledProcessError:
@@ -89,7 +93,9 @@ class ProjectManager:
             async with get_provider(provider) as _api:
                 for p in await _api.projects():
                     proj = Project(id=p.project_id, repository_url=p.repository_url)
-                    await db.project_update_or_create(project_id=proj.id, repository_url=proj.repository_url)
+                    await db.project_update_or_create(
+                        project_id=proj.id, repository_url=proj.repository_url
+                    )
 
     async def remove_projects(self, provider: Provider):
         async with self.db as db:

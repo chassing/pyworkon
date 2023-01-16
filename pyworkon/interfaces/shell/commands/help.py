@@ -29,7 +29,9 @@ from rich_click.rich_click import (
 )
 
 
-def blend_text(message: str, color1: tuple[int, int, int], color2: tuple[int, int, int]) -> Text:
+def blend_text(
+    message: str, color1: tuple[int, int, int], color2: tuple[int, int, int]
+) -> Text:
     """Blend text from one color to another."""
     text = Text(message)
     r1, g1, b1 = color1
@@ -45,7 +47,9 @@ def blend_text(message: str, color1: tuple[int, int, int], color2: tuple[int, in
     return text
 
 
-FOOTER_TEXT = blend_text("Made with ♥ by https://github.com/chassing/pyworkon", (32, 32, 255), (255, 32, 255))
+FOOTER_TEXT = blend_text(
+    "Made with ♥ by https://github.com/chassing/pyworkon", (32, 32, 255), (255, 32, 255)
+)
 
 
 def run_interactive(self, _0, args, _2):
@@ -79,33 +83,49 @@ def run_interactive(self, _0, args, _2):
                 commands_table.add_column(style="bold cyan", no_wrap=True)
 
                 for _, subcmd in autocmd.metadata.subcommands:
-                    commands_table.add_row(subcmd.command.name, _make_command_help(subcmd.command.help))
+                    commands_table.add_row(
+                        subcmd.command.name, _make_command_help(subcmd.command.help)
+                    )
                 help_msg = commands_table
                 help_title = "Subcommands"
             else:
                 if autocmd.super_command and len(arguments) > 1:
                     # print subcommand help
-                    parsed = parser.parse(" ".join(arguments[1:]), expect_subcommand=True).asDict()
+                    parsed = parser.parse(
+                        " ".join(arguments[1:]), expect_subcommand=True
+                    ).asDict()
                     cmd = autocmd.subcommand_metadata(parsed["__subcommand__"])
 
                 else:
                     cmd = autocmd.metadata
 
                 options_table = Table(
-                    highlight=False, box=None, show_header=False, title="Options and Arguments", title_justify="left"
+                    highlight=False,
+                    box=None,
+                    show_header=False,
+                    title="Options and Arguments",
+                    title_justify="left",
                 )
                 options_table.add_column(style="bold cyan", no_wrap=True)
                 for arg in cmd.arguments.values():
                     choices = None
                     if arg.choices:
                         choices = textwrap.shorten(
-                            ", ".join([c.value if isinstance(c, enum.Enum) else str(c) for c in arg.choices]),
+                            ", ".join(
+                                [
+                                    c.value if isinstance(c, enum.Enum) else str(c)
+                                    for c in arg.choices
+                                ]
+                            ),
                             width=100,
                             placeholder="...",
                         )
                     arg_values = "\n[Values: " + choices + "]" if choices else ""
                     options_table.add_row(arg.name, f"{arg.description}{arg_values}")
-                help_msg = Group(_make_command_help(cmd.command.help), Padding(options_table, (1, 0, 0, 0)))
+                help_msg = Group(
+                    _make_command_help(cmd.command.help),
+                    Padding(options_table, (1, 0, 0, 0)),
+                )
                 help_title = cmd.command.name
         except CommandError as e:
             console.print(f"[red]{str(e)}[/]")
