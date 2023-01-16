@@ -84,8 +84,14 @@ class ProviderCommand:
         if not api_url:
             api_url = get_default_url(provider_type)
 
-        password = Prompt.ask("Enter Password/Personal Access Token")
-        provider = Provider(name=name, type=provider_type, api_url=api_url, username=username, password=password)
+        password = Prompt.ask("Enter Password/Personal Access Token", password=True)
+        provider = Provider(
+            name=name,
+            type=provider_type,
+            api_url=api_url,
+            username=username,
+            password=password,
+        )
         config.providers.append(provider)
         config.save()
         await self.sync(provider=name)
