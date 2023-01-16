@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.3](https://github.com/chassing/pyworkon/compare/v0.1.2...v0.1.3) (2023-01-16)
+
+
+### Bug Fixes
+
+* **provider add:** do not display personal token/api key ([f02be7f](https://github.com/chassing/pyworkon/commit/f02be7f8227ed45c9b6920252b4394a3052bdeba))
+* **provider add:** fix adding new provider ([251a8df](https://github.com/chassing/pyworkon/commit/251a8df991821b156ebdac85cedd86c5b7b75cb9))
+
 ## [0.1.2](https://github.com/chassing/pyworkon/compare/v0.1.1...v0.1.2) (2022-12-14)
 
 

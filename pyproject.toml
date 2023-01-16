@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pyworkon"
-version = "0.1.2"
+version = "0.1.3"
 description = "Software Development Project Management Tool"
 authors = ["Christian Assing <chris@ca-net.org>"]
 license = "MIT"
