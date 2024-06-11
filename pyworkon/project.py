@@ -65,7 +65,7 @@ class Project:
 
         entry_command = " && ".join(commands)
         log.debug(f"Project entry command: {entry_command}")
-        run(entry_command, shell=True)
+        run(entry_command, shell=True, check=False)
 
     async def clone(self):
         """Clone project."""
@@ -103,7 +103,10 @@ class ProjectManager:
 
     async def list(self) -> list[Project]:
         async with self.db as db:
-            return [Project(id=p.project_id, repository_url=p.repository_url) for p in await db.projects()]  # type: ignore
+            return [
+                Project(id=p.project_id, repository_url=p.repository_url)
+                for p in await db.projects()
+            ]  # type: ignore
 
     async def get(self, project_id, repository_url=None) -> Project:
         if repository_url:

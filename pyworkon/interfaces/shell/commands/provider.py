@@ -1,5 +1,3 @@
-from typing import Union
-
 from nubia import (
     argument,
     command,
@@ -75,7 +73,7 @@ class ProviderCommand:
         name: str,
         provider_type: ProviderType,
         username: str,
-        api_url: Union[HttpUrl, None] = None,
+        api_url: HttpUrl | None = None,
     ):
         """Configure an additional project provider."""
         if name in [p.name for p in config.providers]:

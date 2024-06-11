@@ -5,7 +5,7 @@ based on https://github.com/facebookincubator/python-nubia/blob/main/nubia/inter
 """
 
 import enum
-from typing import Iterable
+from collections.abc import Iterable
 
 import pyparsing as pp
 from fuzzyfinder.main import fuzzyfinder
@@ -28,7 +28,7 @@ class AutoCommandCompletion(_AutoCommandCompletion):
         if parsed_token.is_argument:
             argument_name = parsed_token.argument_name
             arg = self._find_argument_by_name(argument_name)
-            if not arg or arg.choices in [False, None]:
+            if not arg or arg.choices in {False, None}:
                 return []
             if parsed_token.is_dict:
                 return []

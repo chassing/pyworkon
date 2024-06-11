@@ -1,5 +1,3 @@
-from typing import Type
-
 from pydantic import HttpUrl
 
 from ..config import (
@@ -12,7 +10,7 @@ from .github import GitHubApi
 from .gitlab import GitLabApi
 
 PROVIDER_MAPPING: dict[
-    ProviderType, Type[GitHubApi] | Type[GitLabApi] | Type[BitbucketApi]
+    ProviderType, type[GitHubApi] | type[GitLabApi] | type[BitbucketApi]
 ] = {
     ProviderType.github: GitHubApi,
     ProviderType.gitlab: GitLabApi,

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Iterable,
-    Union,
-)
+from collections.abc import Iterable
+from typing import Any
 
 import databases
 import orm
@@ -14,7 +11,7 @@ from .config import config
 database = databases.Database(f"sqlite:///{str(config.db)}")
 models = orm.ModelRegistry(database=database)
 
-RichReprResult = Iterable[Union[Any, tuple[Any], tuple[str, Any], tuple[str, Any, Any]]]
+RichReprResult = Iterable[Any | tuple[Any] | tuple[str, Any] | tuple[str, Any, Any]]
 
 
 class Project(orm.Model):
@@ -26,7 +23,7 @@ class Project(orm.Model):
         "repository_url": orm.String(max_length=255),
     }
 
-    def __rich_repr__(self) -> "RichReprResult":
+    def __rich_repr__(self) -> RichReprResult:  # noqa: PLW3201
         """Get fields for Rich library"""
         for k in self.fields.keys():
             yield k, getattr(self, k)
@@ -37,8 +34,7 @@ class Db:
         await models.create_all()
         return self
 
-    async def __aexit__(self, *args, **kwargs):
-        ...
+    async def __aexit__(self, *args, **kwargs): ...
 
     async def projects(self) -> list[Project]:
         """Get all projects."""

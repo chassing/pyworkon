@@ -127,9 +127,8 @@ class ProjectTree(TreeControl[TreeEntry]):
         if entry.project:
             # await self.emit(FileClick(self, entry.path))
             ...
+        elif not message.node.loaded:
+            await self.load_directory(message.node)
+            await message.node.expand()
         else:
-            if not message.node.loaded:
-                await self.load_directory(message.node)
-                await message.node.expand()
-            else:
-                await message.node.toggle()
+            await message.node.toggle()

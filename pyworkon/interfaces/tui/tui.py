@@ -26,13 +26,11 @@ class PyWorkonTui(App):
         # Create our widgets
         # In this a scroll view for the code and a directory tree
         self.body = ScrollView()
-        self.project_tree = ProjectTree(
-            [
-                Project("github/chassing/pyworkon"),
-                Project("github/org/foobar"),
-                Project("gitlab/chassing/juppi"),
-            ]
-        )
+        self.project_tree = ProjectTree([
+            Project("github/chassing/pyworkon"),
+            Project("github/org/foobar"),
+            Project("gitlab/chassing/juppi"),
+        ])
 
         # Dock our widgets
         await self.view.dock(Header(), edge="top")

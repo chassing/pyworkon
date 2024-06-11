@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import (
     BaseModel,
@@ -19,7 +18,7 @@ class Repository(BaseModel):
     path: str  # 'pyworkon'
     path_with_namespace: str  # 'assing/pyworkon'
     created_at: datetime
-    default_branch: Optional[str] = "main"
+    default_branch: str | None = "main"
     # tag_list: []
     # topics: []
     ssh_url_to_repo: str  # 'git@gitlab.com:assing/pyworkon.git'
@@ -28,7 +27,7 @@ class Repository(BaseModel):
     readme_url: HttpUrl | None = (
         None  # 'https://gitlab.com/assing/pyworkon/-/blob/main/README.md'
     )
-    avatar_url: Optional[HttpUrl] = None
+    avatar_url: HttpUrl | None = None
     forks_count: int  # 0
     star_count: int  # 1
     last_activity_at: datetime  # '2021-11-26T08:28:28.518Z'

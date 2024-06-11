@@ -13,7 +13,9 @@ class GitHubApi:
     def __init__(self, name, api_url, username, password):
         """Init."""
         self._name = name
-        self._api = GitHubConsumer(base_url=api_url, client=HttpxClient(), auth=(username, password))  # type: ignore
+        self._api = GitHubConsumer(
+            base_url=api_url, client=HttpxClient(), auth=(username, password)
+        )  # type: ignore
         self._username = username
 
     async def __aenter__(self):

@@ -2,10 +2,8 @@ import argparse
 import logging
 import sys
 import textwrap
-from typing import (
-    Any,
-    Callable,
-)
+from collections.abc import Callable
+from typing import Any
 
 from nubia import (
     PluginInterface,
@@ -74,7 +72,7 @@ class ShellPlugin(PluginInterface):
     """."""
 
     def setup_logging(self, root_logger, args):
-        if args.verbose and args.verbose >= 2:
+        if args.verbose and args.verbose >= 2:  # noqa: PLR2004
             logging_level = logging.DEBUG
         elif args.verbose == 1:
             logging_level = logging.INFO
@@ -129,6 +127,6 @@ class ShellPlugin(PluginInterface):
         return ShellContext()
 
     def get_commands(self):
-        from . import commands
+        from . import commands  # noqa: PLC0415
 
         return [AutoCommand(cmd) for cmd in cmdloader.load_commands(commands)]  # type: ignore

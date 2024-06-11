@@ -25,7 +25,7 @@ from rich_click.rich_click import (
     STYLE_OPTION,
     STYLE_SWITCH,
     STYLE_USAGE,
-    _make_command_help,
+    _make_command_help,  # noqa: PLC2701
 )
 
 
@@ -59,14 +59,12 @@ def run_interactive(self, _0, args, _2):
     https://github.com/ewels/rich-click
     """
     console = Console(
-        theme=Theme(
-            {
-                "option": STYLE_OPTION,
-                "switch": STYLE_SWITCH,
-                "metavar": STYLE_METAVAR,
-                "usage": STYLE_USAGE,
-            }
-        ),
+        theme=Theme({
+            "option": STYLE_OPTION,
+            "switch": STYLE_SWITCH,
+            "metavar": STYLE_METAVAR,
+            "usage": STYLE_USAGE,
+        }),
         color_system=COLOR_SYSTEM,
     )
 
@@ -111,12 +109,10 @@ def run_interactive(self, _0, args, _2):
                     choices = None
                     if arg.choices:
                         choices = textwrap.shorten(
-                            ", ".join(
-                                [
-                                    c.value if isinstance(c, enum.Enum) else str(c)
-                                    for c in arg.choices
-                                ]
-                            ),
+                            ", ".join([
+                                c.value if isinstance(c, enum.Enum) else str(c)
+                                for c in arg.choices
+                            ]),
                             width=100,
                             placeholder="...",
                         )
@@ -136,7 +132,7 @@ def run_interactive(self, _0, args, _2):
         commands_table.add_column(style="bold cyan", no_wrap=True)
         for cmd in sorted(self.registry.get_all_commands(), key=lambda c: c.built_in):
             cmd_names = list(cmd.get_command_names())
-            if cmd_names[0] in ["connect", ":verbose"]:
+            if cmd_names[0] in {"connect", ":verbose"}:
                 continue
             cmd_help = cmd.get_help(cmd_names[0])
             commands_table.add_row(", ".join(cmd_names), _make_command_help(cmd_help))
