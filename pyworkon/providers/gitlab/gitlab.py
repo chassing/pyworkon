@@ -1,9 +1,11 @@
-from uplink.auth import BearerToken
-from uplink_httpx import HttpxClient
+from typing import TYPE_CHECKING, Any, Self
 
-from ..models import Project
+from pyworkon.providers.models import Project
+
 from .consumer import GitLabConsumer
-from .models import Repository
+
+if TYPE_CHECKING:
+    from .models import Repository
 
 
 class GitLabApi:
@@ -11,23 +13,27 @@ class GitLabApi:
 
     API_URL = "https://gitlab.com"
 
-    def __init__(self, name, api_url, username, password):
+    def __init__(self, name: str, api_url: str, username: str, password: str) -> None:
         """Init."""
         self._name = name
-        self._api = GitLabConsumer(
-            base_url=api_url, client=HttpxClient(), auth=BearerToken(password)
-        )  # type: ignore
+        self._api = GitLabConsumer(base_url=api_url, auth=(username, password))
         self._username = username
 
-    async def __aenter__(self):
-        await self._api.__aenter__()
+    def __enter__(self) -> Self:
         return self
 
-    async def __aexit__(self, *args, **kwargs):
-        await self._api.__aexit__()
+    def __exit__(self, *args: object, **kwargs: Any) -> None: ...
 
-    async def projects(self) -> list[Project]:
-        repos: list[Repository] = await self._api.projects(membership=True)
+    def projects(self) -> list[Project]:
+        page = 1
+        repos: list[Repository] = []
+        while True:
+            repos_page = self._api.projects(membership=True, page=page)
+            if not repos_page:
+                break
+            repos += repos_page
+            page += 1
+
         return [
             Project(
                 project_id=f"{self._name}/{repo.path_with_namespace}",

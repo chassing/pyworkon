@@ -1,8 +1,8 @@
 import logging
+from typing import Any, Self
 
-from uplink_httpx import HttpxClient
+from pyworkon.providers.models import Project
 
-from ..models import Project
 from .consumer import BitbucketConsumer
 from .models import (
     Repository,
@@ -17,41 +17,37 @@ class BitbucketApi:
 
     API_URL = "https://api.bitbucket.org"
 
-    def __init__(self, name, api_url, username, password):
+    def __init__(self, name: str, api_url: str, username: str, password: str) -> None:
         """Init."""
         self._name = name
-        self._api = BitbucketConsumer(
-            base_url=api_url, client=HttpxClient(), auth=(username, password)
-        )  # type: ignore
+        self._api = BitbucketConsumer(base_url=api_url, auth=(username, password))
         self._username = username
 
-    async def __aenter__(self):
-        await self._api.__aenter__()
+    def __enter__(self) -> Self:
         return self
 
-    async def __aexit__(self, *args, **kwargs):
-        await self._api.__aexit__()
+    def __exit__(self, *args: object, **kwargs: Any) -> None: ...
 
-    async def workspaces(self) -> list[Workspace]:
+    def workspaces(self) -> list[Workspace]:
         workspaces: list[Workspace] = []
         page = 1
         total_size = 0
         while not workspaces or len(workspaces) < total_size:
-            ws = await self._api.workspaces(page=page, pagelen=100)
+            ws = self._api.workspaces(page=page, pagelen=100)
             total_size = ws.size
             workspaces += ws.values
             page += 1
         return workspaces
 
-    async def projects(self) -> list[Project]:
+    def projects(self) -> list[Project]:
         repositories: list[Repository] = []
         projects: list[Project] = []
-        for ws in await self.workspaces():
+        for ws in self.workspaces():
             page = 1
             total_size = 0
             ws_repos: list[Repository] = []
             while not ws_repos or len(ws_repos) < total_size:
-                repos = await self._api.repositories(
+                repos = self._api.repositories(
                     workspace=ws.uuid, page=page, pagelen=100
                 )
                 total_size = repos.size

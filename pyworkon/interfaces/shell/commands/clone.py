@@ -1,37 +1,26 @@
-from asgiref.sync import async_to_sync
-from nubia import (
-    argument,
-    command,
-)
-from rich import print
+import click
+from rich import print as rich_print
 
-from ....exceptions import ProjectNotFound
-from ....project import project_manager
+from pyworkon.interfaces.shell import cli
+from pyworkon.interfaces.shell.command import PyworkonCommand
+from pyworkon.project import project_manager
 
 
-async def _project_list(*args, **kwargs) -> list[str]:
-    return [
-        str(project.id)
-        for project in await project_manager.list()
-        if not project.is_local
-    ]
+def project_completion(
+    ctx: click.Context, command: PyworkonCommand, argument: click.Argument
+) -> list[str]:
+    if argument.name == "project_id":
+        return [project.id for project in project_manager.list(local=False)]
+
+    return []
 
 
-@command("clone")
-@argument(
-    "project_id",
-    name="id",
-    description="Project ID or URL to repository",
-    choices=async_to_sync(_project_list)(),
-)
-async def clone(project_id: str):
+@cli.command(completion_callback=project_completion)
+@click.argument("project_id")
+def clone(project_id: str) -> None:
     """Clone a project."""
     if not project_id:
-        print("[b red]Please provide a project ID or an URL to a repository![/]")
+        rich_print("[b red]Please provide a project ID or an URL to a repository![/]")
         return
 
-    try:
-        await project_manager.clone(project_id)
-    except ProjectNotFound:
-        print(f"[b red]Project '{project_id}' does not exist[/]")
-        return
+    project_manager.clone(project_id)

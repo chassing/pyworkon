@@ -3,14 +3,15 @@ import json
 import pwd
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 import yaml
 from appdirs import AppDirs
-from pydantic import (
-    BaseModel,
+from pydantic import BaseModel, HttpUrl
+from pydantic_settings import (
     BaseSettings,
-    HttpUrl,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
 )
 
 appdirs = AppDirs("pyworkon", "ca-net")
@@ -21,14 +22,6 @@ user_config_file = user_config_dir / "config.yaml"
 
 user_cache_dir = Path(appdirs.user_cache_dir)
 user_cache_dir.mkdir(parents=True, exist_ok=True)
-
-
-def yaml_config_settings_source(settings: BaseSettings) -> dict[str, Any]:
-    encoding = settings.__config__.env_file_encoding
-    if user_config_file.exists():
-        cfg = yaml.safe_load(user_config_file.read_text(encoding))
-        return cfg if cfg else {}
-    return {}
 
 
 class ProviderType(Enum):
@@ -45,28 +38,39 @@ class Provider(BaseModel):
     password: str
 
 
+# ruff: noqa: ARG003
 class Config(BaseSettings):
     prompt_sign: str = "🖖🏻"
-    db: Path = user_cache_dir / "db"
+    project_cache: Path = user_cache_dir / "project_cache"
     workspace_dir: Path = Path.home() / "workspace"
     workon_command: str = pwd.getpwnam(getpass.getuser()).pw_shell
     workon_pre_command: str = ""
     providers: list[Provider] = []
     debug: bool = False
+    history_file: Path = user_cache_dir / "history"
 
-    class Config:
-        extra = "ignore"
-        env_file_encoding = "utf-8"
-        env_prefix = "pyworkon_"
+    model_config = SettingsConfigDict(
+        yaml_file=user_config_file,
+        yaml_file_encoding="utf-8",
+        extra="ignore",
+        env_prefix="pyworkon_",
+    )
 
-        @classmethod
-        def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return (init_settings, env_settings, yaml_config_settings_source)
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (YamlConfigSettingsSource(settings_cls),)
 
-    def save(self):
+    def save(self) -> None:
         user_config_file.write_text(
-            yaml.dump(json.loads(self.json())),
-            encoding=self.__config__.env_file_encoding,
+            yaml.dump(json.loads(self.model_dump_json())),
+            encoding=self.model_config.yaml_file_encoding,
         )
 
 

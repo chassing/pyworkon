@@ -1,7 +1,7 @@
 import logging
 
 import uplink
-from uplink_httpx import ContextConsumer
+from requests import Response
 
 from .models import Repository
 
@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 
 
 @uplink.response_handler
-def raise_for_status(response):
+def raise_for_status(response: Response) -> Response:
     response.raise_for_status()
     return response
 
@@ -19,11 +19,11 @@ def raise_for_status(response):
 @uplink.returns.json
 @uplink.json
 @uplink.headers({"Accept": "application/vnd.github.v3+json"})
-class GitHubConsumer(ContextConsumer):
+class GitHubConsumer(uplink.Consumer):
     """https://docs.github.com/en/rest"""
 
     @uplink.get("user/repos")
     def user_repos(
         self, page: uplink.Query, per_page: uplink.Query = "100"
-    ) -> list[Repository]:  # type: ignore
+    ) -> list[Repository]:
         """Get all user repositories."""
