@@ -55,7 +55,7 @@ class PyworkonContext:
         """
         self.config = config
         self.log = logging.getLogger(f"pyworkon.{self.__class__.__name__}")
-        self.args = []
+        self.args: list[str] = []
 
     @staticmethod
     def progress_spinner() -> Progress:
@@ -76,12 +76,12 @@ pyworkon_context = PyworkonContext()
 def cli(ctx: click.Context) -> None:
     """Command line tool to interact with Pyworkon projects."""
     if ctx.invoked_subcommand is None:
-        if ctx.command.in_shell:
+        if ctx.command.in_shell:  # type: ignore[attr-defined]
             # inside a pyworkon shell the default action is showing the help page
             click.echo(ctx.get_help(), color=ctx.color)
         else:
             # outside a pyworkon shell the default action is invoking the "shell" command
-            ctx.invoke(ctx.command.get_command(ctx, "shell"))
+            ctx.invoke(ctx.command.get_command(ctx, "shell"))  # type: ignore[attr-defined]
 
     # reset the cached project list
     ctx.obj.project_list = None

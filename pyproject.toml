@@ -35,7 +35,12 @@ issues = "https://github.com/chassing/pyworkon/issues"
 pyworkon = 'pyworkon.__main__:run'
 
 [tool.uv]
-dev-dependencies = ["ruff>=0.6.2"]
+dev-dependencies = [
+    "ruff>=0.6.2",
+    "mypy>=1.11.2",
+    "types-pyyaml>=6.0.12.20240808",
+    "types-requests>=2.32.0.20240712",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -52,11 +57,10 @@ show_error_codes = true
 [[tool.mypy.overrides]]
 module = [
     "appdirs.*",
+    "diskcache.*",
     "fuzzyfinder.*",
-    "nubia.*",
-    "orm.*",
     "pygments.token",
-    "rich_click.*",
+    "pydantic_settings.*",
     "uplink.*",
     "uplink_httpx",
 ]
@@ -91,6 +95,7 @@ ignore = [
     "PLR0904", # Too many public methods
     "PLR0913", # Too many arguments
     "PLR0917", # Too many positional arguments
+    "PLR6301", # no self-ussage
     "S101",    # Use of assert detected. Pytest uses assert
     "S404",    # subprocess import
     "S602",    # subprocess check

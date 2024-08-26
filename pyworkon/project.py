@@ -67,6 +67,9 @@ class Project(BaseModel):
                 "[b red]Project directory exists already! Use 'workon' instead![/]"
             )
             return
+        if not self.repository_url:
+            rich_print("[b red]No repository URL found![/]")
+            return
 
         rich_print(
             f"[green]Cloning repository {self.repository_url} to {self.project_home}. This may take a while ...[/]"
@@ -83,7 +86,7 @@ class ProjectManager:
         self._cache = Cache(directory=str(config.project_cache))
         self._init_project_list()
 
-    def _init_project_list(self) -> list[Project]:
+    def _init_project_list(self) -> None:
         self._projects = {
             project_id: Project(id=project_id)
             for project_id in glob.glob(  # noqa: PTH207

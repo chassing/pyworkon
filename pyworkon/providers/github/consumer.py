@@ -23,7 +23,7 @@ class GitHubConsumer(uplink.Consumer):
     """https://docs.github.com/en/rest"""
 
     @uplink.get("user/repos")
-    def user_repos(
+    def user_repos(  # type: ignore[empty-body]
         self, page: uplink.Query, per_page: uplink.Query = "100"
     ) -> list[Repository]:
         """Get all user repositories."""

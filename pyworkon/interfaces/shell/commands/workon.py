@@ -15,8 +15,18 @@ def project_completion(
     return []
 
 
+def project_id_completion(
+    ctx: click.Context, param: click.ParamType, incomplete: str
+) -> list[str]:
+    return [
+        project.id
+        for project in project_manager.list(local=True)
+        if project.id.startswith(incomplete)
+    ]
+
+
 @cli.command(completion_callback=project_completion)
-@click.argument("project_id")
+@click.argument("project_id", shell_complete=project_id_completion)
 def workon(project_id: str) -> None:
     """Enter a project."""
     if not project_id:

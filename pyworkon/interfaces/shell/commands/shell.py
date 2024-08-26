@@ -31,14 +31,14 @@ def shell(ctx: click.Context) -> None:
             return []
 
     class PyworkonCompleter(Completer):
-        def get_completions(  # noqa: PLR0912, PLR6301
+        def get_completions(  # noqa: PLR0912
             self, document: Document, complete_event: CompleteEvent
         ) -> Iterable[Completion]:
             args = _split_args(document.current_line_before_cursor)
             current_multi_command = cli
             current_command = cli
             command_args = args
-            completion_candidates = set()
+            completion_candidates: set[str] = set()
             shell_context = cli.make_context(
                 "",
                 args,
@@ -62,7 +62,7 @@ def shell(ctx: click.Context) -> None:
                     "-",
                     "--",
                 )) and arg in current_multi_command.list_commands(shell_context):
-                    current_command = current_multi_command.get_command(
+                    current_command = current_multi_command.get_command(  # type: ignore[assignment]
                         shell_context, arg
                     )
                     command_args = (

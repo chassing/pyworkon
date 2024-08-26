@@ -23,13 +23,13 @@ class BitbucketConsumer(uplink.Consumer):
     """https://developer.atlassian.com/cloud/bitbucket/rest/"""
 
     @uplink.get("2.0/workspaces")
-    def workspaces(
+    def workspaces(  # type: ignore[empty-body]
         self, page: uplink.Query, pagelen: uplink.Query = "100"
     ) -> Workspaces:
         """Get all user workspaces."""
 
     @uplink.get("2.0/repositories/{workspace}")
-    def repositories(
+    def repositories(  # type: ignore[empty-body]
         self, workspace: uplink.Path, page: uplink.Query, pagelen: uplink.Query = "100"
     ) -> Repositories:
         """Get all workspace repositories."""

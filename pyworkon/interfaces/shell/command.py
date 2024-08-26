@@ -19,14 +19,15 @@ class PyworkonMultiCommand(click.Group):
                 name: [cmd] for name, cmd in kwargs["commands"].items()
             }
         super().__init__(*args, **kwargs)
+        self.commands: dict[str, list[click.Command]] = {}  # type: ignore[assignment]
 
     @staticmethod
-    def _command_enabled(cmd: "PyworkonMultiCommand") -> bool:
+    def _command_enabled(cmd: click.Command) -> bool:
         """Return True when the given command should be enabled in the current CLI environment."""
         disabled_in = getattr(cmd, "disabled_in", [])
         return not (in_shell() and "shell" in disabled_in)
 
-    def add_command(self, cmd: "PyworkonMultiCommand", name: str | None = None) -> None:
+    def add_command(self, cmd: click.Command, name: str | None = None) -> None:
         """Add the given command as a subcommand."""
         name = name or cmd.name
         if not name:
@@ -36,7 +37,7 @@ class PyworkonMultiCommand(click.Group):
         else:
             self.commands[name] = [cmd]
 
-    def get_command(self, ctx: click.Context, cmd_name: str) -> "PyworkonMultiCommand":
+    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command:
         """Return the command instance identified by the given *cmd_name*."""
         for cmd in self.commands.get(cmd_name, []):
             if self._command_enabled(cmd):
@@ -51,12 +52,16 @@ class PyworkonMultiCommand(click.Group):
             if any(self._command_enabled(cmd) for cmd in cmds)
         ])
 
-    def command(self, *args: Any, **kwargs: Any) -> "PyworkonCommand":
+    def command(
+        self, *args: Any, **kwargs: Any
+    ) -> Callable[[Callable[..., Any]], click.Command]:
         """Handy decorator to easily add a new subcommand to this one."""
         kwargs.setdefault("cls", PyworkonCommand)
         return super().command(*args, **kwargs)
 
-    def group(self, *args: Any, **kwargs: Any) -> "PyworkonMultiCommand":
+    def group(
+        self, *args: Any, **kwargs: Any
+    ) -> Callable[[Callable[..., Any]], click.Group]:
         """Handy decorator to easily add a new sub-multicommand to this one."""
         kwargs.setdefault("cls", PyworkonMultiCommand)
         return super().group(*args, **kwargs)
@@ -111,7 +116,7 @@ class PyworkonCommand(click.Command):
                     else []
                 )
                 if not completions and param.type.name == "choice":
-                    completions = param.type.choices
+                    completions = param.type.choices  # type: ignore[attr-defined]
                 return completions, isinstance(
                     param, click.Option
                 ) and not param.is_flag

@@ -69,8 +69,7 @@ class Config(BaseSettings):
 
     def save(self) -> None:
         user_config_file.write_text(
-            yaml.dump(json.loads(self.model_dump_json())),
-            encoding=self.model_config.yaml_file_encoding,
+            yaml.dump(json.loads(self.model_dump_json())), encoding="utf-8"
         )
 
 

@@ -22,9 +22,9 @@ class GitLabConsumer(uplink.Consumer):
     """https://docs.gitlab.com/"""
 
     @uplink.get("api/v4/projects")
-    def projects(
+    def projects(  # type: ignore[empty-body]
         self,
-        membership: uplink.Query(type=bool),
+        membership: uplink.Query(type=bool),  # type: ignore[valid-type]
         page: uplink.Query = "1",
         per_page: uplink.Query = "100",
         order_by: uplink.Query = "updated_at",
