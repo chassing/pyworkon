@@ -36,7 +36,7 @@ pyworkon = 'pyworkon.__main__:run'
 
 [tool.uv]
 dev-dependencies = [
-    "ruff>=0.6.2",
+    "ruff==0.6.6",
     "mypy>=1.11.2",
     "types-pyyaml>=6.0.12.20240808",
     "types-requests>=2.32.0.20240712",
@@ -61,15 +61,13 @@ module = [
     "fuzzyfinder.*",
     "pygments.token",
     "pydantic_settings.*",
-    "uplink.*",
-    "uplink_httpx",
 ]
 ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 88
 target-version = 'py312'
-required-version = "0.6.2"
+required-version = "0.6.6"
 src = ["pyworkon"]
 fix = true
 

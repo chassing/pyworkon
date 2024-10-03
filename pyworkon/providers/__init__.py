@@ -1,5 +1,3 @@
-from pydantic import HttpUrl
-
 from pyworkon.config import Provider, ProviderType
 from pyworkon.exceptions import UnknownProviderTypeError
 
