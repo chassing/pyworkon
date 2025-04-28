@@ -15,7 +15,7 @@ def raise_for_status(response: Response) -> Response:
 
 
 @raise_for_status
-@uplink.timeout(10)
+@uplink.timeout(60)
 @uplink.returns.json
 @uplink.json
 @uplink.headers({"Accept": "application/vnd.github.v3+json"})

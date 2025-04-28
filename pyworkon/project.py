@@ -103,11 +103,16 @@ class ProjectManager:
         projects: list[Project] = []
         for provider in config.providers:
             with get_provider(provider) as _api:
-                projects += [
+                _projects = [
                     Project(id=p.project_id, repository_url=p.repository_url)
                     for p in _api.projects()
                 ]
+                rich_print(
+                    f"[green]Fetched {len(_projects)} projects from {provider.name}[/]"
+                )
+                projects.extend(_projects)
         self._cache.set("PROJECTS", [p.model_dump_json() for p in projects])
+        self._init_project_list()
 
     def list(self, *, local: bool) -> list[Project]:
         return [

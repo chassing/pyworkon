@@ -1,4 +1,7 @@
+import logging
 from typing import TYPE_CHECKING, Any, Self
+
+from uplink.auth import BearerToken
 
 from pyworkon.providers.models import Project
 
@@ -6,6 +9,8 @@ from .consumer import GitLabConsumer
 
 if TYPE_CHECKING:
     from .models import Repository
+
+log = logging.getLogger(__name__)
 
 
 class GitLabApi:
@@ -16,7 +21,8 @@ class GitLabApi:
     def __init__(self, name: str, api_url: str, username: str, password: str) -> None:
         """Init."""
         self._name = name
-        self._api = GitLabConsumer(base_url=api_url, auth=(username, password))
+        bearer_token = BearerToken(password)
+        self._api = GitLabConsumer(base_url=api_url, auth=bearer_token)
         self._username = username
 
     def __enter__(self) -> Self:
@@ -34,6 +40,8 @@ class GitLabApi:
             repos += repos_page
             page += 1
 
+        if not repos:
+            log.error("No repositories found.")
         return [
             Project(
                 project_id=f"{self._name}/{repo.path_with_namespace}",
