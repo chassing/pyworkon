@@ -72,7 +72,7 @@ pyworkon_context = PyworkonContext()
 
 @click.group(cls=PyworkonMainCommand, invoke_without_command=True)
 @click.pass_context
-@click.version_option(version="0.2.0", prog_name="pyworkon")
+@click.version_option()
 def cli(ctx: click.Context) -> None:
     """Command line tool to interact with Pyworkon projects."""
     if ctx.invoked_subcommand is None:
