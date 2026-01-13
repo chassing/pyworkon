@@ -27,7 +27,6 @@ user_cache_dir.mkdir(parents=True, exist_ok=True)
 class ProviderType(Enum):
     github = "github"
     gitlab = "gitlab"
-    bitbucket = "bitbucket"
 
 
 class Provider(BaseModel):

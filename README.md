@@ -11,6 +11,7 @@ $$ |      \$$$$$$$ |$$  /   \$$ |\$$$$$$  |$$ |      $$ | \$$\ \$$$$$$  |$$ |  $
           \$$$$$$  |
            \______/
 ```
+
 # PyWorkon
 
 [![PyPI version][pypi-version]][pypi-link]
@@ -29,10 +30,10 @@ python3 -m pip install pyworkon
 ```
 
 or install it with `pipx`:
+
 ```bash
 pipx install pyworkon
 ```
-
 
 You can also use `pipx` to run the library without installing it:
 
@@ -51,13 +52,10 @@ pyworkon currently provides the following features (get help with `-h` or `--hel
 - Multiple (GIT hosting) providers
   - [GitHub](http://github.com/) and [GitHub Enterprise](https://github.com/enterprise)
   - [GitLab](https://gitlab.com/) and your self hosted GitLab instance(s)
-  - [Bitbucket](https://bitbucket.org/)
 - TUI (terminal user interface) and shell interface.
 - Highly customizable
 
-
 ## Examples
-
 
 **`workon` command:**
 
@@ -65,9 +63,7 @@ Enter an existing [GitHub project](https://github.com/chassing/pyworkon). (Githu
 
 ![GIF of the workon command](https://github.com/chassing/pyworkon/releases/download/v0.3.0/tui.gif)
 
-
 ![GIF of the TUI functionality](https://github.com/chassing/pyworkon/releases/download/v0.3.0/tui.gif)
-
 
 ## Development
 
@@ -75,7 +71,6 @@ Enter an existing [GitHub project](https://github.com/chassing/pyworkon). (Githu
 [![Code style: black][black-badge]][black-link]
 
 See [CONTRIBUTING.md](https://github.com/chassing/pyworkon/blob/main/.github/CONTRIBUTING.md) for details on how to set up a development environment.
-
 
 [black-badge]:              https://img.shields.io/badge/code%20style-black-000000.svg
 [black-link]:               https://github.com/psf/black
