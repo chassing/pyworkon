@@ -1,6 +1,6 @@
 [project]
 name = "pyworkon"
-version = "0.2.4"
+version = "0.3.0"
 description = "Software Development Project Management Tool"
 authors = [{ name = "Christian Assing", email = "chris@ca-net.org" }]
 license = { text = "MIT License" }

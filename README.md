@@ -29,16 +29,16 @@ You can install this library from [PyPI](https://pypi.org/project/pyworkon/) wit
 python3 -m pip install pyworkon
 ```
 
-or install it with `pipx`:
+or install it with `uv`:
 
 ```bash
-pipx install pyworkon
+uv tool install pyworkon
 ```
 
-You can also use `pipx` to run the library without installing it:
+You can also use `uv` to run the library without installing it:
 
 ```bash
-pipx run pyworkon
+uv tool run pyworkon
 ```
 
 ## Features
