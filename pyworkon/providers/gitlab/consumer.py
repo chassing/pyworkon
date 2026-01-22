@@ -1,35 +1,36 @@
 import logging
 
-import uplink
-from requests import Response
+from clientele import api as clientele_api
 
 from .models import Repository
 
 log = logging.getLogger(__name__)
 
 
-@uplink.response_handler
-def raise_for_status(response: Response) -> Response:
-    response.raise_for_status()
-    return response
+client = clientele_api.APIClient(base_url="https://gitlab.com")
 
 
-@raise_for_status
-@uplink.timeout(60)
-@uplink.returns.json
-@uplink.json
-class GitLabConsumer(uplink.Consumer):
+class GitLabConsumer:
     """https://docs.gitlab.com/"""
 
-    @uplink.get("api/v4/projects")
-    def projects(  # type: ignore[empty-body]
-        self,
-        membership: uplink.Query(type=bool),  # type: ignore[valid-type]
-        page: uplink.Query = "1",
-        per_page: uplink.Query = "100",
-        order_by: uplink.Query = "updated_at",
-    ) -> list[Repository]:
-        """Get all user projects.
+    def __init__(self, base_url: str, token: str) -> None:
+        client.configure(
+            config=clientele_api.BaseConfig(
+                base_url=base_url,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=60.0,
+            )
+        )
 
-        Pagination is done via http headers in reply and I'm to lazy to implement that.
-        """
+    @client.get("/api/v4/projects")
+    def projects(
+        self,
+        result: list[Repository],
+        *,
+        membership: bool,
+        page: int = 1,
+        per_page: int = 100,
+        order_by: str = "updated_at",
+    ) -> list[Repository]:
+        """Get all user projects."""
+        return result

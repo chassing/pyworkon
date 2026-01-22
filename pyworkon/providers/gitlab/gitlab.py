@@ -1,8 +1,6 @@
 import logging
 from typing import TYPE_CHECKING, Any, Self
 
-from uplink.auth import BearerToken
-
 from pyworkon.providers.models import Project
 
 from .consumer import GitLabConsumer
@@ -21,8 +19,7 @@ class GitLabApi:
     def __init__(self, name: str, api_url: str, username: str, password: str) -> None:
         """Init."""
         self._name = name
-        bearer_token = BearerToken(password)
-        self._api = GitLabConsumer(base_url=api_url, auth=bearer_token)
+        self._api = GitLabConsumer(base_url=api_url, token=password)
         self._username = username
 
     def __enter__(self) -> Self:

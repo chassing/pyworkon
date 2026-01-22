@@ -102,15 +102,16 @@ class ProjectManager:
     def sync(self) -> None:
         projects: list[Project] = []
         for provider in config.providers:
-            with get_provider(provider) as _api:
-                _projects = [
+            rich_print(f"[blue]Fetching projects from provider {provider.name}...[/]")
+            with get_provider(provider) as api:
+                provider_projects = [
                     Project(id=p.project_id, repository_url=p.repository_url)
-                    for p in _api.projects()
+                    for p in api.projects()
                 ]
                 rich_print(
-                    f"[green]Fetched {len(_projects)} projects from {provider.name}[/]"
+                    f"[green]Fetched {len(provider_projects)} projects from {provider.name}[/]"
                 )
-                projects.extend(_projects)
+                projects.extend(provider_projects)
         self._cache.set("PROJECTS", [p.model_dump_json() for p in projects])
         self._init_project_list()
 

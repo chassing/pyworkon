@@ -10,7 +10,7 @@ from pyworkon.interfaces.shell import cli, pyworkon_context
 from pyworkon.interfaces.shell.command import PyworkonCommand
 
 
-# ruff: noqa: PLC0415, C901
+# ruff: noqa: C901
 @cli.command(disabled_in=["shell"])
 @click.pass_context
 def shell(ctx: click.Context) -> None:

@@ -1,29 +1,34 @@
 import logging
 
-import uplink
-from requests import Response
+import httpx
+from clientele import api as clientele_api
 
 from .models import Repository
 
 log = logging.getLogger(__name__)
 
-
-@uplink.response_handler
-def raise_for_status(response: Response) -> Response:
-    response.raise_for_status()
-    return response
+client = clientele_api.APIClient(base_url="https://api.github.com")
 
 
-@raise_for_status
-@uplink.timeout(60)
-@uplink.returns.json
-@uplink.json
-@uplink.headers({"Accept": "application/vnd.github.v3+json"})
-class GitHubConsumer(uplink.Consumer):
+class GitHubConsumer:
     """https://docs.github.com/en/rest"""
 
-    @uplink.get("user/repos")
-    def user_repos(  # type: ignore[empty-body]
-        self, page: uplink.Query, per_page: uplink.Query = "100"
+    def __init__(self, base_url: str, auth: httpx.Auth | tuple[str, str]) -> None:
+        client.configure(
+            config=clientele_api.BaseConfig(
+                base_url=base_url,
+                auth=auth,
+                headers={"Accept": "application/vnd.github.v3+json"},
+                timeout=60.0,
+            )
+        )
+
+    @client.get("/user/repos")
+    def user_repos(
+        self,
+        result: list[Repository],
+        page: int,
+        per_page: int = 100,
     ) -> list[Repository]:
         """Get all user repositories."""
+        return result
