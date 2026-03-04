@@ -26,11 +26,17 @@ def project_id_completion(
 
 
 @cli.command(completion_callback=project_completion)
+@click.option("--command", "-c", help="Command to execute after entering the project")
+@click.option(
+    "--title", "-t", help="Title for the project session (if supported by the terminal)"
+)
 @click.argument("project_id", shell_complete=project_id_completion)
-def workon(project_id: str) -> None:
+def workon(
+    project_id: str, command: str | None = None, title: str | None = None
+) -> None:
     """Enter a project."""
     if not project_id:
         rich_print("[b red]Please provide a project ID or an URL to a repository![/]")
         return
 
-    project_manager.enter(project_id)
+    project_manager.enter(project_id, command, title)

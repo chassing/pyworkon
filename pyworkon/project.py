@@ -35,7 +35,16 @@ class Project(BaseModel):
     def is_local(self) -> bool:
         return self.project_home.exists()
 
-    def enter(self) -> None:
+    @property
+    def env_vars(self) -> dict[str, str]:
+        """Environment variables for project context."""
+        return {
+            "PYWORKON_PROJECT_ID": self.id,
+            "PYWORKON_PROJECT_NAME": self.name,
+            "PYWORKON_PROJECT_HOME": str(self.project_home),
+        }
+
+    def enter(self, command: str | None = None, title: str | None = None) -> None:
         """Enter project."""
         if not self.is_local:
             rich_print(
@@ -46,14 +55,16 @@ class Project(BaseModel):
         workon_pre_command = (
             [config.workon_pre_command] if config.workon_pre_command else []
         )
+        if title:
+            workon_pre_command.append(f"echo '\\033]0;{title}\\007'")
+        workon_command = command or config.workon_command
+        env_exports = [f"{k}='{v}'" for k, v in self.env_vars.items()]
         commands = [
-            f"PYWORKON_PROJECT_ID='{self.id}'",
-            f"PYWORKON_PROJECT_NAME='{self.name}'",
-            f"PYWORKON_PROJECT_HOME='{self.project_home}'",
-            "export PYWORKON_PROJECT_ID PYWORKON_PROJECT_NAME PYWORKON_PROJECT_HOME",
+            *env_exports,
+            f"export {' '.join(self.env_vars)}",
             f"cd '{self.project_home}'",
             *workon_pre_command,
-            f"exec {config.workon_command}",
+            f"exec {workon_command}",
         ]
 
         entry_command = " && ".join(commands)
@@ -116,16 +127,23 @@ class ProjectManager:
         self._init_project_list()
 
     def list(self, *, local: bool) -> list[Project]:
-        return [
-            project for project in self._projects.values() if project.is_local == local
-        ]
+        return sorted(
+            [
+                project
+                for project in self._projects.values()
+                if project.is_local == local
+            ],
+            key=lambda p: p.id,
+        )
 
     def get(self, project_id: str) -> Project:
         return self._projects[project_id]
 
-    def enter(self, project_id: str) -> None:
+    def enter(
+        self, project_id: str, command: str | None = None, title: str | None = None
+    ) -> None:
         project = self.get(project_id=project_id)
-        project.enter()
+        project.enter(command=command, title=title)
 
     def clone(self, project_id: str) -> None:
         project = self.get(project_id=project_id)

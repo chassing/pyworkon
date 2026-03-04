@@ -1,0 +1,16 @@
+---
+start_directory: ${PYWORKON_PROJECT_HOME}
+environment:
+  PYWORKON_PROJECT_ID: ${PYWORKON_PROJECT_ID}
+  PYWORKON_PROJECT_NAME: ${PYWORKON_PROJECT_NAME}
+  PYWORKON_PROJECT_HOME: ${PYWORKON_PROJECT_HOME}
+windows:
+  - window_name: main 👨🏼‍💻
+    focus: true
+    panes:
+      - pyworkon workon $PYWORKON_PROJECT_ID
+  - window_name: AI 🤖
+    # setup windows manually and then run 'tmux list-windows' to get layout string
+    # layout: 3864,272x70,0,0[272x21,0,0{135x21,0,0,1,136x21,136,0,3},272x48,0,22,4]
+    panes:
+      - pyworkon workon --command claude --title PM $PYWORKON_PROJECT_ID
