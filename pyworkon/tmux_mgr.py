@@ -66,6 +66,13 @@ class TmuxManager:
             sessions.append((name, project_id or None))
         return sessions
 
+    def kill_session(self, session_name: str) -> None:
+        """Kill a tmux session."""
+        subprocess.run(
+            ["tmux", "kill-session", "-t", session_name],
+            check=True,
+        )
+
     def enter(self, project_id: str) -> None:
         """Enter a project in a tmux session."""
         project = project_manager.get(project_id=project_id)

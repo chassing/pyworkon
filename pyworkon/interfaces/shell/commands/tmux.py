@@ -41,15 +41,37 @@ def _parse_selection(selection: str) -> tuple[str, str]:
 @cli.command()
 def tmux() -> None:
     """Tmux integration for pyworkon."""
-    if not (items := _build_fzf_items()):
-        sys.exit(0)
+    while items := _build_fzf_items():
+        result = iterfzf(
+            items,
+            ansi=True,
+            exact=True,
+            multi=True,
+            __extra__=[
+                "--expect=ctrl-x",
+                "--border",
+                "--border-label= ctrl-x: kill session ",
+                "--border-label-pos=2:bottom",
+            ],
+        )
 
-    if not (selection := iterfzf(items, ansi=True, exact=True)):
-        sys.exit(0)
+        if not result:
+            sys.exit(0)
 
-    kind, value = _parse_selection(selection)
-    match kind:
-        case "session":
-            tmux_manager.attach_session(value)
-        case "project":
-            tmux_manager.enter(value)
+        key, *selections = result
+        if not selections:
+            sys.exit(0)
+
+        kind, value = _parse_selection(selections[0])
+
+        if key == "ctrl-x":
+            if kind == "session":
+                tmux_manager.kill_session(value)
+            continue
+
+        match kind:
+            case "session":
+                tmux_manager.attach_session(value)
+            case "project":
+                tmux_manager.enter(value)
+        break
