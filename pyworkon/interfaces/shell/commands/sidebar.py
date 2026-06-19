@@ -27,13 +27,14 @@ def _resolve_agent_name() -> str:
 
 
 @cli.group(invoke_without_command=True)
+@click.option("--popup", is_flag=True, help="Run in popup mode (exit after selection)")
 @click.pass_context
-def sidebar(ctx: click.Context) -> None:
+def sidebar(ctx: click.Context, *, popup: bool) -> None:
     """Sidebar TUI for pyworkon tmux sessions."""
     if ctx.invoked_subcommand is None:
         from pyworkon.sidebar.app import SidebarApp
 
-        app = SidebarApp()
+        app = SidebarApp(popup=popup)
         app.run()
 
 

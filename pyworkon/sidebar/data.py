@@ -99,6 +99,19 @@ class SessionDataCollector:
             return time.monotonic() - timestamp < _PR_CACHE_TTL
         return False
 
+    def collect_plain_sessions(self) -> list[str]:
+        """Get tmux sessions without a pyworkon project ID."""
+        return [name for name, pid in self._get_sessions() if not pid]
+
+    def collect_projects(self) -> list[Project]:
+        """Get local projects that don't have an open tmux session."""
+        session_project_ids = {pid for _, pid in self._get_sessions() if pid}
+        return [
+            p
+            for p in project_manager.list(local=True)
+            if p.id not in session_project_ids
+        ]
+
     def update_pr_cache(
         self, project_id: str, branch: str, pr_info: PRInfo | None
     ) -> None:
