@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Self
 from pyworkon.providers.models import Project
 from pyworkon.sidebar.models import PRInfo, PRState, PRStatus
 
-from .consumer import GitHubConsumer
+from . import consumer
 
 if TYPE_CHECKING:
     from .models import Repository
@@ -27,8 +27,8 @@ class GitHubApi:
     def __init__(self, name: str, api_url: str, username: str, password: str) -> None:
         """Init."""
         self._name = name
-        self._api = GitHubConsumer(base_url=api_url, auth=(username, password))
         self._username = username
+        consumer.configure(base_url=api_url, username=username, password=password)
 
     def __enter__(self) -> Self:
         return self
@@ -39,7 +39,7 @@ class GitHubApi:
         repos: list[Repository] = []
         per_page = 100
         for page in range(1, 1000):
-            repos += self._api.user_repos(page=page, per_page=per_page)
+            repos += consumer.user_repos(page=page, per_page=per_page)
             if len(repos) < page * per_page:
                 break
 
@@ -62,7 +62,7 @@ class GitHubApi:
         owner, repo = owner_repo.split("/", 1)
         head_prefix = head_owner or owner
         try:
-            pulls = self._api.repo_pulls(
+            pulls = consumer.repo_pulls(
                 owner=owner,
                 repo=repo,
                 head=f"{head_prefix}:{branch}",
@@ -85,7 +85,7 @@ class GitHubApi:
 
     def _get_check_status(self, owner: str, repo: str, sha: str) -> PRStatus:
         try:
-            combined = self._api.combined_status(owner=owner, repo=repo, ref=sha)
+            combined = consumer.combined_status(owner=owner, repo=repo, ref=sha)
             return _STATUS_MAP.get(combined.state, PRStatus.PENDING)
         except Exception:
             log.exception(

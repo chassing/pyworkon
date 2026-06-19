@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Self
 from pyworkon.providers.models import Project
 from pyworkon.sidebar.models import PRInfo, PRState, PRStatus
 
-from .consumer import GitLabConsumer
+from . import consumer
 
 if TYPE_CHECKING:
     from .models import Repository
@@ -30,9 +30,9 @@ class GitLabApi:
     def __init__(self, name: str, api_url: str, username: str, password: str) -> None:
         """Init."""
         self._name = name
-        self._api = GitLabConsumer(base_url=api_url, token=password)
         self._base_url = api_url.rstrip("/")
         self._username = username
+        consumer.configure(base_url=api_url, token=password)
 
     def __enter__(self) -> Self:
         return self
@@ -43,7 +43,7 @@ class GitLabApi:
         page = 1
         repos: list[Repository] = []
         while True:
-            repos_page = self._api.projects(membership=True, page=page)
+            repos_page = consumer.list_projects(membership=True, page=page)
             if not repos_page:
                 break
             repos += repos_page
@@ -84,7 +84,7 @@ class GitLabApi:
             "merged": PRState.MERGED,
         }
         for mr_state in ("opened", "merged", "closed"):
-            mrs = self._api.merge_requests(
+            mrs = consumer.merge_requests(
                 project_id=project_path,
                 source_branch=branch,
                 state=mr_state,

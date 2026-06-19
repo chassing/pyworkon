@@ -1,34 +1,58 @@
+import base64
 import logging
 
-import httpx
 from clientele import api as clientele_api
 
-from .models import Repository
+from .models import CombinedStatus, PullRequest, Repository
 
 log = logging.getLogger(__name__)
 
 client = clientele_api.APIClient(base_url="https://api.github.com")
 
 
-class GitHubConsumer:
-    """https://docs.github.com/en/rest"""
-
-    def __init__(self, base_url: str, auth: httpx.Auth | tuple[str, str]) -> None:
-        client.configure(
-            config=clientele_api.BaseConfig(
-                base_url=base_url,
-                auth=auth,
-                headers={"Accept": "application/vnd.github.v3+json"},
-                timeout=60.0,
-            )
+def configure(base_url: str, username: str, password: str) -> None:
+    """Configure the GitHub API client."""
+    credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+    client.configure(
+        config=clientele_api.BaseConfig(
+            base_url=base_url,
+            headers={
+                "Accept": "application/vnd.github.v3+json",
+                "Authorization": f"Basic {credentials}",
+            },
+            timeout=60.0,
         )
+    )
 
-    @client.get("/user/repos")
-    def user_repos(
-        self,
-        result: list[Repository],
-        page: int,
-        per_page: int = 100,
-    ) -> list[Repository]:
-        """Get all user repositories."""
-        return result
+
+@client.get("/user/repos")
+def user_repos(
+    result: list[Repository],
+    page: int,
+    per_page: int = 100,
+) -> list[Repository]:
+    """Get all user repositories."""
+    return result
+
+
+@client.get("/repos/{owner}/{repo}/pulls")
+def repo_pulls(
+    result: list[PullRequest],
+    owner: str,
+    repo: str,
+    head: str,
+    state: str = "open",
+) -> list[PullRequest]:
+    """Get pull requests for a repository filtered by head branch."""
+    return result
+
+
+@client.get("/repos/{owner}/{repo}/commits/{ref}/status")
+def combined_status(
+    result: CombinedStatus,
+    owner: str,
+    repo: str,
+    ref: str,
+) -> CombinedStatus:
+    """Get combined status for a commit ref."""
+    return result
