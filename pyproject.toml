@@ -22,6 +22,7 @@ dependencies = [
     "pydantic>=2.8.2",
     "pyyaml>=6.0.2",
     "rich>=13.7.1",
+    "textual>=1.0",
 ]
 requires-python = ">= 3.12"
 
@@ -64,6 +65,7 @@ module = [
     "iterfzf.*",
     "pygments.token",
     "pydantic_settings.*",
+    "textual.*",
 ]
 ignore_missing_imports = true
 

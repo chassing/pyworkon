@@ -1,5 +1,6 @@
 from pyworkon.config import Provider, ProviderType
 from pyworkon.exceptions import UnknownProviderTypeError
+from pyworkon.providers.models import ProviderApi
 
 from .github import GitHubApi
 from .gitlab import GitLabApi
@@ -10,7 +11,7 @@ PROVIDER_MAPPING: dict[ProviderType, type[GitHubApi] | type[GitLabApi]] = {
 }
 
 
-def get_provider(provider: Provider) -> GitHubApi | GitLabApi:
+def get_provider(provider: Provider) -> ProviderApi:
     try:
         return PROVIDER_MAPPING[provider.type](
             name=provider.name,

@@ -1,7 +1,7 @@
 import getpass
 import json
 import pwd
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 import yaml
@@ -24,7 +24,7 @@ user_cache_dir = Path(appdirs.user_cache_dir)
 user_cache_dir.mkdir(parents=True, exist_ok=True)
 
 
-class ProviderType(Enum):
+class ProviderType(StrEnum):
     github = "github"
     gitlab = "gitlab"
 
@@ -47,6 +47,8 @@ class Config(BaseSettings):
     providers: list[Provider] = []
     debug: bool = False
     history_file: Path = user_cache_dir / "history"
+    sidebar_width: int = 40
+    sidebar_refresh_interval: int = 5
 
     model_config = SettingsConfigDict(
         yaml_file=user_config_file,

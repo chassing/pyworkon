@@ -2,7 +2,7 @@ import logging
 
 from clientele import api as clientele_api
 
-from .models import Repository
+from .models import MergeRequest, Repository
 
 log = logging.getLogger(__name__)
 
