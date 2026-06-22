@@ -46,13 +46,14 @@ class Daemon:
         self._plain_sessions: list[str] = []
         self._last_provider_sync: float = time.monotonic()
         self._running = True
-        self._poll_tmux()
 
     async def start(self) -> None:
         """Start the daemon server."""
         SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True)
         if SOCKET_PATH.exists():
             SOCKET_PATH.unlink()
+
+        await self._poll_tmux()
 
         server = await asyncio.start_unix_server(
             self._handle_client, path=str(SOCKET_PATH)
@@ -140,7 +141,7 @@ class Daemon:
 
     async def _cmd_list_projects(self, cmd: Command) -> AsyncResponseIterator:
         local = cmd.local if cmd.local is not None else True
-        projects = await asyncio.to_thread(self._project_mgr.list, local=local)
+        projects = self._project_mgr.list(local=local)
         yield Response(
             type=ResponseType.PROJECTS,
             data={"projects": [p.model_dump() for p in projects]},
@@ -171,7 +172,7 @@ class Daemon:
         session = (
             cmd.session
             or self._find_session_for_project(cmd.project_id)
-            or self._find_session_for_pane(cmd.pane_id)
+            or await self._find_session_for_pane(cmd.pane_id)
         )
         key = f"{cmd.project_id}|{cmd.pane_id or 'default'}"
         self._open_projects[key] = OpenProject(
@@ -195,13 +196,13 @@ class Daemon:
         )
 
     @staticmethod
-    def _find_session_for_pane(pane_id: str | None) -> str | None:
+    async def _find_session_for_pane(pane_id: str | None) -> str | None:
         """Resolve tmux session name from a pane ID."""
         if not pane_id:
             return None
         from pyworkon.tmux_mgr import tmux_manager
 
-        return tmux_manager.get_pane_session(pane_id)
+        return await tmux_manager.get_pane_session(pane_id)
 
     async def _cmd_close_project(self, cmd: Command) -> AsyncResponseIterator:
         if not cmd.project_id:
@@ -222,13 +223,13 @@ class Daemon:
             yield error(f"Project not found: {cmd.project_id}")
             return
         yield progress(f"Cloning {cmd.project_id}...")
-        await asyncio.to_thread(project.clone)
+        await project.clone()
         yield ok()
 
     async def _cmd_sync_providers(self, cmd: Command) -> AsyncResponseIterator:
         for provider in config.providers:
             yield progress(f"Fetching projects from {provider.name}...")
-        await asyncio.to_thread(self._project_mgr.sync)
+        await self._project_mgr.sync()
         self._last_provider_sync = time.monotonic()
         yield ok()
 
@@ -310,18 +311,20 @@ class Daemon:
     async def _polling_loop(self) -> None:
         while self._running:
             try:
-                await asyncio.to_thread(self._poll_tmux)
-                await asyncio.to_thread(self._poll_git_branches)
-                await asyncio.to_thread(self._poll_pr_data)
+                await self._poll_tmux()
+                await asyncio.gather(
+                    self._poll_git_branches(),
+                    self._poll_pr_data(),
+                )
                 await self._maybe_sync_providers()
             except Exception:
                 log.exception("Error in polling loop")
             await asyncio.sleep(config.sidebar_refresh_interval)
 
-    def _poll_tmux(self) -> None:
+    async def _poll_tmux(self) -> None:
         from pyworkon.tmux_mgr import tmux_manager
 
-        self._tmux_sessions = tmux_manager.list_sessions_with_project_id()
+        self._tmux_sessions = await tmux_manager.list_sessions_with_project_id()
         self._plain_sessions = [name for name, pid in self._tmux_sessions if not pid]
 
         tmux_project_ids = {pid for _, pid in self._tmux_sessions if pid}
@@ -340,7 +343,7 @@ class Daemon:
             )
             log.info("Discovered tmux session: %s (%s)", session_name, pid)
 
-        active_sessions = set(tmux_manager.list_sessions())
+        active_sessions = set(await tmux_manager.list_sessions())
         stale = [
             k
             for k, v in self._open_projects.items()
@@ -355,22 +358,27 @@ class Daemon:
             log.info("Removed stale project: %s", k)
             del self._open_projects[k]
 
-    def _poll_git_branches(self) -> None:
-        for op in list(self._open_projects.values()):
+    async def _poll_git_branches(self) -> None:
+        async def _poll_one(op: OpenProject) -> None:
             with contextlib.suppress(KeyError):
                 project = self._project_mgr.get(op.project_id)
-                op.branch = project.get_current_branch()
+                op.branch = await project.get_current_branch()
 
-    def _poll_pr_data(self) -> None:
+        await asyncio.gather(*(_poll_one(op) for op in self._open_projects.values()))
+
+    async def _poll_pr_data(self) -> None:
         now = time.monotonic()
+        tasks: list[asyncio.Task[None]] = []
         for op in list(self._open_projects.values()):
             if now - op.pr_fetched_at < PR_CACHE_TTL or not op.branch:
                 continue
-            self._fetch_pr_for_project(op, now)
+            tasks.append(asyncio.create_task(self._fetch_pr_for_project(op, now)))
+        if tasks:
+            await asyncio.gather(*tasks)
 
-    def _fetch_pr_for_project(self, op: OpenProject, now: float) -> None:
+    async def _fetch_pr_for_project(self, op: OpenProject, now: float) -> None:
         project = self._project_mgr.get(op.project_id)
-        pr = project.get_pr_info(op.branch or "")
+        pr = await project.get_pr_info(op.branch or "")
         op.pr_data = pr.model_dump() if pr else None
         op.pr_fetched_at = now
         if pr:
@@ -379,7 +387,7 @@ class Daemon:
     async def _maybe_sync_providers(self) -> None:
         if time.monotonic() - self._last_provider_sync > PROVIDER_SYNC_INTERVAL:
             log.info("Auto-syncing providers...")
-            await asyncio.to_thread(self._project_mgr.sync)
+            await self._project_mgr.sync()
             self._last_provider_sync = time.monotonic()
 
     @staticmethod

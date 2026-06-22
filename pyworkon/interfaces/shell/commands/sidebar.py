@@ -1,3 +1,4 @@
+import asyncio
 import sys
 
 import click
@@ -42,12 +43,16 @@ def dashboard() -> None:
 )
 def toggle(*, no_focus: bool) -> None:
     """Toggle the sidebar pane in the current tmux window."""
-    if pane_id := tmux_manager.find_sidebar_pane():
-        tmux_manager.kill_pane(pane_id)
-        _remove_hooks()
+    asyncio.run(_toggle(no_focus=no_focus))
+
+
+async def _toggle(*, no_focus: bool) -> None:
+    if pane_id := await tmux_manager.find_sidebar_pane():
+        await tmux_manager.kill_pane(pane_id)
+        await _remove_hooks()
         return
 
-    new_pane = tmux_manager.split_window(
+    new_pane = await tmux_manager.split_window(
         cmd="pyworkon sidebar",
         width=config.sidebar_width,
         title="sidebar",
@@ -57,23 +62,27 @@ def toggle(*, no_focus: bool) -> None:
         click.echo("Failed to create sidebar pane", err=True)
         sys.exit(1)
 
-    tmux_manager.set_pane_variable(new_pane, "@pyworkon_sidebar", "1")
-    _install_hooks()
+    await tmux_manager.set_pane_variable(new_pane, "@pyworkon_sidebar", "1")
+    await _install_hooks()
 
 
-def _install_hooks() -> None:
+async def _install_hooks() -> None:
     """Install tmux hooks to auto-create sidebar in new windows."""
-    if session := tmux_manager.get_current_session():
-        tmux_manager.set_session_variable(session, "@pyworkon_sidebar_active", "1")
-        tmux_manager.set_hook(
+    if session := await tmux_manager.get_current_session():
+        await tmux_manager.set_session_variable(
+            session, "@pyworkon_sidebar_active", "1"
+        )
+        await tmux_manager.set_hook(
             session,
             "after-new-window",
             'run-shell "pyworkon sidebar toggle --no-focus"',
         )
 
 
-def _remove_hooks() -> None:
+async def _remove_hooks() -> None:
     """Remove sidebar tmux hooks."""
-    if session := tmux_manager.get_current_session():
-        tmux_manager.set_session_variable(session, "@pyworkon_sidebar_active", "0")
-        tmux_manager.unset_hook(session, "after-new-window")
+    if session := await tmux_manager.get_current_session():
+        await tmux_manager.set_session_variable(
+            session, "@pyworkon_sidebar_active", "0"
+        )
+        await tmux_manager.unset_hook(session, "after-new-window")

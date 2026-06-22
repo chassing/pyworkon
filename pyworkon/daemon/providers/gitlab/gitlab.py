@@ -34,16 +34,16 @@ class GitLabApi:
         self._username = username
         consumer.configure(base_url=api_url, token=password)
 
-    def __enter__(self) -> Self:
+    async def __aenter__(self) -> Self:
         return self
 
-    def __exit__(self, *args: object, **kwargs: Any) -> None: ...
+    async def __aexit__(self, *args: object, **kwargs: Any) -> None: ...
 
-    def projects(self) -> list[Project]:
+    async def projects(self) -> list[Project]:
         page = 1
         repos: list[Repository] = []
         while True:
-            repos_page = consumer.list_projects(membership=True, page=page)
+            repos_page = await consumer.list_projects(membership=True, page=page)
             if not repos_page:
                 break
             repos += repos_page
@@ -59,7 +59,7 @@ class GitLabApi:
             for repo in repos
         ]
 
-    def get_pr_info(
+    async def get_pr_info(
         self,
         owner_repo: str,
         branch: str,
@@ -68,19 +68,19 @@ class GitLabApi:
     ) -> PRInfo | None:
         """Get MR info for a branch (opened, closed, or merged)."""
         try:
-            return self._find_mr(owner_repo, branch)
+            return await self._find_mr(owner_repo, branch)
         except (ConnectionError, TimeoutError, OSError):
             log.debug("Failed to fetch MR for %s branch=%s", owner_repo, branch)
         return None
 
-    def _find_mr(self, project_path: str, branch: str) -> PRInfo | None:
+    async def _find_mr(self, project_path: str, branch: str) -> PRInfo | None:
         gitlab_to_state: dict[str, PRState] = {
             "opened": PRState.OPEN,
             "closed": PRState.CLOSED,
             "merged": PRState.MERGED,
         }
         for mr_state in ("opened", "merged", "closed"):
-            mrs = consumer.merge_requests(
+            mrs = await consumer.merge_requests(
                 project_id=project_path,
                 source_branch=branch,
                 state=mr_state,

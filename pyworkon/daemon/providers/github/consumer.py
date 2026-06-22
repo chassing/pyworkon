@@ -26,7 +26,7 @@ def configure(base_url: str, username: str, password: str) -> None:
 
 
 @client.get("/user/repos")
-def user_repos(
+async def user_repos(  # noqa: RUF029
     result: list[Repository],
     page: int,
     per_page: int = 100,
@@ -36,7 +36,7 @@ def user_repos(
 
 
 @client.get("/repos/{owner}/{repo}/pulls")
-def repo_pulls(
+async def repo_pulls(  # noqa: RUF029
     result: list[PullRequest],
     owner: str,
     repo: str,
@@ -48,7 +48,7 @@ def repo_pulls(
 
 
 @client.get("/repos/{owner}/{repo}/commits/{ref}/status")
-def combined_status(
+async def combined_status(  # noqa: RUF029
     result: CombinedStatus,
     owner: str,
     repo: str,

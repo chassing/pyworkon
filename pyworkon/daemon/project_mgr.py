@@ -5,7 +5,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from subprocess import CalledProcessError, run
+from subprocess import run
 from urllib.parse import urlparse
 
 from diskcache import Cache
@@ -15,6 +15,7 @@ from rich import print as rich_print
 from pyworkon.config import Provider, config
 from pyworkon.daemon.providers import get_provider
 from pyworkon.sidebar.models import PRInfo
+from pyworkon.utils import run_cmd
 
 log = logging.getLogger(__name__)
 
@@ -54,44 +55,50 @@ class Project(BaseModel):
             "PYWORKON_PROJECT_HOME": str(self.project_home),
         }
 
-    def get_current_branch(self) -> str | None:
+    async def get_current_branch(self) -> str | None:
         """Get the current git branch for this project."""
         if not self.is_local:
             return None
         with contextlib.suppress(subprocess.CalledProcessError, FileNotFoundError):
-            result = subprocess.run(
-                ["git", "-C", str(self.project_home), "branch", "--show-current"],  # noqa: S607
-                capture_output=True,
-                text=True,
-                check=True,
+            result = await run_cmd(
+                "git",
+                "-C",
+                str(self.project_home),
+                "branch",
+                "--show-current",
             )
             return result.stdout.strip() or None
         return None
 
-    def get_upstream_owner_repo(self) -> str | None:
+    async def get_upstream_owner_repo(self) -> str | None:
         """Get the upstream remote's owner/repo (for forks)."""
         if not self.is_local:
             return None
         with contextlib.suppress(subprocess.CalledProcessError, FileNotFoundError):
-            result = subprocess.run(
-                ["git", "-C", str(self.project_home), "remote", "get-url", "upstream"],  # noqa: S607
-                capture_output=True,
-                text=True,
-                check=True,
+            result = await run_cmd(
+                "git",
+                "-C",
+                str(self.project_home),
+                "remote",
+                "get-url",
+                "upstream",
             )
             url = result.stdout.strip()
             if url:
                 return _url_to_owner_repo(url)
         return None
 
-    def get_pr_info(self, branch: str) -> PRInfo | None:
+    async def get_pr_info(self, branch: str) -> PRInfo | None:
         """Get PR/MR info for the given branch using the project's provider API."""
         if not self.provider:
             return None
-        with contextlib.suppress(Exception), get_provider(self.provider) as api:
-            owner, _, _ = self.owner_repo.partition("/")
-            target = self.get_upstream_owner_repo() or self.owner_repo
-            return api.get_pr_info(target, branch, head_owner=owner)
+        try:
+            async with get_provider(self.provider) as api:
+                owner, _, _ = self.owner_repo.partition("/")
+                target = await self.get_upstream_owner_repo() or self.owner_repo
+                return await api.get_pr_info(target, branch, head_owner=owner)
+        except Exception:  # noqa: BLE001
+            log.debug("Failed to fetch PR info for %s branch=%s", self.id, branch)
         return None
 
     def enter(self, command: str | None = None, title: str | None = None) -> None:
@@ -121,7 +128,7 @@ class Project(BaseModel):
         log.debug(f"Project entry command: {entry_command}")
         run(entry_command, shell=True, check=False)
 
-    def clone(self) -> None:
+    async def clone(self) -> None:
         """Clone project."""
         if self.is_local:
             rich_print(
@@ -136,8 +143,8 @@ class Project(BaseModel):
             f"[green]Cloning repository {self.repository_url} to {self.project_home}. This may take a while ...[/]"
         )
         try:
-            run(["git", "clone", self.repository_url, self.project_home], check=True)  # noqa: S607
-        except CalledProcessError:
+            await run_cmd("git", "clone", self.repository_url, str(self.project_home))
+        except subprocess.CalledProcessError:
             rich_print(f"[b red]Cloning {self.repository_url} failed[/]")
             return
 
@@ -175,18 +182,18 @@ class ProjectManager:
                     cached.provider = self._find_provider(cached.id)
                 self._projects[cached.id] = cached
 
-    def sync(self) -> None:
+    async def sync(self) -> None:
         projects: list[Project] = []
         for provider in config.providers:
             rich_print(f"[blue]Fetching projects from provider {provider.name}...[/]")
-            with get_provider(provider) as api:
+            async with get_provider(provider) as api:
                 provider_projects = [
                     Project(
                         id=p.project_id,
                         repository_url=p.repository_url,
                         provider=provider,
                     )
-                    for p in api.projects()
+                    for p in await api.projects()
                 ]
                 rich_print(
                     f"[green]Fetched {len(provider_projects)} projects from {provider.name}[/]"
@@ -214,9 +221,9 @@ class ProjectManager:
         project = self.get(project_id=project_id)
         project.enter(command=command, title=title)
 
-    def clone(self, project_id: str) -> None:
+    async def clone(self, project_id: str) -> None:
         project = self.get(project_id=project_id)
-        project.clone()
+        await project.clone()
 
     @staticmethod
     def _url_to_project_id(url: str) -> str:

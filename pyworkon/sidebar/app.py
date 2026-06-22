@@ -340,11 +340,11 @@ class SidebarApp(App[None]):
         if not self._popup:
             self.set_interval(config.sidebar_refresh_interval, self._poll_daemon)
 
-    def on_key(self, event: Key) -> None:
+    async def on_key(self, event: Key) -> None:
         if self._dashboard:
             return
         if event.key == "ctrl+x":
-            self._do_kill_session()
+            await self._do_kill_session()
             event.prevent_default()
             return
         if event.character and event.is_printable:
@@ -522,31 +522,31 @@ class SidebarApp(App[None]):
             self._selected_index = max(old - page, 0)
             self._update_highlight(old, self._selected_index)
 
-    def action_select(self) -> None:
+    async def action_select(self) -> None:
         if not self._filtered_items:
             return
         item = self._filtered_items[self._selected_index]
         if isinstance(item, SessionInfo):
             if item.pane_id:
-                tmux_manager.select_pane(item.session_name, item.pane_id)
+                await tmux_manager.select_pane(item.session_name, item.pane_id)
             else:
-                tmux_manager.attach_session(item.session_name)
+                await tmux_manager.attach_session(item.session_name)
         elif isinstance(item, PlainSession):
-            tmux_manager.attach_session(item.name)
+            await tmux_manager.attach_session(item.name)
         elif isinstance(item, Project):
-            tmux_manager.enter(item)
+            await tmux_manager.enter(item)
         if self._popup:
             self.exit()
 
-    def _do_kill_session(self) -> None:
+    async def _do_kill_session(self) -> None:
         if not self._filtered_items:
             return
         item = self._filtered_items[self._selected_index]
         if isinstance(item, SessionInfo):
-            tmux_manager.kill_session(item.session_name)
+            await tmux_manager.kill_session(item.session_name)
             self._collector.close_project(item.project.id)
         elif isinstance(item, PlainSession):
-            tmux_manager.kill_session(item.name)
+            await tmux_manager.kill_session(item.name)
         else:
             return
         self._all_items = [i for i in self._all_items if i is not item]
