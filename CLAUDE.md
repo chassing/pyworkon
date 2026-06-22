@@ -26,7 +26,7 @@ pyworkon/
 │       ├── github/        # GitHubApi (clientele standalone functions)
 │       └── gitlab/        # GitLabApi (clientele standalone functions)
 ├── sidebar/               # Textual TUI sidebar
-│   ├── app.py             # SidebarApp, SessionRow, ProjectRow, PlainSessionRow
+│   ├── app.py             # SidebarApp, SessionRow, ProjectRow, PlainSessionRow, PRLink
 │   ├── data.py            # SessionDataCollector (reads from daemon socket)
 │   ├── models.py          # Pydantic/dataclass models (SessionInfo, PRInfo, etc.)
 │   └── icons.py           # Nerd Font icon constants
@@ -116,7 +116,11 @@ ICON_GITHUB = ""  # (nf-fa-github)
 ICON_GITHUB = ""  # (nf-fa-github)
 ```
 
-For characters outside the BMP, use `\U` with 8 hex digits: `"\U000f167a"`.
+**ONLY use single-width icons** from the BMP Private Use Area (U+E000–U+F8FF): Powerline, Devicons, Font Awesome, Codicons, etc. **NEVER use Material Design Icons** (U+F0000+, Supplementary PUA) — Nerd Fonts v3 renders them as double-width, which breaks Textual's layout calculations.
+
+### Agent Status Icons
+
+Agent status is set via CLI hooks as plain strings (`idle`, `working`, `waiting`). The sidebar maps these to colored Nerd Font icons via `_AGENT_STATUS_ICONS` in `app.py`. Unknown status values are rendered as-is.
 
 ## Key Patterns
 

@@ -100,7 +100,7 @@ For each session the sidebar displays:
 
 - 🌿 Current git branch
 - 🔀 PR/MR number with state (🟢 open / 🔴 closed / 🟣 merged) and CI status (✅ success / ❌ failure / ⏳ pending)
-- 🤖 Active AI agents (e.g. Claude Code) with status emoji
+- 🤖 Active AI agents (e.g. Claude Code) with status icons (idle/working/waiting)
 
 **⌨️ Keyboard shortcuts:** Arrow keys to navigate, Enter to select, Escape to clear filter or exit popup, Ctrl+X to kill a session, type to fuzzy-filter.
 
@@ -210,9 +210,24 @@ You can configure multiple providers of the same type (e.g., one for GitHub.com 
 
 ### 🤖 AI Agent Integration
 
-- **`agent --status <emoji>`** — Set agent status (visible in sidebar/popup/dashboard)
+- **`agent --status <status>`** — Set agent status: `idle`, `working`, `waiting` (visible in sidebar/popup/dashboard, mapped to Nerd Font icons)
 - **`agent --clear`** — Clear agent status
 - Auto-detects Claude Code sessions by matching the current working directory
+
+**Claude Code hooks** (in `~/.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"command": "pyworkon agent --status idle", "type": "command"}]}],
+    "UserPromptSubmit": [{"hooks": [{"command": "pyworkon agent --status working", "type": "command"}]}],
+    "Stop": [{"hooks": [{"command": "pyworkon agent --status idle", "type": "command"}]}],
+    "Elicitation": [{"hooks": [{"command": "pyworkon agent --status waiting", "type": "command"}]}],
+    "PermissionRequest": [{"hooks": [{"command": "pyworkon agent --status waiting", "type": "command"}]}],
+    "SessionEnd": [{"hooks": [{"command": "pyworkon agent --clear", "type": "command"}]}]
+  }
+}
+```
 
 ## ⚙️ Configuration
 
