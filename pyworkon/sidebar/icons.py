@@ -6,7 +6,7 @@ INDICATOR_CURRENT = "●"
 INDICATOR_OTHER = "○"
 
 # Git / PR detail icons
-ICON_BRANCH = ""  # (nf-pl-branch)
+ICON_BRANCH = ""  # (nf-pl-branchadfadfadfadf)
 ICON_PR = ""  # (nf-dev-git_pull_request)
 ICON_AGENT = ""  # (nf-fa-cog)
 ICON_FOLDER = ""  # (nf-fa-folder_open)
@@ -33,3 +33,9 @@ PR_CI_PENDING = "[yellow]◷[/]"
 PR_STATE_OPEN = "[green]●[/]"
 PR_STATE_CLOSED = "[red]●[/]"
 PR_STATE_MERGED = "[purple]●[/]"
+PR_STATE_DRAFT = "[dim]●[/]"
+
+# PR review icons (with Rich markup)
+PR_REVIEW_APPROVED = "[green]✓[/]"
+PR_REVIEW_CHANGES_REQUESTED = "[red]✗[/]"
+PR_REVIEW_PENDING = "[yellow]○[/]"

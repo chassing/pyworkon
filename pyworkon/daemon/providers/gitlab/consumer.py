@@ -2,7 +2,7 @@ import logging
 
 from clientele import api as clientele_api
 
-from .models import MergeRequest, Repository
+from .models import MergeRequest, MRApprovalState, Repository
 
 log = logging.getLogger(__name__)
 
@@ -42,4 +42,16 @@ async def merge_requests(  # noqa: RUF029
     state: str = "opened",
 ) -> list[MergeRequest]:
     """Get merge requests for a project filtered by source branch."""
+    return result
+
+
+@client.get(
+    "/api/v4/projects/{project_id}/merge_requests/{merge_request_iid}/approval_state"
+)
+async def mr_approval_state(  # noqa: RUF029
+    result: MRApprovalState,
+    project_id: str,
+    merge_request_iid: int,
+) -> MRApprovalState:
+    """Get approval state for a merge request."""
     return result

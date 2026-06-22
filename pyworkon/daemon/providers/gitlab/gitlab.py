@@ -2,7 +2,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Self
 
 from pyworkon.daemon.providers.models import Project
-from pyworkon.sidebar.models import PRInfo, PRState, PRStatus
+from pyworkon.sidebar.models import CICheck, PRInfo, PRReviewStatus, PRState, PRStatus
 
 from . import consumer
 
@@ -89,14 +89,46 @@ class GitLabApi:
                 continue
 
             mr = mrs[0]
+            is_draft = mr.draft or mr.work_in_progress
             status = PRStatus.NONE
+            ci_checks: list[CICheck] = []
             if mr.pipeline:
                 status = _PIPELINE_STATUS_MAP.get(mr.pipeline.status, PRStatus.PENDING)
+                pipeline_url = (
+                    f"{self._base_url}/{project_path}/-/pipelines/{mr.pipeline.id}"
+                )
+                ci_checks = [CICheck(name="Pipeline", status=status, url=pipeline_url)]
+
+            review_status = (
+                PRReviewStatus.NONE
+                if is_draft
+                else await self._get_review_status(project_path, mr.iid)
+            )
             return PRInfo(
                 number=mr.iid,
                 title=mr.title,
                 status=status,
                 state=gitlab_to_state.get(mr.state, PRState.OPEN),
                 url=f"{self._base_url}/{project_path}/-/merge_requests/{mr.iid}",
+                review_status=review_status,
+                is_draft=is_draft,
+                ci_checks=ci_checks,
             )
         return None
+
+    async def _get_review_status(
+        self, project_path: str, mr_iid: int
+    ) -> PRReviewStatus:
+        try:
+            approval = await consumer.mr_approval_state(
+                project_id=project_path, merge_request_iid=mr_iid
+            )
+        except (ConnectionError, TimeoutError, OSError):
+            log.debug("Failed to fetch approvals for %s!%d", project_path, mr_iid)
+            return PRReviewStatus.NONE
+
+        if not approval.rules:
+            return PRReviewStatus.NONE
+        if all(r.approved for r in approval.rules):
+            return PRReviewStatus.APPROVED
+        return PRReviewStatus.PENDING

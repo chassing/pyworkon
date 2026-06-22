@@ -333,10 +333,8 @@ class Daemon:
         while self._running:
             try:
                 await self._poll_tmux()
-                await asyncio.gather(
-                    self._poll_git_branches(),
-                    self._poll_pr_data(),
-                )
+                await self._poll_git_branches()
+                await self._poll_pr_data()
                 await self._maybe_sync_providers()
             except Exception:
                 log.exception("Error in polling loop")

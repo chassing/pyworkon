@@ -20,4 +20,14 @@ class MergeRequest(BaseModel):
     title: str
     source_branch: str
     state: str  # opened, closed, merged
+    draft: bool = False
+    work_in_progress: bool = False
     pipeline: MergeRequestPipeline | None = None
+
+
+class MRApprovalRule(BaseModel):
+    approved: bool
+
+
+class MRApprovalState(BaseModel):
+    rules: list[MRApprovalRule] = []

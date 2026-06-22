@@ -15,7 +15,13 @@ from pyworkon.config import ProviderType, config
 from pyworkon.daemon.project_mgr import Project
 from pyworkon.sidebar import icons
 from pyworkon.sidebar.data import SessionDataCollector
-from pyworkon.sidebar.models import PlainSession, PRState, PRStatus, SessionInfo
+from pyworkon.sidebar.models import (
+    PlainSession,
+    PRReviewStatus,
+    PRState,
+    PRStatus,
+    SessionInfo,
+)
 from pyworkon.tmux_mgr import tmux_manager
 
 _PROVIDER_ICONS: dict[ProviderType, str] = {
@@ -39,6 +45,13 @@ _PR_STATE_ICONS: dict[PRState, str] = {
     PRState.OPEN: icons.PR_STATE_OPEN,
     PRState.CLOSED: icons.PR_STATE_CLOSED,
     PRState.MERGED: icons.PR_STATE_MERGED,
+}
+
+_PR_REVIEW_ICONS: dict[PRReviewStatus, str] = {
+    PRReviewStatus.APPROVED: icons.PR_REVIEW_APPROVED,
+    PRReviewStatus.CHANGES_REQUESTED: icons.PR_REVIEW_CHANGES_REQUESTED,
+    PRReviewStatus.PENDING: icons.PR_REVIEW_PENDING,
+    PRReviewStatus.NONE: "",
 }
 
 _AGENT_STATUS_ICONS: dict[str, str] = {
@@ -125,6 +138,9 @@ class SessionRow(Widget):
     SessionRow .detail-row.--ci-failure {
         background: $error 15%;
     }
+    SessionRow .detail-row.--ci-failure-row {
+        padding-left: 7;
+    }
     SessionRow .detail-icon.--agent {
         color: ansi_bright_magenta;
     }
@@ -137,6 +153,10 @@ class SessionRow(Widget):
         color: $accent;
         text-style: underline;
     }
+    SessionRow .detail-left.--ci-check-link {
+        color: $error;
+        text-style: underline;
+    }
     SessionRow .detail-right {
         width: auto;
         color: $text;
@@ -147,9 +167,13 @@ class SessionRow(Widget):
     provider_icon_text: reactive[str] = reactive("")
     branch_text: reactive[str] = reactive("")
     branch_dirty_text: reactive[str] = reactive("")
-    pr_number_text: reactive[str] = reactive("")
-    pr_icons_text: reactive[str] = reactive("")
+    pr_title_text: reactive[str] = reactive("")
+    pr_review_text: reactive[str] = reactive("")
+    pr_link_text: reactive[str] = reactive("")
+    pr_state_text: reactive[str] = reactive("")
     pr_ci_failure: reactive[bool] = reactive(default=False)
+    pr_failed_checks: reactive[tuple[tuple[str, str], ...]] = reactive(())
+    pr_visible: reactive[bool] = reactive(default=False)
     agent_data: reactive[tuple[tuple[str, str], ...]] = reactive(())
 
     def __init__(self, session: SessionInfo, **kwargs: Any) -> None:
@@ -168,15 +192,34 @@ class SessionRow(Widget):
         self.branch_text = s.branch or ""
         self.branch_dirty_text = icons.BRANCH_DIRTY if s.is_dirty else ""
         if s.pr:
-            state_icon = _PR_STATE_ICONS.get(s.pr.state, "")
-            ci_icon = _PR_STATUS_ICONS.get(s.pr.status, "")
-            self.pr_number_text = f"#{s.pr.number}"
-            self.pr_icons_text = f"{state_icon} {ci_icon}".rstrip()
-            self.pr_ci_failure = s.pr.status == PRStatus.FAILURE
+            prefix = "\\[Draft] " if s.pr.is_draft else ""
+            self.pr_title_text = f"{prefix}{s.pr.title}"
+            self.pr_review_text = (
+                "" if s.pr.is_draft else _PR_REVIEW_ICONS.get(s.pr.review_status, "")
+            )
+            self.pr_link_text = f"{s.project.owner_repo}#{s.pr.number}"
+            failed = [
+                (c.name, c.url or "")
+                for c in s.pr.ci_checks
+                if c.status == PRStatus.FAILURE
+            ]
+            self.pr_ci_failure = bool(failed)
+            if failed:
+                self.pr_state_text = icons.PR_CI_FAILURE
+            elif s.pr.is_draft:
+                self.pr_state_text = icons.PR_STATE_DRAFT
+            else:
+                self.pr_state_text = _PR_STATE_ICONS.get(s.pr.state, "")
+            self.pr_failed_checks = tuple(failed)
+            self.pr_visible = True
         else:
-            self.pr_number_text = ""
-            self.pr_icons_text = ""
+            self.pr_title_text = ""
+            self.pr_review_text = ""
+            self.pr_link_text = ""
+            self.pr_state_text = ""
             self.pr_ci_failure = False
+            self.pr_failed_checks = ()
+            self.pr_visible = False
         self.agent_data = tuple(
             (a.name, _AGENT_STATUS_ICONS.get(a.status, a.status)) for a in s.agents
         )
@@ -214,22 +257,46 @@ class SessionRow(Widget):
         branch_row.display = bool(self.branch_text)
         yield branch_row
 
-        pr_row = Horizontal(
+        pr_title_row = Horizontal(
             Label(icons.ICON_PR, classes="detail-icon --pr"),
+            Label(self.pr_title_text, id="spr-title", classes="detail-left"),
+            Label(
+                self.pr_review_text,
+                id="spr-review",
+                classes="detail-right",
+                markup=True,
+            ),
+            id="row-pr-title",
+            classes="detail-row",
+        )
+        pr_title_row.display = self.pr_visible
+        yield pr_title_row
+
+        pr_link_row = Horizontal(
+            Label("", classes="detail-icon"),
             PRLink(
-                self.pr_number_text,
+                self.pr_link_text,
                 url=self.session.pr.url if self.session.pr else None,
-                id="spr",
+                id="spr-link",
                 classes="detail-left --pr-link",
             ),
             Label(
-                self.pr_icons_text, id="spricons", classes="detail-right", markup=True
+                self.pr_state_text,
+                id="spr-state",
+                classes="detail-right",
+                markup=True,
             ),
-            id="row-pr",
+            id="row-pr-link",
             classes="detail-row",
         )
-        pr_row.display = bool(self.pr_number_text)
-        yield pr_row
+        pr_link_row.display = self.pr_visible
+        yield pr_link_row
+
+        for name, url in self.pr_failed_checks:
+            yield Horizontal(
+                PRLink(name, url=url or None, classes="detail-left --ci-check-link"),
+                classes="detail-row --ci-failure-row",
+            )
 
         for name, status in self.agent_data:
             yield Horizontal(
@@ -260,21 +327,46 @@ class SessionRow(Widget):
         with contextlib.suppress(Exception):
             self.query_one("#sbranch-dirty", Label).update(value)
 
-    def watch_pr_number_text(self, value: str) -> None:
+    def watch_pr_title_text(self, value: str) -> None:
         with contextlib.suppress(Exception):
-            pr_link = self.query_one("#spr", PRLink)
+            self.query_one("#spr-title", Label).update(value)
+
+    def watch_pr_review_text(self, value: str) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#spr-review", Label).update(value)
+
+    def watch_pr_link_text(self, value: str) -> None:
+        with contextlib.suppress(Exception):
+            pr_link = self.query_one("#spr-link", PRLink)
             pr_link.update(value)
             pr_link.pr_url = self.session.pr.url if self.session.pr else None
-        self._toggle_row("row-pr", visible=bool(value))
 
-    def watch_pr_icons_text(self, value: str) -> None:
+    def watch_pr_state_text(self, value: str) -> None:
         with contextlib.suppress(Exception):
-            self.query_one("#spricons", Label).update(value)
+            self.query_one("#spr-state", Label).update(value)
 
     def watch_pr_ci_failure(self, value: bool) -> None:  # noqa: FBT001
         with contextlib.suppress(Exception):
-            row = self.query_one("#row-pr")
-            row.set_class(value, "--ci-failure")
+            self.query_one("#row-pr-link").set_class(value, "--ci-failure")
+
+    def watch_pr_visible(self, value: bool) -> None:  # noqa: FBT001
+        self._toggle_row("row-pr-title", visible=value)
+        self._toggle_row("row-pr-link", visible=value)
+
+    def watch_pr_failed_checks(self, value: tuple[tuple[str, str], ...]) -> None:
+        if not self.is_mounted:
+            return
+        for widget in self.query(".--ci-failure-row"):
+            widget.remove()
+        for name, url in value:
+            self.mount(
+                Horizontal(
+                    PRLink(
+                        name, url=url or None, classes="detail-left --ci-check-link"
+                    ),
+                    classes="detail-row --ci-failure-row",
+                )
+            )
 
     def watch_agent_data(self, value: tuple[tuple[str, str], ...]) -> None:
         if not self.is_mounted:

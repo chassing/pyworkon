@@ -23,12 +23,28 @@ class PRState(StrEnum):
     MERGED = "merged"
 
 
+class PRReviewStatus(StrEnum):
+    APPROVED = "approved"
+    CHANGES_REQUESTED = "changes_requested"
+    PENDING = "pending"
+    NONE = "none"
+
+
+class CICheck(BaseModel):
+    name: str
+    status: PRStatus
+    url: str | None = None
+
+
 class PRInfo(BaseModel):
     number: int
     title: str
     status: PRStatus
     state: PRState = PRState.OPEN
     url: str | None = None
+    review_status: PRReviewStatus = PRReviewStatus.NONE
+    is_draft: bool = False
+    ci_checks: list[CICheck] = []
 
 
 class AgentInfo(BaseModel):

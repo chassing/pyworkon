@@ -3,7 +3,7 @@ import logging
 
 from clientele import api as clientele_api
 
-from .models import CombinedStatus, PullRequest, Repository
+from .models import CheckRunsResponse, CombinedStatus, PullRequest, Repository, Review
 
 log = logging.getLogger(__name__)
 
@@ -55,4 +55,26 @@ async def combined_status(  # noqa: RUF029
     ref: str,
 ) -> CombinedStatus:
     """Get combined status for a commit ref."""
+    return result
+
+
+@client.get("/repos/{owner}/{repo}/commits/{ref}/check-runs")
+async def check_runs(  # noqa: RUF029
+    result: CheckRunsResponse,
+    owner: str,
+    repo: str,
+    ref: str,
+) -> CheckRunsResponse:
+    """Get check runs for a commit ref."""
+    return result
+
+
+@client.get("/repos/{owner}/{repo}/pulls/{pull_number}/reviews")
+async def pull_reviews(  # noqa: RUF029
+    result: list[Review],
+    owner: str,
+    repo: str,
+    pull_number: int,
+) -> list[Review]:
+    """Get reviews for a pull request."""
     return result
