@@ -3,13 +3,14 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from rich.table import Table
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Label, Rule
+from textual.widgets import Label, Rule, Static
 
 from pyworkon.config import config
 from pyworkon.daemon.project_mgr import Project
@@ -87,6 +88,11 @@ class SessionRow(Widget):
     SessionRow .detail-icon.--agent {
         color: ansi_bright_magenta;
     }
+    SessionRow .agent-lines {
+        padding-left: 2;
+        height: auto;
+        color: $text-muted;
+    }
     SessionRow .detail-left {
         width: 1fr;
         color: $text-muted;
@@ -106,8 +112,7 @@ class SessionRow(Widget):
     branch_text: reactive[str] = reactive("")
     pr_number_text: reactive[str] = reactive("")
     pr_icons_text: reactive[str] = reactive("")
-    agent_name_text: reactive[str] = reactive("")
-    agent_status_text: reactive[str] = reactive("")
+    agent_data: reactive[tuple[tuple[str, str], ...]] = reactive(())
 
     def __init__(self, session: SessionInfo, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -127,12 +132,7 @@ class SessionRow(Widget):
         else:
             self.pr_number_text = ""
             self.pr_icons_text = ""
-        if s.agents:
-            self.agent_name_text = ", ".join(a.name for a in s.agents)
-            self.agent_status_text = " ".join(a.status for a in s.agents if a.status)
-        else:
-            self.agent_name_text = ""
-            self.agent_status_text = ""
+        self.agent_data = tuple((a.name, a.status) for a in s.agents)
 
     def update_session(self, session: SessionInfo) -> None:
         self.session = session
@@ -169,15 +169,9 @@ class SessionRow(Widget):
         pr_row.display = bool(self.pr_number_text)
         yield pr_row
 
-        agent_row = Horizontal(
-            Label(icons.ICON_AGENT, classes="detail-icon --agent"),
-            Label(self.agent_name_text, id="sagent", classes="detail-left"),
-            Label(self.agent_status_text, id="sagentstatus", classes="detail-right"),
-            id="row-agent",
-            classes="detail-row",
-        )
-        agent_row.display = bool(self.agent_name_text)
-        yield agent_row
+        agents = Static(self._render_agents(), id="sagents", classes="agent-lines")
+        agents.display = bool(self.agent_data)
+        yield agents
 
     def _toggle_row(self, row_id: str, *, visible: bool) -> None:
         with contextlib.suppress(Exception):
@@ -201,14 +195,28 @@ class SessionRow(Widget):
         with contextlib.suppress(Exception):
             self.query_one("#spricons", Label).update(value)
 
-    def watch_agent_name_text(self, value: str) -> None:
-        with contextlib.suppress(Exception):
-            self.query_one("#sagent", Label).update(value)
-        self._toggle_row("row-agent", visible=bool(value))
+    def _render_agents(self) -> Table | str:
+        if not self.agent_data:
+            return ""
+        table = Table(
+            show_header=False,
+            show_edge=False,
+            show_lines=False,
+            box=None,
+            padding=0,
+            expand=True,
+        )
+        table.add_column(width=3, style="bright_magenta")
+        table.add_column(ratio=1)
+        table.add_column(justify="right")
+        for name, status in self.agent_data:
+            table.add_row(icons.ICON_AGENT, name, status)
+        return table
 
-    def watch_agent_status_text(self, value: str) -> None:
+    def watch_agent_data(self, value: tuple[tuple[str, str], ...]) -> None:
         with contextlib.suppress(Exception):
-            self.query_one("#sagentstatus", Label).update(value)
+            self.query_one("#sagents", Static).update(self._render_agents())
+            self.query_one("#sagents").display = bool(value)
 
 
 class ProjectRow(Widget):
