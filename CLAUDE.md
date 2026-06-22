@@ -148,6 +148,25 @@ ICON_GITHUB = ""  # (nf-fa-github)
 
 Agent status is set via CLI hooks as plain strings (`idle`, `working`, `waiting`). The TUI maps these to colored Nerd Font icons via `_AGENT_STATUS_ICONS` in `widgets/agent_list.py`. Unknown status values are rendered as-is.
 
+## Testing
+
+```bash
+uv run pytest                              # run all tests
+uv run pytest --cov=pyworkon               # with coverage
+uv run pytest tests/test_widgets.py -v     # single file
+make test                                  # via Makefile
+make ci                                    # lint + typecheck + tests
+```
+
+**Rules:**
+- ALWAYS use pytest functions, never class-based tests
+- Use `@pytest.fixture` for reusable test data and dependencies
+- Use `@pytest.mark.parametrize` for testing with different inputs
+- Keep tests focused and fast, mock I/O where needed
+- Async tests work automatically (`asyncio_mode = "auto"`)
+- Textual widget tests use `app.run_test()` pattern from `textual.testing`
+- Shared fixtures in `tests/conftest.py`: `make_session_info()`, `make_pr_info()`, `tmp_git_repo`, `project`
+
 ## Key Patterns
 
 - `contextlib.suppress(Exception)` for best-effort DOM queries in watchers

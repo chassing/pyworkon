@@ -15,7 +15,33 @@ uv run ruff check       # lint
 uv run ruff format      # format
 uv run mypy             # type check (strict)
 uv run pytest           # tests
+make ci                 # all of the above
 ```
+
+### Running Tests
+
+```bash
+uv run pytest                              # all tests
+uv run pytest --cov=pyworkon               # with coverage report
+uv run pytest tests/test_widgets.py -v     # single file, verbose
+uv run pytest -k "test_branch"             # filter by name
+```
+
+**Test structure:**
+- `tests/test_protocol.py` — daemon protocol serialization
+- `tests/test_tui_models.py` — TUI data models (PRInfo, SessionInfo, etc.)
+- `tests/test_data.py` — `parse_sidebar_state()` function
+- `tests/test_project.py` — Project git methods (uses temp git repos)
+- `tests/test_git_watcher.py` — GitWatcher lifecycle (async)
+- `tests/test_daemon.py` — Daemon state management (mocked)
+- `tests/test_widgets.py` — Textual widget rendering
+- `tests/test_apps.py` — DashboardApp/PopupApp composition
+
+**Conventions:**
+- pytest functions only, no classes
+- `@pytest.fixture` for test data, `@pytest.mark.parametrize` for variants
+- Shared fixtures in `tests/conftest.py`
+- Async tests work automatically (`asyncio_mode = "auto"` in pyproject.toml)
 
 ## Code Structure
 

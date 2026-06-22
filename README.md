@@ -14,6 +14,7 @@ $$ |      \$$$$$$$ |$$  /   \$$ |\$$$$$$  |$$ |      $$ | \$$\ \$$$$$$  |$$ |  $
 
 # PyWorkon
 
+[![CI][ci-badge]][ci-link]
 [![PyPI version][pypi-version]][pypi-link]
 [![PyPI platforms][pypi-platforms]][pypi-link]
 [![GitHub Discussion][github-discussions-badge]][github-discussions-link]
@@ -293,3 +294,5 @@ MIT
 [pypi-link]:                https://pypi.org/project/pyworkon/
 [pypi-platforms]:           https://img.shields.io/pypi/pyversions/pyworkon
 [pypi-version]:             https://badge.fury.io/py/pyworkon.svg
+[ci-badge]:                 https://github.com/chassing/pyworkon/actions/workflows/ci.yml/badge.svg
+[ci-link]:                  https://github.com/chassing/pyworkon/actions/workflows/ci.yml

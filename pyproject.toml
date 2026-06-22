@@ -40,12 +40,33 @@ pyworkon = 'pyworkon.__main__:run'
 dev = [
     # development dependencies
     "mypy",
+    "pytest-asyncio",
     "pytest-cov",
     "pytest",
     "ruff",
     "types-pyyaml",
     "types-requests",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "SLF001",   # private member access — needed to test internal state
+    "S603",     # subprocess partial path — git commands in test fixtures
+    "S607",     # partial executable path — git commands in test fixtures
+    "PLR2004",  # magic value comparison — test assertions
+    "FBT001",   # boolean positional arg — parametrize values
+    "PLC1901",  # compare to empty string — test assertions
+    "TCH003",   # typing-only stdlib import — test fixtures use Path at runtime
+    "ASYNC221", # subprocess in async — test helpers use sync git commands
+    "ASYNC220", # blocking process in async — same
+    "PLR0913",  # too many arguments — test factory functions
+    "F841",     # unused variable — unpacked tuple results
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

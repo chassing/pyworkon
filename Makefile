@@ -1,4 +1,15 @@
-PHONY: github_model
+.PHONY: test lint format typecheck ci
 
-github_model:
-	datamodel-codegen --target-python-version 3.9 --url 'https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.yaml' --snake-case-field --use-default --use-standard-collections --openapi-scopes schemas --force-optional  --set-default-enum-member --output pyworkon/providers/github/models.py
+test:
+	uv run pytest
+
+lint:
+	uv run ruff check
+
+format:
+	uv run ruff format
+
+typecheck:
+	uv run mypy pyworkon/
+
+ci: lint typecheck test
