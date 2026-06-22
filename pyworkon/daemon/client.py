@@ -157,6 +157,9 @@ class DaemonClient:
         resp = self._send_cmd(Command(cmd=CommandType.STATUS))
         return resp.data or {}
 
+    def kill_session(self, session_name: str) -> None:
+        self._send_cmd(Command(cmd=CommandType.KILL_SESSION, session=session_name))
+
     def send_notification(self, message: str, level: str = "information") -> None:
         self._send_cmd(Command(cmd=CommandType.NOTIFY, message=message, level=level))
 

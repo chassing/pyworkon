@@ -8,6 +8,7 @@ import json
 import logging
 import operator
 import os
+import subprocess
 import time
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -26,6 +27,7 @@ from pyworkon.daemon.protocol import (
     ok,
     progress,
 )
+from pyworkon.utils import run_cmd
 
 log = logging.getLogger(__name__)
 
@@ -151,6 +153,7 @@ class Daemon:
         CommandType.SHUTDOWN: "_cmd_shutdown",
         CommandType.SUBSCRIBE: "_cmd_subscribe",
         CommandType.NOTIFY: "_cmd_notify",
+        CommandType.KILL_SESSION: "_cmd_kill_session",
     }
 
     async def _dispatch(self, cmd: Command) -> AsyncResponseIterator:
@@ -258,6 +261,50 @@ class Daemon:
             if not remaining:
                 await self._git_watcher.unwatch(cmd.project_id)
         yield ok()
+
+    async def _cmd_kill_session(self, cmd: Command) -> AsyncResponseIterator:
+        if not cmd.session:
+            yield error("session required")
+            return
+        session_name = cmd.session
+
+        from pyworkon.tmux_mgr import tmux_manager
+
+        if not await self._is_pyworkon_session(session_name):
+            self._broadcast(
+                "warning",
+                f"Session '{session_name}' was not created by pyworkon",
+            )
+            yield ok()
+            return
+
+        await tmux_manager.kill_session(session_name)
+
+        removed_project_ids: list[str] = []
+        stale = [k for k, v in self._open_projects.items() if v.session == session_name]
+        for k in stale:
+            op = self._open_projects.pop(k)
+            removed_project_ids.append(op.project_id)
+            log.info("Removed project for killed session: %s (%s)", k, session_name)
+
+        for pid in set(removed_project_ids):
+            remaining = any(op.project_id == pid for op in self._open_projects.values())
+            if not remaining:
+                await self._git_watcher.unwatch(pid)
+
+        self._plain_sessions = [n for n in self._plain_sessions if n != session_name]
+        self._push_event("state", self._build_sidebar_state())
+        yield ok()
+
+    @staticmethod
+    async def _is_pyworkon_session(session_name: str) -> bool:
+        """Check if a tmux session was created by pyworkon."""
+        with contextlib.suppress(subprocess.CalledProcessError):
+            result = await run_cmd(
+                "tmux", "show-environment", "-t", session_name, "PYWORKON_PROJECT_ID"
+            )
+            return bool(result.stdout.strip())
+        return False
 
     async def _cmd_clone_project(self, cmd: Command) -> AsyncResponseIterator:
         if not cmd.project_id:

@@ -114,6 +114,16 @@ class BaseApp(App[None]):
         ):
             client.close_project(project_id)
 
+    @staticmethod
+    def _kill_session(session_name: str) -> None:
+        from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
+
+        with (
+            contextlib.suppress(DaemonNotRunningError, ConnectionError, OSError),
+            DaemonClient() as client,
+        ):
+            client.kill_session(session_name)
+
     @work(thread=True, group="daemon", exclusive=True)
     def _listen_daemon(self) -> None:
         """Subscribe to daemon events in background thread."""

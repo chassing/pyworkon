@@ -9,7 +9,6 @@ from textual.binding import Binding
 from pyworkon.interfaces.tui.base import BaseApp
 from pyworkon.interfaces.tui.models import PlainSession, SessionInfo
 from pyworkon.interfaces.tui.widgets import SessionCard, SidebarItem
-from pyworkon.tmux_mgr import tmux_manager
 
 if TYPE_CHECKING:
     from textual.events import Key
@@ -58,10 +57,9 @@ class PopupApp(BaseApp):
             return
         item = self._filtered_items[self._selected_index]
         if isinstance(item, SessionInfo):
-            await tmux_manager.kill_session(item.session_name)
-            self._close_project(item.project.id)
+            self._kill_session(item.session_name)
         elif isinstance(item, PlainSession):
-            await tmux_manager.kill_session(item.name)
+            self._kill_session(item.name)
         else:
             return
         self._all_items = [i for i in self._all_items if i is not item]

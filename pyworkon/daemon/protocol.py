@@ -22,6 +22,7 @@ class CommandType(StrEnum):
     SHUTDOWN = "shutdown"
     SUBSCRIBE = "subscribe"
     NOTIFY = "notify"
+    KILL_SESSION = "kill_session"
 
 
 class ResponseType(StrEnum):
