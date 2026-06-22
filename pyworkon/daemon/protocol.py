@@ -23,6 +23,8 @@ class CommandType(StrEnum):
     SUBSCRIBE = "subscribe"
     NOTIFY = "notify"
     KILL_SESSION = "kill_session"
+    SWITCH_SESSION = "switch_session"
+    ENTER_PROJECT = "enter_project"
 
 
 class ResponseType(StrEnum):

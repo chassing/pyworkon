@@ -11,6 +11,7 @@ from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Label, Rule
 
+from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
 from pyworkon.daemon.project_mgr import Project
 from pyworkon.interfaces.tui.data import parse_sidebar_state
 from pyworkon.interfaces.tui.models import PlainSession, SessionInfo
@@ -21,12 +22,9 @@ from pyworkon.interfaces.tui.widgets import (
     SidebarItem,
     matches_filter,
 )
-from pyworkon.tmux_mgr import tmux_manager
 
 if TYPE_CHECKING:
     from textual.widget import Widget
-
-    from pyworkon.daemon.client import DaemonClient
 
 
 class BaseApp(App[None]):
@@ -106,8 +104,6 @@ class BaseApp(App[None]):
 
     @staticmethod
     def _close_project(project_id: str) -> None:
-        from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
-
         with (
             contextlib.suppress(DaemonNotRunningError, ConnectionError, OSError),
             DaemonClient() as client,
@@ -116,19 +112,31 @@ class BaseApp(App[None]):
 
     @staticmethod
     def _kill_session(session_name: str) -> None:
-        from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
-
         with (
             contextlib.suppress(DaemonNotRunningError, ConnectionError, OSError),
             DaemonClient() as client,
         ):
             client.kill_session(session_name)
 
+    @staticmethod
+    def _switch_session(session_name: str, pane_id: str | None = None) -> None:
+        with (
+            contextlib.suppress(DaemonNotRunningError, ConnectionError, OSError),
+            DaemonClient() as client,
+        ):
+            client.switch_session(session_name, pane_id=pane_id)
+
+    @staticmethod
+    def _enter_project(project_id: str) -> None:
+        with (
+            contextlib.suppress(DaemonNotRunningError, ConnectionError, OSError),
+            DaemonClient() as client,
+        ):
+            client.enter_project(project_id)
+
     @work(thread=True, group="daemon", exclusive=True)
     def _listen_daemon(self) -> None:
         """Subscribe to daemon events in background thread."""
-        from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
-
         client = DaemonClient()
         try:
             client.connect()
@@ -307,14 +315,11 @@ class BaseApp(App[None]):
             return
         item = self._filtered_items[self._selected_index]
         if isinstance(item, SessionInfo):
-            if item.pane_id:
-                await tmux_manager.select_pane(item.session_name, item.pane_id)
-            else:
-                await tmux_manager.attach_session(item.session_name)
+            self._switch_session(item.session_name, pane_id=item.pane_id)
         elif isinstance(item, PlainSession):
-            await tmux_manager.attach_session(item.name)
+            self._switch_session(item.name)
         elif isinstance(item, Project):
-            await tmux_manager.enter(item)
+            self._enter_project(item.id)
         if self._on_select(item):
             self.exit()
 

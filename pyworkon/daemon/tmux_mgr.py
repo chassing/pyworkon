@@ -7,7 +7,7 @@ from pathlib import Path
 from pyworkon.daemon.project_mgr import Project
 from pyworkon.utils import run_cmd
 
-_DEFAULT_TMUXP_CONFIG = Path(__file__).parent / "defaults" / "tmuxp.yml"
+_DEFAULT_TMUXP_CONFIG = Path(__file__).parent.parent / "defaults" / "tmuxp.yml"
 
 
 class TmuxManager:

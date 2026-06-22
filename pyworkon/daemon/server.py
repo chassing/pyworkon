@@ -154,6 +154,8 @@ class Daemon:
         CommandType.SUBSCRIBE: "_cmd_subscribe",
         CommandType.NOTIFY: "_cmd_notify",
         CommandType.KILL_SESSION: "_cmd_kill_session",
+        CommandType.SWITCH_SESSION: "_cmd_switch_session",
+        CommandType.ENTER_PROJECT: "_cmd_enter_project",
     }
 
     async def _dispatch(self, cmd: Command) -> AsyncResponseIterator:
@@ -244,7 +246,7 @@ class Daemon:
         """Resolve tmux session name from a pane ID."""
         if not pane_id:
             return None
-        from pyworkon.tmux_mgr import tmux_manager
+        from pyworkon.daemon.tmux_mgr import tmux_manager
 
         return await tmux_manager.get_pane_session(pane_id)
 
@@ -268,7 +270,7 @@ class Daemon:
             return
         session_name = cmd.session
 
-        from pyworkon.tmux_mgr import tmux_manager
+        from pyworkon.daemon.tmux_mgr import tmux_manager
 
         if not await self._is_pyworkon_session(session_name):
             self._broadcast(
@@ -305,6 +307,34 @@ class Daemon:
             )
             return bool(result.stdout.strip())
         return False
+
+    async def _cmd_switch_session(self, cmd: Command) -> AsyncResponseIterator:
+        if not cmd.session:
+            yield error("session required")
+            return
+
+        from pyworkon.daemon.tmux_mgr import tmux_manager
+
+        if cmd.pane_id:
+            await tmux_manager.select_pane(cmd.session, cmd.pane_id)
+        else:
+            await tmux_manager.attach_session(cmd.session)
+        yield ok()
+
+    async def _cmd_enter_project(self, cmd: Command) -> AsyncResponseIterator:
+        if not cmd.project_id:
+            yield error("project_id required")
+            return
+        try:
+            project = self._project_mgr.get(cmd.project_id)
+        except KeyError:
+            yield error(f"Project not found: {cmd.project_id}")
+            return
+
+        from pyworkon.daemon.tmux_mgr import tmux_manager
+
+        await tmux_manager.enter(project)
+        yield ok()
 
     async def _cmd_clone_project(self, cmd: Command) -> AsyncResponseIterator:
         if not cmd.project_id:
@@ -448,7 +478,7 @@ class Daemon:
             await asyncio.sleep(config.sidebar_refresh_interval)
 
     async def _poll_tmux(self) -> None:
-        from pyworkon.tmux_mgr import tmux_manager
+        from pyworkon.daemon.tmux_mgr import tmux_manager
 
         self._tmux_sessions = await tmux_manager.list_sessions_with_project_id()
         self._plain_sessions = [name for name, pid in self._tmux_sessions if not pid]

@@ -179,7 +179,7 @@ async def test_kill_session_owned_session(daemon: Daemon) -> None:
             Daemon, "_is_pyworkon_session", new_callable=AsyncMock, return_value=True
         ),
         patch(
-            "pyworkon.tmux_mgr.tmux_manager.kill_session", new_callable=AsyncMock
+            "pyworkon.daemon.tmux_mgr.tmux_manager.kill_session", new_callable=AsyncMock
         ) as mock_kill,
     ):
         cmd = Command(cmd=CommandType.KILL_SESSION, session="my-session")
@@ -213,7 +213,9 @@ async def test_kill_session_preserves_git_watcher_for_remaining_project(
         patch.object(
             Daemon, "_is_pyworkon_session", new_callable=AsyncMock, return_value=True
         ),
-        patch("pyworkon.tmux_mgr.tmux_manager.kill_session", new_callable=AsyncMock),
+        patch(
+            "pyworkon.daemon.tmux_mgr.tmux_manager.kill_session", new_callable=AsyncMock
+        ),
     ):
         cmd = Command(cmd=CommandType.KILL_SESSION, session="session-a")
         await _collect_responses(daemon, cmd)
@@ -230,9 +232,67 @@ async def test_kill_session_removes_plain_session(daemon: Daemon) -> None:
         patch.object(
             Daemon, "_is_pyworkon_session", new_callable=AsyncMock, return_value=True
         ),
-        patch("pyworkon.tmux_mgr.tmux_manager.kill_session", new_callable=AsyncMock),
+        patch(
+            "pyworkon.daemon.tmux_mgr.tmux_manager.kill_session", new_callable=AsyncMock
+        ),
     ):
         cmd = Command(cmd=CommandType.KILL_SESSION, session="my-session")
         await _collect_responses(daemon, cmd)
 
     assert daemon._plain_sessions == ["scratch", "notes"]
+
+
+async def test_switch_session_missing_session(daemon: Daemon) -> None:
+    cmd = Command(cmd=CommandType.SWITCH_SESSION)
+    responses = await _collect_responses(daemon, cmd)
+    assert responses == [(ResponseType.ERROR, "session required")]
+
+
+async def test_switch_session_attach(daemon: Daemon) -> None:
+    with patch(
+        "pyworkon.daemon.tmux_mgr.tmux_manager.attach_session", new_callable=AsyncMock
+    ) as mock_attach:
+        cmd = Command(cmd=CommandType.SWITCH_SESSION, session="my-session")
+        responses = await _collect_responses(daemon, cmd)
+
+    assert responses == [(ResponseType.OK, None)]
+    mock_attach.assert_awaited_once_with("my-session")
+
+
+async def test_switch_session_select_pane(daemon: Daemon) -> None:
+    with patch(
+        "pyworkon.daemon.tmux_mgr.tmux_manager.select_pane", new_callable=AsyncMock
+    ) as mock_select:
+        cmd = Command(
+            cmd=CommandType.SWITCH_SESSION, session="my-session", pane_id="%5"
+        )
+        responses = await _collect_responses(daemon, cmd)
+
+    assert responses == [(ResponseType.OK, None)]
+    mock_select.assert_awaited_once_with("my-session", "%5")
+
+
+async def test_enter_project_missing_id(daemon: Daemon) -> None:
+    cmd = Command(cmd=CommandType.ENTER_PROJECT)
+    responses = await _collect_responses(daemon, cmd)
+    assert responses == [(ResponseType.ERROR, "project_id required")]
+
+
+async def test_enter_project_not_found(daemon: Daemon) -> None:
+    cmd = Command(cmd=CommandType.ENTER_PROJECT, project_id="github/unknown/repo")
+    responses = await _collect_responses(daemon, cmd)
+    assert responses == [(ResponseType.ERROR, "Project not found: github/unknown/repo")]
+
+
+async def test_enter_project_success(daemon: Daemon) -> None:
+    project = Project(id="github/owner/repo")
+    daemon._project_mgr.get = MagicMock(return_value=project)
+
+    with patch(
+        "pyworkon.daemon.tmux_mgr.tmux_manager.enter", new_callable=AsyncMock
+    ) as mock_enter:
+        cmd = Command(cmd=CommandType.ENTER_PROJECT, project_id="github/owner/repo")
+        responses = await _collect_responses(daemon, cmd)
+
+    assert responses == [(ResponseType.OK, None)]
+    mock_enter.assert_awaited_once_with(project)

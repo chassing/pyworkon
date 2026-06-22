@@ -160,6 +160,18 @@ class DaemonClient:
     def kill_session(self, session_name: str) -> None:
         self._send_cmd(Command(cmd=CommandType.KILL_SESSION, session=session_name))
 
+    def switch_session(self, session_name: str, pane_id: str | None = None) -> None:
+        self._send_cmd(
+            Command(
+                cmd=CommandType.SWITCH_SESSION,
+                session=session_name,
+                pane_id=pane_id,
+            )
+        )
+
+    def enter_project(self, project_id: str) -> None:
+        self._send_cmd(Command(cmd=CommandType.ENTER_PROJECT, project_id=project_id))
+
     def send_notification(self, message: str, level: str = "information") -> None:
         self._send_cmd(Command(cmd=CommandType.NOTIFY, message=message, level=level))
 

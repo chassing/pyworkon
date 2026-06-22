@@ -23,6 +23,7 @@ pyworkon/
 │   ├── models.py          # Daemon-internal dataclasses (OpenProject, AgentInfo)
 │   ├── project_mgr.py     # ProjectManager + Project model, diskcache
 │   ├── git_watcher.py     # GitWatcher — per-project file watchers (watchfiles)
+│   ├── tmux_mgr.py        # TmuxManager — tmux subprocess calls (async)
 │   └── providers/         # GitHub/GitLab API via clientele
 │       ├── github/        # GitHubApi (clientele standalone functions)
 │       └── gitlab/        # GitLabApi (clientele standalone functions)
@@ -45,7 +46,6 @@ pyworkon/
 │           ├── pr_link.py          # PRLink — clickable label → webbrowser
 │           ├── project_row.py      # ProjectRow — unattached project display
 │           └── plain_session_row.py # PlainSessionRow — plain tmux session
-├── tmux_mgr.py            # TmuxManager — tmux subprocess calls (async)
 └── utils.py               # run_cmd() — async subprocess helper
 ```
 
@@ -57,6 +57,8 @@ pyworkon/
 4. Agent status updates push immediately (no polling delay)
 5. **TUI apps** subscribe via `DaemonClient.subscribe()` in a background thread
 6. `call_from_thread()` bridges data into Textual's main thread
+
+**TUI is tmux-agnostic.** All tmux operations (session switching, creation, killing) go through daemon commands (`SWITCH_SESSION`, `ENTER_PROJECT`, `KILL_SESSION`). The TUI never imports `tmux_mgr` directly — the daemon is the single point of tmux interaction.
 
 ### Providers
 
@@ -123,6 +125,7 @@ All widget styles are defined as `DEFAULT_CSS` class variables, not in external 
 - **Event-based push** via `SUBSCRIBE` command with event categories (`state`, `notification`). Clients specify which events they want and whether to receive initial state (`full=True`). Daemon pushes `EVENT` responses whenever state changes.
 - **Git filesystem watchers** (`git_watcher.py`) using `watchfiles` — watches project root with custom filter for `.git/HEAD` (branch) and working tree files (dirty state). Branch changes detected instantly, dirty state via `git status --porcelain -uno`.
 - **Circuit breaker** (`pybreaker`) per provider via `get_provider()`. After 3 consecutive API failures, the provider is paused for 5 minutes. Manual `provider sync` resets the breaker (`force=True`).
+- **Tmux management** (`tmux_mgr.py`) lives in the daemon package. The daemon is the single owner of all tmux operations: session creation (`ENTER_PROJECT`), switching (`SWITCH_SESSION`), killing (`KILL_SESSION`), and polling. `KILL_SESSION` checks `PYWORKON_PROJECT_ID` env var to protect non-pyworkon sessions.
 
 ## CLI
 
