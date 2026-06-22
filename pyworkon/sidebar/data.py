@@ -51,6 +51,7 @@ class SessionDataCollector:
                     session_name=s.get("session_name", ""),
                     project=project,
                     branch=s.get("branch"),
+                    is_dirty=s.get("is_dirty", False),
                     pr=pr,
                     agents=agents,
                     is_current=False,

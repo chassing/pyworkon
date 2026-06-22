@@ -89,6 +89,23 @@ class Project(BaseModel):
             return ref.removeprefix("origin/") if ref else None
         return None
 
+    async def has_uncommitted_changes(self) -> bool:
+        """Check for uncommitted changes (staged + unstaged), ignoring untracked files."""
+        if not self.is_local:
+            return False
+        with contextlib.suppress(FileNotFoundError):
+            result = await run_cmd(
+                "git",
+                "-C",
+                str(self.project_home),
+                "diff",
+                "--quiet",
+                "HEAD",
+                check=False,
+            )
+            return result.returncode != 0
+        return False
+
     async def get_upstream_owner_repo(self) -> str | None:
         """Get the upstream remote's owner/repo (for forks)."""
         if not self.is_local:

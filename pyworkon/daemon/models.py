@@ -18,6 +18,7 @@ class OpenProject:
     pane_id: str | None
     session: str | None
     branch: str | None = None
+    is_dirty: bool = False
     pr_data: dict[str, Any] | None = None
     pr_fetched_at: float = 0.0
     agents: list[AgentInfo] = field(default_factory=list)

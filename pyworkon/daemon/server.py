@@ -267,6 +267,7 @@ class Daemon:
                 "session_name": op.session or project.name,
                 "project": project.model_dump(),
                 "branch": op.branch,
+                "is_dirty": op.is_dirty,
                 "pr": op.pr_data,
                 "agents": [{"name": a.name, "status": a.status} for a in op.agents],
                 "pane_id": op.pane_id,
@@ -387,6 +388,7 @@ class Daemon:
                     op.pr_data = None
                     op.pr_fetched_at = 0.0
                 op.branch = new_branch
+                op.is_dirty = await project.has_uncommitted_changes()
 
         await asyncio.gather(*(_poll_one(op) for op in self._open_projects.values()))
 

@@ -40,6 +40,7 @@ class SessionInfo(BaseModel):
     session_name: str
     project: Project
     branch: str | None = None
+    is_dirty: bool = False
     pr: PRInfo | None = None
     agents: list[AgentInfo] = []
     is_current: bool = False

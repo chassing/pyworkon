@@ -146,6 +146,7 @@ class SessionRow(Widget):
     name_text: reactive[str] = reactive("")
     provider_icon_text: reactive[str] = reactive("")
     branch_text: reactive[str] = reactive("")
+    branch_dirty_text: reactive[str] = reactive("")
     pr_number_text: reactive[str] = reactive("")
     pr_icons_text: reactive[str] = reactive("")
     pr_ci_failure: reactive[bool] = reactive(default=False)
@@ -165,6 +166,7 @@ class SessionRow(Widget):
             _PROVIDER_ICONS.get(provider_type, "") if provider_type else ""
         )
         self.branch_text = s.branch or ""
+        self.branch_dirty_text = icons.BRANCH_DIRTY if s.is_dirty else ""
         if s.pr:
             state_icon = _PR_STATE_ICONS.get(s.pr.state, "")
             ci_icon = _PR_STATUS_ICONS.get(s.pr.status, "")
@@ -200,6 +202,12 @@ class SessionRow(Widget):
         branch_row = Horizontal(
             Label(icons.ICON_BRANCH, classes="detail-icon --branch"),
             Label(self.branch_text, id="sbranch", classes="detail-left"),
+            Label(
+                self.branch_dirty_text,
+                id="sbranch-dirty",
+                classes="detail-right",
+                markup=True,
+            ),
             id="row-branch",
             classes="detail-row",
         )
@@ -247,6 +255,10 @@ class SessionRow(Widget):
         with contextlib.suppress(Exception):
             self.query_one("#sbranch", Label).update(value)
         self._toggle_row("row-branch", visible=bool(value))
+
+    def watch_branch_dirty_text(self, value: str) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#sbranch-dirty", Label).update(value)
 
     def watch_pr_number_text(self, value: str) -> None:
         with contextlib.suppress(Exception):

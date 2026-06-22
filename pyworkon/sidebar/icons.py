@@ -21,6 +21,9 @@ AGENT_IDLE = ""  #  (nf-fa-moon_o)
 AGENT_WORKING = ""  #  (nf-fa-cog)
 AGENT_WAITING = ""  #  (nf-fa-clock_o)
 
+# Branch status icons (with Rich markup)
+BRANCH_DIRTY = "[yellow][/]"  #  (nf-fa-pencil)
+
 # PR status icons (with Rich markup)
 PR_CI_SUCCESS = "[green]✓[/]"
 PR_CI_FAILURE = "[red]✗[/]"
