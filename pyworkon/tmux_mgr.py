@@ -4,7 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from pyworkon.project import Project, project_manager
+from pyworkon.daemon.project_mgr import Project
 
 _DEFAULT_TMUXP_CONFIG = Path(__file__).parent / "defaults" / "tmuxp.yml"
 
@@ -34,6 +34,26 @@ class TmuxManager:
             ["tmux", "switch-client", "-t", session_name],
             check=True,
         )
+
+    def select_pane(self, session_name: str, pane_id: str) -> None:
+        """Switch to a session and select a specific pane."""
+        self.attach_session(session_name)
+        subprocess.run(
+            ["tmux", "select-pane", "-t", pane_id],
+            check=True,
+        )
+
+    def get_pane_session(self, pane_id: str) -> str | None:
+        """Get the tmux session name that contains a pane."""
+        with contextlib.suppress(subprocess.CalledProcessError):
+            result = subprocess.run(
+                ["tmux", "display-message", "-t", pane_id, "-p", "#{session_name}"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return result.stdout.strip() or None
+        return None
 
     def create_session(self, session_name: str, project: Project) -> None:
         """Create a new detached tmux session with tmuxp layout."""
@@ -233,9 +253,8 @@ class TmuxManager:
                 agents.setdefault(session_name, []).append((agent_name, agent_status))
         return agents
 
-    def enter(self, project_id: str) -> None:
+    def enter(self, project: Project) -> None:
         """Enter a project in a tmux session."""
-        project = project_manager.get(project_id=project_id)
         session_name = project.name
 
         if session_name in self.list_sessions():

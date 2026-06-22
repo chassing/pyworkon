@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from pyworkon.project import Project
+    from pyworkon.daemon.project_mgr import Project
 
 
 class PRStatus(StrEnum):
@@ -43,6 +43,7 @@ class SessionInfo(BaseModel):
     pr: PRInfo | None = None
     agents: list[AgentInfo] = []
     is_current: bool = False
+    pane_id: str | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 

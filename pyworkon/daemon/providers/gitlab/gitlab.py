@@ -1,7 +1,7 @@
 import logging
 from typing import TYPE_CHECKING, Any, Self
 
-from pyworkon.providers.models import Project
+from pyworkon.daemon.providers.models import Project
 from pyworkon.sidebar.models import PRInfo, PRState, PRStatus
 
 from . import consumer
@@ -69,12 +69,8 @@ class GitLabApi:
         """Get MR info for a branch (opened, closed, or merged)."""
         try:
             return self._find_mr(owner_repo, branch)
-        except Exception:
-            log.exception(
-                "Failed to fetch MR for %s branch=%s",
-                owner_repo,
-                branch,
-            )
+        except (ConnectionError, TimeoutError, OSError):
+            log.debug("Failed to fetch MR for %s branch=%s", owner_repo, branch)
         return None
 
     def _find_mr(self, project_path: str, branch: str) -> PRInfo | None:

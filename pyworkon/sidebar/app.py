@@ -7,14 +7,15 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
+from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Label, Rule, Static
+from textual.widgets import Label, Rule
 
 from pyworkon.config import config
-from pyworkon.project import Project
+from pyworkon.daemon.project_mgr import Project
 from pyworkon.sidebar import icons
 from pyworkon.sidebar.data import SessionDataCollector
-from pyworkon.sidebar.models import PlainSession, PRInfo, PRState, PRStatus, SessionInfo
+from pyworkon.sidebar.models import PlainSession, PRState, PRStatus, SessionInfo
 from pyworkon.tmux_mgr import tmux_manager
 
 if TYPE_CHECKING:
@@ -33,7 +34,6 @@ _PR_STATE_ICONS: dict[PRState, str] = {
     PRState.MERGED: icons.PR_STATE_MERGED,
 }
 
-
 SidebarItem = SessionInfo | Project | PlainSession
 
 
@@ -41,28 +41,14 @@ def _matches_filter(item: SidebarItem, filter_text: str) -> bool:
     """Case-insensitive substring match on display name."""
     text = filter_text.lower()
     if isinstance(item, SessionInfo):
-        return text in item.session_name.lower()
+        return text in item.session_name.lower() or text in item.project.name.lower()
     if isinstance(item, PlainSession):
         return text in item.name.lower()
     return text in item.name.lower()
 
 
-class PRLink(Static):
-    """Clickable PR/MR number that opens the URL in the browser."""
-
-    def __init__(self, number: int, url: str | None, **kwargs: Any) -> None:
-        super().__init__(f"[underline]#{number}[/underline]", markup=True, **kwargs)
-        self._url = url
-
-    def on_click(self) -> None:
-        if self._url:
-            import webbrowser
-
-            webbrowser.open(self._url)
-
-
 class SessionRow(Widget):
-    """Displays a single session's info."""
+    """Displays a single session's info with reactive updates."""
 
     DEFAULT_CSS = """
     SessionRow {
@@ -106,15 +92,9 @@ class SessionRow(Widget):
         color: $text-muted;
         overflow: hidden;
     }
-    SessionRow PRLink {
-        width: 1fr;
+    SessionRow .detail-left.--pr-link {
         color: $accent;
-    }
-    SessionRow PRLink.--dimmed {
-        color: $text-muted;
-    }
-    SessionRow PRLink:hover {
-        color: $accent-lighten-2;
+        text-style: underline;
     }
     SessionRow .detail-right {
         width: auto;
@@ -122,55 +102,113 @@ class SessionRow(Widget):
     }
     """
 
+    name_text: reactive[str] = reactive("")
+    branch_text: reactive[str] = reactive("")
+    pr_number_text: reactive[str] = reactive("")
+    pr_icons_text: reactive[str] = reactive("")
+    agent_name_text: reactive[str] = reactive("")
+    agent_status_text: reactive[str] = reactive("")
+
     def __init__(self, session: SessionInfo, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.session = session
+        self._sync_reactive()
+
+    def _sync_reactive(self) -> None:
+        s = self.session
+        indicator = icons.INDICATOR_CURRENT if s.is_current else icons.INDICATOR_OTHER
+        self.name_text = f"{indicator} {s.project.name}"
+        self.branch_text = s.branch or ""
+        if s.pr:
+            state_icon = _PR_STATE_ICONS.get(s.pr.state, "")
+            ci_icon = _PR_STATUS_ICONS.get(s.pr.status, "")
+            self.pr_number_text = f"#{s.pr.number}"
+            self.pr_icons_text = f"{state_icon} {ci_icon}".rstrip()
+        else:
+            self.pr_number_text = ""
+            self.pr_icons_text = ""
+        if s.agents:
+            self.agent_name_text = ", ".join(a.name for a in s.agents)
+            self.agent_status_text = " ".join(a.status for a in s.agents if a.status)
+        else:
+            self.agent_name_text = ""
+            self.agent_status_text = ""
+
+    def update_session(self, session: SessionInfo) -> None:
+        self.session = session
+        if session.is_current:
+            self.add_class("--current-session")
+        else:
+            self.remove_class("--current-session")
+        self._sync_reactive()
 
     def compose(self) -> ComposeResult:
         if self.session.is_current:
             self.add_class("--current-session")
-
-        indicator = (
-            icons.INDICATOR_CURRENT
-            if self.session.is_current
-            else icons.INDICATOR_OTHER
-        )
         current_cls = "--current" if self.session.is_current else "--other"
-        yield Label(
-            f"{indicator} {self.session.project.name}",
-            classes=f"session-name {current_cls}",
+        yield Label(self.name_text, id="sname", classes=f"session-name {current_cls}")
+
+        branch_row = Horizontal(
+            Label(icons.ICON_BRANCH, classes="detail-icon --branch"),
+            Label(self.branch_text, id="sbranch", classes="detail-left"),
+            id="row-branch",
+            classes="detail-row",
         )
+        branch_row.display = bool(self.branch_text)
+        yield branch_row
 
-        if self.session.branch:
-            yield Horizontal(
-                Label(icons.ICON_BRANCH, classes="detail-icon --branch"),
-                Label(
-                    self.session.branch,
-                    classes="detail-left",
-                ),
-                classes="detail-row",
-            )
+        pr_row = Horizontal(
+            Label(icons.ICON_PR, classes="detail-icon --pr"),
+            Label(self.pr_number_text, id="spr", classes="detail-left --pr-link"),
+            Label(
+                self.pr_icons_text, id="spricons", classes="detail-right", markup=True
+            ),
+            id="row-pr",
+            classes="detail-row",
+        )
+        pr_row.display = bool(self.pr_number_text)
+        yield pr_row
 
-        if self.session.pr:
-            pr = self.session.pr
-            state_icon = _PR_STATE_ICONS.get(pr.state, "")
-            ci_icon = _PR_STATUS_ICONS.get(pr.status, "")
-            status_text = f"{state_icon} {ci_icon}".rstrip()
-            dimmed = "--dimmed" if pr.state != PRState.OPEN else ""
-            yield Horizontal(
-                Label(icons.ICON_PR, classes="detail-icon --pr"),
-                PRLink(pr.number, pr.url, classes=f"detail-left {dimmed}"),
-                Label(status_text, classes="detail-right"),
-                classes="detail-row",
-            )
+        agent_row = Horizontal(
+            Label(icons.ICON_AGENT, classes="detail-icon --agent"),
+            Label(self.agent_name_text, id="sagent", classes="detail-left"),
+            Label(self.agent_status_text, id="sagentstatus", classes="detail-right"),
+            id="row-agent",
+            classes="detail-row",
+        )
+        agent_row.display = bool(self.agent_name_text)
+        yield agent_row
 
-        for agent in self.session.agents:
-            yield Horizontal(
-                Label(icons.ICON_AGENT, classes="detail-icon --agent"),
-                Label(agent.name, classes="detail-left"),
-                Label(agent.status, classes="detail-right"),
-                classes="detail-row",
-            )
+    def _toggle_row(self, row_id: str, *, visible: bool) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one(f"#{row_id}").display = visible
+
+    def watch_name_text(self, value: str) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#sname", Label).update(value)
+
+    def watch_branch_text(self, value: str) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#sbranch", Label).update(value)
+        self._toggle_row("row-branch", visible=bool(value))
+
+    def watch_pr_number_text(self, value: str) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#spr", Label).update(value)
+        self._toggle_row("row-pr", visible=bool(value))
+
+    def watch_pr_icons_text(self, value: str) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#spricons", Label).update(value)
+
+    def watch_agent_name_text(self, value: str) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#sagent", Label).update(value)
+        self._toggle_row("row-agent", visible=bool(value))
+
+    def watch_agent_status_text(self, value: str) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#sagentstatus", Label).update(value)
 
 
 class ProjectRow(Widget):
@@ -204,14 +242,10 @@ class ProjectRow(Widget):
 
     def compose(self) -> ComposeResult:
         yield Horizontal(
-            Label(self._icon(), classes="detail-icon"),
+            Label(icons.ICON_FOLDER, classes="detail-icon"),
             Label(self.project.id, classes="detail-left"),
             classes="detail-row",
         )
-
-    @staticmethod
-    def _icon() -> str:
-        return icons.ICON_FOLDER
 
 
 class PlainSessionRow(Widget):
@@ -245,14 +279,10 @@ class PlainSessionRow(Widget):
 
     def compose(self) -> ComposeResult:
         yield Horizontal(
-            Label(self._icon(), classes="detail-icon"),
+            Label(icons.ICON_PLAIN_SESSION, classes="detail-icon"),
             Label(self.plain_session.name, classes="detail-left"),
             classes="detail-row",
         )
-
-    @staticmethod
-    def _icon() -> str:
-        return icons.ICON_PLAIN_SESSION
 
 
 class SidebarApp(App[None]):
@@ -276,11 +306,6 @@ class SidebarApp(App[None]):
         width: 1fr;
         height: 1fr;
     }
-    .section-header {
-        padding: 0 1;
-        color: $text-muted;
-        text-style: dim;
-    }
     """
 
     BINDINGS: ClassVar = [
@@ -293,7 +318,9 @@ class SidebarApp(App[None]):
         Binding("pageup", "page_up", show=False),
     ]
 
-    def __init__(self, *, popup: bool = False, **kwargs: Any) -> None:
+    def __init__(
+        self, *, popup: bool = False, dashboard: bool = False, **kwargs: Any
+    ) -> None:
         super().__init__(**kwargs)
         self._collector = SessionDataCollector()
         self._all_items: list[SidebarItem] = []
@@ -302,26 +329,32 @@ class SidebarApp(App[None]):
         self._render_generation = 0
         self._filter_text = ""
         self._popup = popup
+        self._dashboard = dashboard
 
     def compose(self) -> ComposeResult:
         yield Label("", id="filter-bar")
         yield VerticalScroll(id="item-list", can_focus=False)
 
     def on_mount(self) -> None:
-        self._refresh_data()
+        self._poll_daemon()
         if not self._popup:
-            self.set_interval(config.sidebar_refresh_interval, self._refresh_data)
+            self.set_interval(config.sidebar_refresh_interval, self._poll_daemon)
 
     def on_key(self, event: Key) -> None:
+        if self._dashboard:
+            return
         if event.key == "ctrl+x":
             self._do_kill_session()
             event.prevent_default()
-        elif event.character and event.is_printable:
+            return
+        if event.character and event.is_printable:
             self._filter_text += event.character
             self._apply_filter()
             event.prevent_default()
 
     def action_escape_key(self) -> None:
+        if self._dashboard:
+            return
         if self._filter_text:
             self._filter_text = ""
             self._apply_filter()
@@ -333,52 +366,68 @@ class SidebarApp(App[None]):
             self._filter_text = self._filter_text[:-1]
             self._apply_filter()
 
-    def _refresh_data(self) -> None:
-        """Poll tmux for session and project data."""
+    @work(thread=True, group="poll")
+    def _poll_daemon(self) -> None:
+        """Fetch data from daemon in background thread."""
         sessions = self._collector.collect()
-        for session in sessions:
-            if session.branch:
-                session.pr = self._collector.get_cached_pr(
-                    session.project.id, session.branch
-                )
-        projects = self._collector.collect_projects()
-        plain = (
-            [PlainSession(name) for name in self._collector.collect_plain_sessions()]
-            if self._popup
-            else []
-        )
-        new_items: list[SidebarItem] = [*plain, *sessions, *projects]
+        if self._dashboard:
+            new_items: list[SidebarItem] = list(sessions)
+        else:
+            projects = self._collector.collect_projects()
+            plain = (
+                [
+                    PlainSession(name)
+                    for name in self._collector.collect_plain_sessions()
+                ]
+                if self._popup
+                else []
+            )
+            new_items = [*plain, *sessions, *projects]
+        self.call_from_thread(self._apply_new_items, new_items)
 
-        if self._items_changed(new_items):
+    def _apply_new_items(self, new_items: list[SidebarItem]) -> None:
+        """Apply new items — full rebuild on structure change, reactive update otherwise."""
+        if self._structure_changed(new_items):
             self._all_items = new_items
             self._apply_filter()
-        self._fetch_pr_data()
+            return
+        self._all_items = new_items
+        self._filtered_items = (
+            list(new_items)
+            if not self._filter_text
+            else [
+                item for item in new_items if _matches_filter(item, self._filter_text)
+            ]
+        )
+        self._update_existing_rows()
 
-    def _items_changed(self, new_items: list[SidebarItem]) -> bool:
+    def _structure_changed(self, new_items: list[SidebarItem]) -> bool:
         if len(new_items) != len(self._all_items):
             return True
-        for new, old in zip(new_items, self._all_items, strict=True):
-            if type(new) is not type(old):
-                return True
-            if isinstance(new, SessionInfo) and isinstance(old, SessionInfo):
-                if (
-                    new.session_name != old.session_name
-                    or new.branch != old.branch
-                    or new.pr != old.pr
-                    or new.agents != old.agents
-                    or new.is_current != old.is_current
-                ):
-                    return True
-            elif (
-                isinstance(new, Project)
-                and isinstance(old, Project)
-                and new.id != old.id
-            ):
-                return True
-        return False
+        return any(
+            type(n) is not type(o)
+            or (
+                isinstance(n, SessionInfo)
+                and isinstance(o, SessionInfo)
+                and n.session_name != o.session_name
+            )
+            or (isinstance(n, Project) and isinstance(o, Project) and n.id != o.id)
+            or (
+                isinstance(n, PlainSession)
+                and isinstance(o, PlainSession)
+                and n.name != o.name
+            )
+            for n, o in zip(new_items, self._all_items, strict=True)
+        )
+
+    def _update_existing_rows(self) -> None:
+        gen = self._render_generation
+        for i, item in enumerate(self._filtered_items):
+            if isinstance(item, SessionInfo):
+                with contextlib.suppress(Exception):
+                    self.query_one(f"#row-{gen}-{i}", SessionRow).update_session(item)
 
     def _apply_filter(self) -> None:
-        """Filter items and re-render."""
         if self._filter_text:
             self._filtered_items = [
                 item
@@ -438,48 +487,14 @@ class SidebarApp(App[None]):
                 container.mount(widget)
                 idx += 1
 
-    @work(thread=True, group="pr-fetch")
-    def _fetch_pr_data(self) -> None:
-        """Fetch PR data in background for sessions with stale cache."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        stale = [
-            s
-            for s in self._all_items
-            if isinstance(s, SessionInfo)
-            and s.branch
-            and s.project.provider
-            and not self._collector.is_pr_fresh(s.project.id, s.branch)
-        ]
-        if not stale:
-            return
-
-        def _fetch(session: SessionInfo) -> tuple[SessionInfo, PRInfo | None]:
-            return session, session.project.get_pr_info(session.branch or "")
-
-        changed = False
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {pool.submit(_fetch, s): s for s in stale}
-            for future in as_completed(futures):
-                session, pr_info = future.result()
-                self._collector.update_pr_cache(
-                    session.project.id, session.branch or "", pr_info
-                )
-                if session.pr != pr_info:
-                    session.pr = pr_info
-                    changed = True
-        if changed:
-            self.call_from_thread(self._render_items)
-
     def _update_highlight(self, old_index: int, new_index: int) -> None:
         gen = self._render_generation
         with contextlib.suppress(Exception):
-            old_row = self.query_one(f"#row-{gen}-{old_index}")
-            old_row.remove_class("--highlight")
+            self.query_one(f"#row-{gen}-{old_index}").remove_class("--highlight")
         with contextlib.suppress(Exception):
-            new_row = self.query_one(f"#row-{gen}-{new_index}")
-            new_row.add_class("--highlight")
-            new_row.scroll_visible()
+            row = self.query_one(f"#row-{gen}-{new_index}")
+            row.add_class("--highlight")
+            row.scroll_visible()
 
     def action_move_down(self) -> None:
         if self._filtered_items:
@@ -512,11 +527,14 @@ class SidebarApp(App[None]):
             return
         item = self._filtered_items[self._selected_index]
         if isinstance(item, SessionInfo):
-            tmux_manager.attach_session(item.session_name)
+            if item.pane_id:
+                tmux_manager.select_pane(item.session_name, item.pane_id)
+            else:
+                tmux_manager.attach_session(item.session_name)
         elif isinstance(item, PlainSession):
             tmux_manager.attach_session(item.name)
         elif isinstance(item, Project):
-            tmux_manager.enter(item.id)
+            tmux_manager.enter(item)
         if self._popup:
             self.exit()
 
@@ -526,8 +544,14 @@ class SidebarApp(App[None]):
         item = self._filtered_items[self._selected_index]
         if isinstance(item, SessionInfo):
             tmux_manager.kill_session(item.session_name)
+            self._collector.close_project(item.project.id)
         elif isinstance(item, PlainSession):
             tmux_manager.kill_session(item.name)
         else:
             return
-        self._refresh_data()
+        self._all_items = [i for i in self._all_items if i is not item]
+        self._filtered_items = [i for i in self._filtered_items if i is not item]
+        self._selected_index = min(
+            self._selected_index, max(0, len(self._filtered_items) - 1)
+        )
+        self._render_items()

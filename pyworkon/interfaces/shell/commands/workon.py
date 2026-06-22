@@ -1,28 +1,39 @@
+import os
+import sys
+
 import click
 from rich import print as rich_print
 
+from pyworkon.daemon.client import require_daemon
+from pyworkon.daemon.project_mgr import Project
 from pyworkon.interfaces.shell import cli
 from pyworkon.interfaces.shell.command import PyworkonCommand
-from pyworkon.project import project_manager
 
 
 def project_completion(
     ctx: click.Context, command: PyworkonCommand, argument: click.Argument
 ) -> list[str]:
     if argument.name == "project_id":
-        return [project.id for project in project_manager.list(local=True)]
-
+        client = require_daemon()
+        try:
+            return [p["id"] for p in client.list_projects(local=True)]
+        finally:
+            client.close()
     return []
 
 
 def project_id_completion(
     ctx: click.Context, param: click.ParamType, incomplete: str
 ) -> list[str]:
-    return [
-        project.id
-        for project in project_manager.list(local=True)
-        if project.id.startswith(incomplete)
-    ]
+    client = require_daemon()
+    try:
+        return [
+            p["id"]
+            for p in client.list_projects(local=True)
+            if p["id"].startswith(incomplete)
+        ]
+    finally:
+        client.close()
 
 
 @cli.command(completion_callback=project_completion)
@@ -39,4 +50,16 @@ def workon(
         rich_print("[b red]Please provide a project ID or an URL to a repository![/]")
         return
 
-    project_manager.enter(project_id, command, title)
+    pane_id = os.environ.get("TMUX_PANE")
+    client = require_daemon()
+    try:
+        project_data = client.get_project(project_id)
+        if not project_data:
+            rich_print(f"[b red]Project not found: {project_id}[/]")
+            sys.exit(1)
+        project = Project(**project_data)
+        client.open_project(project_id, pane_id=pane_id)
+        project.enter(command, title)
+    finally:
+        client.close_project(project_id, pane_id=pane_id)
+        client.close()

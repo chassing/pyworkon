@@ -1,24 +1,31 @@
-import click
 from rich import print as rich_print
 from rich.table import Table
 
 from pyworkon.config import config
+from pyworkon.daemon.client import require_daemon
+from pyworkon.daemon.protocol import ResponseType
 from pyworkon.interfaces.shell import cli
-from pyworkon.project import project_manager
 
 
 @cli.group()
 def provider() -> None:
-    """Provider reladed commands."""
+    """Provider related commands."""
 
 
 @provider.command()
-@click.pass_context
-def sync(ctx: click.Context) -> None:
+def sync() -> None:
     """Fetch projects from configured providers and cache them locally."""
-    with ctx.obj.progress_spinner() as progress:
-        progress.add_task("Fetching projects")
-        project_manager.sync()
+    client = require_daemon()
+    try:
+        for resp in client.sync_providers():
+            if resp.type == ResponseType.PROGRESS:
+                rich_print(f"[blue]{resp.msg}[/]")
+            elif resp.type == ResponseType.ERROR:
+                rich_print(f"[red]{resp.msg}[/]")
+            elif resp.type == ResponseType.OK:
+                rich_print("[green]Done.[/]")
+    finally:
+        client.close()
 
 
 @provider.command()

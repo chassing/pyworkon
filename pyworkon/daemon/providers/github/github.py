@@ -1,7 +1,7 @@
 import logging
 from typing import TYPE_CHECKING, Any, Self
 
-from pyworkon.providers.models import Project
+from pyworkon.daemon.providers.models import Project
 from pyworkon.sidebar.models import PRInfo, PRState, PRStatus
 
 from . import consumer
@@ -79,16 +79,14 @@ class GitHubApi:
                     state=state,
                     url=f"https://github.com/{owner}/{repo}/pull/{pr.number}",
                 )
-        except Exception:
-            log.exception("Failed to fetch PR for %s branch=%s", owner_repo, branch)
+        except (ConnectionError, TimeoutError, OSError):
+            log.debug("Failed to fetch PR for %s branch=%s", owner_repo, branch)
         return None
 
     def _get_check_status(self, owner: str, repo: str, sha: str) -> PRStatus:
         try:
             combined = consumer.combined_status(owner=owner, repo=repo, ref=sha)
             return _STATUS_MAP.get(combined.state, PRStatus.PENDING)
-        except Exception:
-            log.exception(
-                "Failed to fetch check status for %s/%s ref=%s", owner, repo, sha
-            )
+        except (ConnectionError, TimeoutError, OSError):
+            log.debug("Failed to fetch check status for %s/%s ref=%s", owner, repo, sha)
         return PRStatus.NONE

@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from rich import print as rich_print
 
 from pyworkon.config import Provider, config
-from pyworkon.providers import get_provider
+from pyworkon.daemon.providers import get_provider
 from pyworkon.sidebar.models import PRInfo
 
 log = logging.getLogger(__name__)

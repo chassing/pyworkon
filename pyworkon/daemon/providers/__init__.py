@@ -1,6 +1,6 @@
 from pyworkon.config import Provider, ProviderType
+from pyworkon.daemon.providers.models import ProviderApi
 from pyworkon.exceptions import UnknownProviderTypeError
-from pyworkon.providers.models import ProviderApi
 
 from .github import GitHubApi
 from .gitlab import GitLabApi
