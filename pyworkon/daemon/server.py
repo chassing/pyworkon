@@ -1,4 +1,4 @@
-"""pyworkon daemon — fully async Unix socket server with polling."""
+"""pyworkon daemon — fully async Unix socket server with event-based push."""
 
 from __future__ import annotations
 
@@ -10,7 +10,10 @@ import operator
 import os
 import time
 from collections.abc import AsyncGenerator
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
+
+if TYPE_CHECKING:
+    from pyworkon.daemon.git_watcher import GitWatcher
 
 from pyworkon.config import config, user_cache_dir
 from pyworkon.daemon.models import AgentInfo, OpenProject
@@ -47,6 +50,7 @@ class Daemon:
         self._last_provider_sync: float = time.monotonic()
         self._running = True
         self._subscribers: dict[asyncio.StreamWriter, set[str]] = {}
+        self._git_watcher = self._create_git_watcher()
 
     async def start(self) -> None:
         """Start the daemon server."""
@@ -74,6 +78,7 @@ class Daemon:
             log.info("Shutdown requested.")
         finally:
             poll_task.cancel()
+            await self._git_watcher.stop()
             self._cleanup()
 
     async def _handle_client(
@@ -205,17 +210,23 @@ class Daemon:
             or await self._find_session_for_pane(cmd.pane_id)
         )
         key = f"{cmd.project_id}|{cmd.pane_id or 'default'}"
-        self._open_projects[key] = OpenProject(
+        op = OpenProject(
             project_id=cmd.project_id,
             pane_id=cmd.pane_id,
             session=session,
         )
+        self._open_projects[key] = op
         log.info(
             "Project opened: %s (pane=%s, session=%s)",
             cmd.project_id,
             cmd.pane_id,
             session,
         )
+        with contextlib.suppress(KeyError):
+            project = self._project_mgr.get(cmd.project_id)
+            op.branch = await project.get_current_branch()
+            op.is_dirty = await project.has_uncommitted_changes()
+            await self._git_watcher.watch(cmd.project_id, project.project_home)
         yield ok()
 
     def _find_session_for_project(self, project_id: str) -> str | None:
@@ -241,6 +252,11 @@ class Daemon:
         key = f"{cmd.project_id}|{cmd.pane_id or 'default'}"
         if self._open_projects.pop(key, None):
             log.info("Project closed: %s (pane=%s)", cmd.project_id, cmd.pane_id)
+            remaining = any(
+                op.project_id == cmd.project_id for op in self._open_projects.values()
+            )
+            if not remaining:
+                await self._git_watcher.unwatch(cmd.project_id)
         yield ok()
 
     async def _cmd_clone_project(self, cmd: Command) -> AsyncResponseIterator:
@@ -338,11 +354,45 @@ class Daemon:
             },
         )
 
+    def _create_git_watcher(self) -> GitWatcher:
+        from pyworkon.daemon.git_watcher import GitWatcher
+
+        return GitWatcher(
+            on_branch_change=self._on_branch_change,
+            on_dirty_change=self._on_dirty_change,
+        )
+
+    async def _on_branch_change(self, project_id: str) -> None:
+        """Handle a branch change detected by the file watcher."""
+        for op in self._open_projects.values():
+            if op.project_id != project_id:
+                continue
+            with contextlib.suppress(KeyError):
+                project = self._project_mgr.get(op.project_id)
+                new_branch = await project.get_current_branch()
+                if new_branch != op.branch:
+                    op.pr_data = None
+                    op.pr_fetched_at = 0.0
+                op.branch = new_branch
+                op.is_dirty = await project.has_uncommitted_changes()
+            break
+        self._push_event("state", self._build_sidebar_state())
+
+    async def _on_dirty_change(self, project_id: str) -> None:
+        """Handle a working tree change detected by the file watcher."""
+        for op in self._open_projects.values():
+            if op.project_id != project_id:
+                continue
+            with contextlib.suppress(KeyError):
+                project = self._project_mgr.get(op.project_id)
+                op.is_dirty = await project.has_uncommitted_changes()
+            break
+        self._push_event("state", self._build_sidebar_state())
+
     async def _polling_loop(self) -> None:
         while self._running:
             try:
                 await self._poll_tmux()
-                await self._poll_git_branches()
                 await self._poll_pr_data()
                 await self._maybe_sync_providers()
                 self._push_event("state", self._build_sidebar_state())
@@ -367,10 +417,14 @@ class Daemon:
                     existing.session = session_name
                 continue
             key = f"{pid}|tmux"
-            self._open_projects[key] = OpenProject(
-                project_id=pid, pane_id=None, session=session_name
-            )
+            op = OpenProject(project_id=pid, pane_id=None, session=session_name)
+            self._open_projects[key] = op
             log.info("Discovered tmux session: %s (%s)", session_name, pid)
+            with contextlib.suppress(KeyError):
+                project = self._project_mgr.get(pid)
+                op.branch = await project.get_current_branch()
+                op.is_dirty = await project.has_uncommitted_changes()
+                await self._git_watcher.watch(pid, project.project_home)
 
         active_sessions = set(await tmux_manager.list_sessions())
         stale = [
@@ -384,21 +438,9 @@ class Daemon:
             )
         ]
         for k in stale:
+            op = self._open_projects.pop(k)
             log.info("Removed stale project: %s", k)
-            del self._open_projects[k]
-
-    async def _poll_git_branches(self) -> None:
-        async def _poll_one(op: OpenProject) -> None:
-            with contextlib.suppress(KeyError):
-                project = self._project_mgr.get(op.project_id)
-                new_branch = await project.get_current_branch()
-                if new_branch != op.branch:
-                    op.pr_data = None
-                    op.pr_fetched_at = 0.0
-                op.branch = new_branch
-                op.is_dirty = await project.has_uncommitted_changes()
-
-        await asyncio.gather(*(_poll_one(op) for op in self._open_projects.values()))
+            await self._git_watcher.unwatch(op.project_id)
 
     async def _poll_pr_data(self) -> None:
         now = time.monotonic()

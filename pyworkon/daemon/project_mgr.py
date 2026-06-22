@@ -98,12 +98,12 @@ class Project(BaseModel):
                 "git",
                 "-C",
                 str(self.project_home),
-                "diff",
-                "--quiet",
-                "HEAD",
+                "status",
+                "--porcelain",
+                "-uno",
                 check=False,
             )
-            return result.returncode != 0
+            return bool(result.stdout.strip())
         return False
 
     async def get_upstream_owner_repo(self) -> str | None:
