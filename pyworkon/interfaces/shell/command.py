@@ -52,14 +52,14 @@ class PyworkonMultiCommand(click.Group):
             if any(self._command_enabled(cmd) for cmd in cmds)
         ])
 
-    def command(
+    def command(  # type: ignore[override]
         self, *args: Any, **kwargs: Any
     ) -> Callable[[Callable[..., Any]], click.Command]:
         """Handy decorator to easily add a new subcommand to this one."""
         kwargs.setdefault("cls", PyworkonCommand)
         return super().command(*args, **kwargs)
 
-    def group(
+    def group(  # type: ignore[override]
         self, *args: Any, **kwargs: Any
     ) -> Callable[[Callable[..., Any]], click.Group]:
         """Handy decorator to easily add a new sub-multicommand to this one."""

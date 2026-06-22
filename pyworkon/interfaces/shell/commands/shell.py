@@ -68,13 +68,13 @@ def shell(ctx: click.Context) -> None:
                     command_args = (
                         args[arg_index + 1 :] if (arg_index + 1) < len(args) else []
                     )
-                    if isinstance(current_command, click.MultiCommand):
+                    if isinstance(current_command, click.MultiCommand):  # type: ignore[arg-type]
                         current_multi_command = current_command
 
             if not word:
                 command_args.append("")
 
-            if isinstance(current_command, click.MultiCommand):
+            if isinstance(current_command, click.MultiCommand):  # type: ignore[arg-type]
                 # if the current command is a multi command, add it's subcommands as possible completion candidates
                 completion_candidates.update(
                     current_command.list_commands(shell_context)
