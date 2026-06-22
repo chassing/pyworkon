@@ -395,6 +395,7 @@ class SidebarApp(App[None]):
         self._poll_daemon()
         if not self._popup:
             self.set_interval(config.sidebar_refresh_interval, self._poll_daemon)
+            self._listen_notifications()
 
     async def on_key(self, event: Key) -> None:
         if self._dashboard:
@@ -421,6 +422,29 @@ class SidebarApp(App[None]):
         if self._filter_text:
             self._filter_text = self._filter_text[:-1]
             self._apply_filter()
+
+    @work(thread=True, group="notifications", exclusive=True)
+    def _listen_notifications(self) -> None:
+        """Listen for push notifications from daemon in background thread."""
+        from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
+
+        severity_map: dict[str, str] = {"warning": "warning", "error": "error"}
+        client = DaemonClient()
+        try:
+            client.connect()
+        except (DaemonNotRunningError, ConnectionError, OSError):
+            return
+        try:
+            for resp in client.subscribe_notifications():
+                data = resp.data or {}
+                level = data.get("level", "information")
+                message = data.get("message", "")
+                severity = severity_map.get(level, "information")
+                self.call_from_thread(self.notify, message, severity=severity)
+        except (ConnectionError, OSError):
+            pass
+        finally:
+            client.close()
 
     @work(thread=True, group="poll")
     def _poll_daemon(self) -> None:

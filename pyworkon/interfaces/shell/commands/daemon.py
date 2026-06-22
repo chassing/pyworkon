@@ -74,6 +74,24 @@ def status() -> None:
         sys.exit(1)
 
 
+@daemon.command()
+@click.argument("message")
+@click.option(
+    "--level",
+    type=click.Choice(["information", "warning", "error"]),
+    default="information",
+    help="Notification severity level",
+)
+def notify(message: str, level: str) -> None:
+    """Send a notification to all dashboard/sidebar subscribers."""
+    try:
+        with DaemonClient() as client:
+            client.send_notification(message, level=level)
+    except DaemonNotRunningError:
+        rich_print("[yellow]Daemon is not running.[/]")
+        sys.exit(1)
+
+
 def _is_running() -> bool:
     """Check if the daemon is running via PID file and socket."""
     if not PID_FILE.exists():

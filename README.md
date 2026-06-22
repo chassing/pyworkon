@@ -41,18 +41,6 @@ Or with pip:
 pip install pyworkon
 ```
 
-## 🔄 Workflow
-
-PyWorkon follows a provider → sync → workon cycle:
-
-1. ⚙️ **Configure providers** — Add your GitHub/GitLab accounts to the config file (see [Configuration](#-configuration))
-2. 🚀 **Start the daemon** — `pyworkon daemon start` launches a background service that manages project state
-3. 🔄 **Sync projects** — `pyworkon provider sync` fetches all your repositories from configured providers and caches them locally
-4. 👨‍💻 **Work on projects** — Use `pyworkon workon <project_id>` to enter a project, or use the sidebar/popup TUI to browse and switch
-5. 👁️ **Monitor** — The daemon continuously polls tmux sessions, git branches, and PR/MR status. The sidebar TUI shows everything in real-time.
-
-Projects are identified by their provider-prefixed path: `github/owner/repo` or `gitlab/group/project`. Local projects live under `workspace_dir` following the same directory structure (e.g., `~/workspace/github/owner/repo`).
-
 ## 🚀 Quickstart
 
 ```bash
@@ -76,6 +64,17 @@ pyworkon sidebar toggle
 ```
 
 ## ✨ Features
+
+- 🔌 **Multi-provider** — GitHub + GitLab (including self-hosted) with automatic project sync
+- 📊 **Real-time sidebar** — git branches, PR/MR status, CI results, AI agent activity
+- 🔍 **Popup project switcher** — fuzzy filter, instant session switching
+- 👻 **Async daemon** — Unix socket server, concurrent polling, zero blocking
+- 🔒 **Circuit breaker** — auto-pauses unreachable providers (VPN down), auto-recovers
+- 🔔 **Push notifications** — daemon events as Textual toast notifications
+- 🤖 **AI agent tracking** — Claude Code hook integration with per-agent status
+- 🖥️ **tmux native** — sessions, panes, tmuxp layouts, sidebar toggle per window
+
+---
 
 ### 🐚 Interactive Shell
 

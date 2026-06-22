@@ -9,7 +9,10 @@ one INFO when the provider recovers.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import pybreaker
 
@@ -19,6 +22,13 @@ FAIL_MAX = 3
 RESET_TIMEOUT = 300
 
 _breakers: dict[str, pybreaker.CircuitBreaker] = {}
+_notification_callback: Callable[[str, str], None] | None = None
+
+
+def set_notification_callback(callback: Callable[[str, str], None]) -> None:
+    """Register a callback for circuit breaker state changes (level, message)."""
+    global _notification_callback  # noqa: PLW0603
+    _notification_callback = callback
 
 
 class _LogListener(pybreaker.CircuitBreakerListener):
@@ -26,14 +36,15 @@ class _LogListener(pybreaker.CircuitBreakerListener):
         self, cb: pybreaker.CircuitBreaker, old_state: Any, new_state: Any
     ) -> None:
         if new_state.name == "open":
-            log.warning(
-                "Provider %s unreachable after %d failures, pausing for %ds",
-                cb.name,
-                FAIL_MAX,
-                cb.reset_timeout,
-            )
+            msg = f"Provider {cb.name} unreachable after {FAIL_MAX} failures, pausing for {cb.reset_timeout}s"
+            log.warning(msg)
+            if _notification_callback:
+                _notification_callback("warning", msg)
         elif old_state.name == "open":
-            log.info("Provider %s is back", cb.name)
+            msg = f"Provider {cb.name} is back"
+            log.info(msg)
+            if _notification_callback:
+                _notification_callback("information", msg)
 
 
 _listener = _LogListener()

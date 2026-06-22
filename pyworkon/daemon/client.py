@@ -157,8 +157,30 @@ class DaemonClient:
         resp = self._send_cmd(Command(cmd=CommandType.STATUS))
         return resp.data or {}
 
+    def send_notification(self, message: str, level: str = "information") -> None:
+        self._send_cmd(Command(cmd=CommandType.NOTIFY, message=message, level=level))
+
     def shutdown(self) -> None:
         self._send_cmd(Command(cmd=CommandType.SHUTDOWN))
+
+    def subscribe_notifications(self) -> Iterator[Response]:
+        """Subscribe to push notifications. Blocks indefinitely, yields NOTIFICATION responses."""
+        if not self._sock:
+            raise DaemonNotRunningError
+        self._sock.sendall(
+            Command(cmd=CommandType.SUBSCRIBE).model_dump_json().encode() + b"\n"
+        )
+        buf = b""
+        while True:
+            chunk = self._sock.recv(4096)
+            if not chunk:
+                return
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                resp = Response(**json.loads(line))
+                if resp.type == ResponseType.NOTIFICATION:
+                    yield resp
 
 
 def require_daemon() -> DaemonClient:

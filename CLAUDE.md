@@ -96,6 +96,7 @@ All widget styles are defined as `DEFAULT_CSS` class variables, not in external 
 - Daemon-internal state uses `dataclasses` (`models.py`), not pydantic
 - All subprocess calls go through `utils.run_cmd()` (async wrapper around `asyncio.create_subprocess_exec`)
 - **Circuit breaker** (`pybreaker`) per provider via `get_provider()`. After 3 consecutive API failures, the provider is paused for 5 minutes (one WARNING logged). On recovery, one INFO logged. Manual `provider sync` resets the breaker (`force=True`). Config: `providers/circuit_breaker.py`.
+- **Push notifications** via `SUBSCRIBE` command. Sidebar/dashboard opens a dedicated second socket connection, daemon pushes `NOTIFICATION` responses for circuit breaker events, sync results, and manual `daemon notify` messages. Circuit breaker integration via `set_notification_callback()` in `circuit_breaker.py`. Client: `subscribe_notifications()` (blocking iterator). App: `_listen_notifications()` worker → `self.notify()` toasts.
 
 ## CLI
 

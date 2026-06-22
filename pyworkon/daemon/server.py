@@ -46,9 +46,14 @@ class Daemon:
         self._plain_sessions: list[str] = []
         self._last_provider_sync: float = time.monotonic()
         self._running = True
+        self._subscribers: set[asyncio.StreamWriter] = set()
 
     async def start(self) -> None:
         """Start the daemon server."""
+        from pyworkon.daemon.providers.circuit_breaker import set_notification_callback
+
+        set_notification_callback(self._broadcast)
+
         SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True)
         if SOCKET_PATH.exists():
             SOCKET_PATH.unlink()
@@ -82,6 +87,7 @@ class Daemon:
         except SystemExit:
             raise
         finally:
+            self._subscribers.discard(writer)
             log.debug("Client disconnected")
             with contextlib.suppress(Exception):
                 writer.close()
@@ -113,6 +119,11 @@ class Daemon:
             if cmd.cmd == CommandType.SHUTDOWN:
                 self._running = False
                 raise SystemExit
+            if cmd.cmd == CommandType.SUBSCRIBE:
+                self._subscribers.add(writer)
+                log.debug(
+                    "Notification subscriber added (%d total)", len(self._subscribers)
+                )
 
     _HANDLERS: ClassVar[dict[CommandType, str]] = {
         CommandType.LIST_PROJECTS: "_cmd_list_projects",
@@ -126,6 +137,8 @@ class Daemon:
         CommandType.AGENT_CLEAR: "_cmd_agent_clear",
         CommandType.STATUS: "_cmd_status",
         CommandType.SHUTDOWN: "_cmd_shutdown",
+        CommandType.SUBSCRIBE: "_cmd_subscribe",
+        CommandType.NOTIFY: "_cmd_notify",
     }
 
     async def _dispatch(self, cmd: Command) -> AsyncResponseIterator:
@@ -137,6 +150,16 @@ class Daemon:
         yield error(f"Unknown command: {cmd.cmd}")
 
     async def _cmd_shutdown(self, cmd: Command) -> AsyncResponseIterator:
+        yield ok()
+
+    async def _cmd_subscribe(self, cmd: Command) -> AsyncResponseIterator:
+        yield ok()
+
+    async def _cmd_notify(self, cmd: Command) -> AsyncResponseIterator:
+        if not cmd.message:
+            yield error("message required")
+            return
+        self._broadcast(cmd.level or "information", cmd.message)
         yield ok()
 
     async def _cmd_list_projects(self, cmd: Command) -> AsyncResponseIterator:
@@ -386,6 +409,25 @@ class Daemon:
             log.info("Auto-syncing providers...")
             await self._project_mgr.sync()
             self._last_provider_sync = time.monotonic()
+
+    def _broadcast(self, level: str, message: str) -> None:
+        """Push a notification to all subscribers (sync-safe, buffers only)."""
+        if not self._subscribers:
+            return
+        data = (
+            Response(
+                type=ResponseType.NOTIFICATION,
+                data={"level": level, "message": message},
+            )
+            .model_dump_json()
+            .encode()
+            + b"\n"
+        )
+        for writer in list(self._subscribers):
+            try:
+                writer.write(data)
+            except Exception:  # noqa: BLE001
+                self._subscribers.discard(writer)
 
     @staticmethod
     async def _send(writer: asyncio.StreamWriter, response: Response) -> None:

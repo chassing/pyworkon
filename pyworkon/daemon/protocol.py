@@ -20,6 +20,8 @@ class CommandType(StrEnum):
     AGENT_CLEAR = "agent_clear"
     STATUS = "status"
     SHUTDOWN = "shutdown"
+    SUBSCRIBE = "subscribe"
+    NOTIFY = "notify"
 
 
 class ResponseType(StrEnum):
@@ -30,6 +32,7 @@ class ResponseType(StrEnum):
     OK = "ok"
     ERROR = "error"
     STATUS = "status"
+    NOTIFICATION = "notification"
 
 
 class Command(BaseModel):
@@ -43,6 +46,8 @@ class Command(BaseModel):
     window: str | None = None
     name: str | None = None
     status: str | None = None
+    message: str | None = None
+    level: str | None = None
 
 
 class Response(BaseModel):
