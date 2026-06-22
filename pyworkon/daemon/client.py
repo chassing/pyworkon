@@ -164,7 +164,10 @@ class DaemonClient:
         self._send_cmd(Command(cmd=CommandType.SHUTDOWN))
 
     def subscribe_notifications(self) -> Iterator[Response]:
-        """Subscribe to push notifications. Blocks indefinitely, yields NOTIFICATION responses."""
+        """Subscribe to push notifications. Blocks indefinitely, yields NOTIFICATION responses.
+
+        To interrupt cleanly, close the client from another thread.
+        """
         if not self._sock:
             raise DaemonNotRunningError
         self._sock.sendall(

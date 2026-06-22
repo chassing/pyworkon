@@ -382,7 +382,11 @@ class Daemon:
         async def _poll_one(op: OpenProject) -> None:
             with contextlib.suppress(KeyError):
                 project = self._project_mgr.get(op.project_id)
-                op.branch = await project.get_current_branch()
+                new_branch = await project.get_current_branch()
+                if new_branch != op.branch:
+                    op.pr_data = None
+                    op.pr_fetched_at = 0.0
+                op.branch = new_branch
 
         await asyncio.gather(*(_poll_one(op) for op in self._open_projects.values()))
 

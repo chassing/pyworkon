@@ -8,13 +8,18 @@ INDICATOR_OTHER = "○"
 # Git / PR detail icons
 ICON_BRANCH = ""  # (nf-pl-branch)
 ICON_PR = ""  # (nf-dev-git_pull_request)
-ICON_AGENT = "\U000f167a"  # 󱙺 (nf-md-robot_outline)
+ICON_AGENT = ""  # (nf-fa-cog)
 ICON_FOLDER = ""  # (nf-fa-folder_open)
 ICON_PLAIN_SESSION = "▸"  # ▸
 
 # Provider icons
 ICON_GITHUB = ""  # (nf-fa-github)
 ICON_GITLAB = ""  # (nf-fa-gitlab)
+
+# Agent status icons (single-width Nerd Font)
+AGENT_IDLE = ""  #  (nf-fa-moon_o)
+AGENT_WORKING = ""  #  (nf-fa-cog)
+AGENT_WAITING = ""  #  (nf-fa-clock_o)
 
 # PR status icons (with Rich markup)
 PR_CI_SUCCESS = "[green]✓[/]"

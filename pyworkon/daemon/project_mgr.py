@@ -72,6 +72,23 @@ class Project(BaseModel):
             return result.stdout.strip() or None
         return None
 
+    async def get_default_branch(self) -> str | None:
+        """Get the default branch (e.g. main, master) from origin."""
+        if not self.is_local:
+            return None
+        with contextlib.suppress(subprocess.CalledProcessError, FileNotFoundError):
+            result = await run_cmd(
+                "git",
+                "-C",
+                str(self.project_home),
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "--short",
+            )
+            ref = result.stdout.strip()
+            return ref.removeprefix("origin/") if ref else None
+        return None
+
     async def get_upstream_owner_repo(self) -> str | None:
         """Get the upstream remote's owner/repo (for forks)."""
         if not self.is_local:
@@ -93,6 +110,8 @@ class Project(BaseModel):
     async def get_pr_info(self, branch: str) -> PRInfo | None:
         """Get PR/MR info for the given branch using the project's provider API."""
         if not self.provider:
+            return None
+        if branch == await self.get_default_branch():
             return None
         try:
             async with get_provider(self.provider) as api:

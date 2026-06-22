@@ -3,14 +3,13 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from rich.table import Table
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Footer, Label, Rule, Static
+from textual.widgets import Footer, Label, Rule
 
 from pyworkon.config import ProviderType, config
 from pyworkon.daemon.project_mgr import Project
@@ -27,6 +26,8 @@ _PROVIDER_ICONS: dict[ProviderType, str] = {
 if TYPE_CHECKING:
     from textual.events import Key
 
+    from pyworkon.daemon.client import DaemonClient
+
 _PR_STATUS_ICONS: dict[PRStatus, str] = {
     PRStatus.SUCCESS: icons.PR_CI_SUCCESS,
     PRStatus.FAILURE: icons.PR_CI_FAILURE,
@@ -40,7 +41,30 @@ _PR_STATE_ICONS: dict[PRState, str] = {
     PRState.MERGED: icons.PR_STATE_MERGED,
 }
 
+_AGENT_STATUS_ICONS: dict[str, str] = {
+    "idle": f"[dim]{icons.AGENT_IDLE}[/]",
+    "working": f"[green]{icons.AGENT_WORKING}[/]",
+    "waiting": f"[yellow]{icons.AGENT_WAITING}[/]",
+}
+
 SidebarItem = SessionInfo | Project | PlainSession
+
+
+class PRLink(Label):
+    """Clickable PR/MR number that opens the URL in the browser."""
+
+    def __init__(
+        self, text: str = "", *, url: str | None = None, **kwargs: Any
+    ) -> None:
+        super().__init__(text, **kwargs)
+        self.pr_url = url
+
+    def on_click(self) -> None:
+        """Open the PR/MR URL in the default browser."""
+        if self.pr_url:
+            import webbrowser
+
+            webbrowser.open(self.pr_url)
 
 
 def _matches_filter(item: SidebarItem, filter_text: str) -> bool:
@@ -104,11 +128,6 @@ class SessionRow(Widget):
     SessionRow .detail-icon.--agent {
         color: ansi_bright_magenta;
     }
-    SessionRow .agent-lines {
-        padding-left: 2;
-        height: auto;
-        color: $text-muted;
-    }
     SessionRow .detail-left {
         width: 1fr;
         color: $text-muted;
@@ -156,7 +175,9 @@ class SessionRow(Widget):
             self.pr_number_text = ""
             self.pr_icons_text = ""
             self.pr_ci_failure = False
-        self.agent_data = tuple((a.name, a.status) for a in s.agents)
+        self.agent_data = tuple(
+            (a.name, _AGENT_STATUS_ICONS.get(a.status, a.status)) for a in s.agents
+        )
 
     def update_session(self, session: SessionInfo) -> None:
         self.session = session
@@ -187,7 +208,12 @@ class SessionRow(Widget):
 
         pr_row = Horizontal(
             Label(icons.ICON_PR, classes="detail-icon --pr"),
-            Label(self.pr_number_text, id="spr", classes="detail-left --pr-link"),
+            PRLink(
+                self.pr_number_text,
+                url=self.session.pr.url if self.session.pr else None,
+                id="spr",
+                classes="detail-left --pr-link",
+            ),
             Label(
                 self.pr_icons_text, id="spricons", classes="detail-right", markup=True
             ),
@@ -197,9 +223,13 @@ class SessionRow(Widget):
         pr_row.display = bool(self.pr_number_text)
         yield pr_row
 
-        agents = Static(self._render_agents(), id="sagents", classes="agent-lines")
-        agents.display = bool(self.agent_data)
-        yield agents
+        for name, status in self.agent_data:
+            yield Horizontal(
+                Label(icons.ICON_AGENT, classes="detail-icon --agent"),
+                Label(name, classes="detail-left"),
+                Label(status, classes="detail-right", markup=True),
+                classes="detail-row --agent-row",
+            )
 
     def _toggle_row(self, row_id: str, *, visible: bool) -> None:
         with contextlib.suppress(Exception):
@@ -220,7 +250,9 @@ class SessionRow(Widget):
 
     def watch_pr_number_text(self, value: str) -> None:
         with contextlib.suppress(Exception):
-            self.query_one("#spr", Label).update(value)
+            pr_link = self.query_one("#spr", PRLink)
+            pr_link.update(value)
+            pr_link.pr_url = self.session.pr.url if self.session.pr else None
         self._toggle_row("row-pr", visible=bool(value))
 
     def watch_pr_icons_text(self, value: str) -> None:
@@ -232,28 +264,20 @@ class SessionRow(Widget):
             row = self.query_one("#row-pr")
             row.set_class(value, "--ci-failure")
 
-    def _render_agents(self) -> Table | str:
-        if not self.agent_data:
-            return ""
-        table = Table(
-            show_header=False,
-            show_edge=False,
-            show_lines=False,
-            box=None,
-            padding=0,
-            expand=True,
-        )
-        table.add_column(width=3, style="bright_magenta")
-        table.add_column(ratio=1)
-        table.add_column(justify="right")
-        for name, status in self.agent_data:
-            table.add_row(icons.ICON_AGENT, name, status)
-        return table
-
     def watch_agent_data(self, value: tuple[tuple[str, str], ...]) -> None:
-        with contextlib.suppress(Exception):
-            self.query_one("#sagents", Static).update(self._render_agents())
-            self.query_one("#sagents").display = bool(value)
+        if not self.is_mounted:
+            return
+        for widget in self.query(".--agent-row"):
+            widget.remove()
+        for name, status in value:
+            self.mount(
+                Horizontal(
+                    Label(icons.ICON_AGENT, classes="detail-icon --agent"),
+                    Label(name, classes="detail-left"),
+                    Label(status, classes="detail-right"),
+                    classes="detail-row --agent-row",
+                )
+            )
 
 
 class ProjectRow(Widget):
@@ -384,6 +408,7 @@ class SidebarApp(App[None]):
         self._filter_text = ""
         self._popup = popup
         self._dashboard = dashboard
+        self._notification_client: DaemonClient | None = None
 
     def compose(self) -> ComposeResult:
         yield Label("", id="filter-bar")
@@ -423,6 +448,10 @@ class SidebarApp(App[None]):
             self._filter_text = self._filter_text[:-1]
             self._apply_filter()
 
+    def on_unmount(self) -> None:
+        if self._notification_client:
+            self._notification_client.close()
+
     @work(thread=True, group="notifications", exclusive=True)
     def _listen_notifications(self) -> None:
         """Listen for push notifications from daemon in background thread."""
@@ -434,17 +463,26 @@ class SidebarApp(App[None]):
             client.connect()
         except (DaemonNotRunningError, ConnectionError, OSError):
             return
+        self._notification_client = client
         try:
-            for resp in client.subscribe_notifications():
-                data = resp.data or {}
-                level = data.get("level", "information")
-                message = data.get("message", "")
-                severity = severity_map.get(level, "information")
-                self.call_from_thread(self.notify, message, severity=severity)
+            self._consume_notifications(client, severity_map)
         except (ConnectionError, OSError):
             pass
         finally:
+            self._notification_client = None
             client.close()
+
+    def _consume_notifications(
+        self,
+        client: DaemonClient,
+        severity_map: dict[str, str],
+    ) -> None:
+        for resp in client.subscribe_notifications():
+            data = resp.data or {}
+            level = data.get("level", "information")
+            message = data.get("message", "")
+            severity = severity_map.get(level, "information")
+            self.call_from_thread(self.notify, message, severity=severity)
 
     @work(thread=True, group="poll")
     def _poll_daemon(self) -> None:
