@@ -32,7 +32,7 @@ class ResponseType(StrEnum):
     OK = "ok"
     ERROR = "error"
     STATUS = "status"
-    NOTIFICATION = "notification"
+    EVENT = "event"
 
 
 class Command(BaseModel):
@@ -48,12 +48,15 @@ class Command(BaseModel):
     status: str | None = None
     message: str | None = None
     level: str | None = None
+    events: list[str] | None = None
+    full: bool | None = None
 
 
 class Response(BaseModel):
     """Daemon → Client message."""
 
     type: ResponseType
+    event: str | None = None
     data: dict[str, Any] | None = None
     msg: str | None = None
 

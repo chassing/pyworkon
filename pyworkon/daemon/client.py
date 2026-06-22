@@ -163,16 +163,15 @@ class DaemonClient:
     def shutdown(self) -> None:
         self._send_cmd(Command(cmd=CommandType.SHUTDOWN))
 
-    def subscribe_notifications(self) -> Iterator[Response]:
-        """Subscribe to push notifications. Blocks indefinitely, yields NOTIFICATION responses.
+    def subscribe(self, events: list[str], *, full: bool = True) -> Iterator[Response]:
+        """Subscribe to daemon events. Blocks indefinitely, yields EVENT responses.
 
         To interrupt cleanly, close the client from another thread.
         """
         if not self._sock:
             raise DaemonNotRunningError
-        self._sock.sendall(
-            Command(cmd=CommandType.SUBSCRIBE).model_dump_json().encode() + b"\n"
-        )
+        cmd = Command(cmd=CommandType.SUBSCRIBE, events=events, full=full)
+        self._sock.sendall(cmd.model_dump_json().encode() + b"\n")
         buf = b""
         while True:
             chunk = self._sock.recv(4096)
@@ -182,7 +181,7 @@ class DaemonClient:
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
                 resp = Response(**json.loads(line))
-                if resp.type == ResponseType.NOTIFICATION:
+                if resp.type == ResponseType.EVENT:
                     yield resp
 
 

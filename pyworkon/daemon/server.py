@@ -10,7 +10,7 @@ import operator
 import os
 import time
 from collections.abc import AsyncGenerator
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pyworkon.config import config, user_cache_dir
 from pyworkon.daemon.models import AgentInfo, OpenProject
@@ -46,7 +46,7 @@ class Daemon:
         self._plain_sessions: list[str] = []
         self._last_provider_sync: float = time.monotonic()
         self._running = True
-        self._subscribers: set[asyncio.StreamWriter] = set()
+        self._subscribers: dict[asyncio.StreamWriter, set[str]] = {}
 
     async def start(self) -> None:
         """Start the daemon server."""
@@ -87,7 +87,7 @@ class Daemon:
         except SystemExit:
             raise
         finally:
-            self._subscribers.discard(writer)
+            self._subscribers.pop(writer, None)
             log.debug("Client disconnected")
             with contextlib.suppress(Exception):
                 writer.close()
@@ -120,10 +120,17 @@ class Daemon:
                 self._running = False
                 raise SystemExit
             if cmd.cmd == CommandType.SUBSCRIBE:
-                self._subscribers.add(writer)
+                events = set(cmd.events or ["notification"])
+                self._subscribers[writer] = events
                 log.debug(
-                    "Notification subscriber added (%d total)", len(self._subscribers)
+                    "Subscriber added (events=%s, %d total)",
+                    events,
+                    len(self._subscribers),
                 )
+                if cmd.full and "state" in events:
+                    self._push_event(
+                        "state", self._build_sidebar_state(), writer=writer
+                    )
 
     _HANDLERS: ClassVar[dict[CommandType, str]] = {
         CommandType.LIST_PROJECTS: "_cmd_list_projects",
@@ -256,7 +263,7 @@ class Daemon:
         self._last_provider_sync = time.monotonic()
         yield ok()
 
-    async def _cmd_get_sidebar_state(self, cmd: Command) -> AsyncResponseIterator:
+    def _build_sidebar_state(self) -> dict[str, Any]:
         sessions = []
         for op in self._open_projects.values():
             try:
@@ -273,19 +280,19 @@ class Daemon:
                 "pane_id": op.pane_id,
             })
         sessions.sort(key=operator.itemgetter("session_name"))
+        return {
+            "sessions": sessions,
+            "plain_sessions": sorted(self._plain_sessions),
+            "projects": [
+                p.model_dump()
+                for p in self._project_mgr.list(local=True)
+                if not any(op.project_id == p.id for op in self._open_projects.values())
+            ],
+        }
+
+    async def _cmd_get_sidebar_state(self, cmd: Command) -> AsyncResponseIterator:
         yield Response(
-            type=ResponseType.SIDEBAR_STATE,
-            data={
-                "sessions": sessions,
-                "plain_sessions": sorted(self._plain_sessions),
-                "projects": [
-                    p.model_dump()
-                    for p in self._project_mgr.list(local=True)
-                    if not any(
-                        op.project_id == p.id for op in self._open_projects.values()
-                    )
-                ],
-            },
+            type=ResponseType.SIDEBAR_STATE, data=self._build_sidebar_state()
         )
 
     async def _cmd_agent_status(self, cmd: Command) -> AsyncResponseIterator:
@@ -304,6 +311,7 @@ class Daemon:
                 else:
                     op.agents.append(AgentInfo(name=cmd.name, status=new_status))
                 log.info("Agent %s in %s: %s", cmd.name, cmd.session, new_status)
+                self._push_event("state", self._build_sidebar_state())
                 yield ok()
                 return
         yield error(f"No open project for session: {cmd.session}")
@@ -315,6 +323,7 @@ class Daemon:
         for op in self._open_projects.values():
             if op.session == cmd.session:
                 op.agents = [a for a in op.agents if a.name != cmd.name]
+                self._push_event("state", self._build_sidebar_state())
                 yield ok()
                 return
         yield ok()
@@ -336,6 +345,7 @@ class Daemon:
                 await self._poll_git_branches()
                 await self._poll_pr_data()
                 await self._maybe_sync_providers()
+                self._push_event("state", self._build_sidebar_state())
             except Exception:
                 log.exception("Error in polling loop")
             await asyncio.sleep(config.sidebar_refresh_interval)
@@ -414,24 +424,36 @@ class Daemon:
             await self._project_mgr.sync()
             self._last_provider_sync = time.monotonic()
 
-    def _broadcast(self, level: str, message: str) -> None:
-        """Push a notification to all subscribers (sync-safe, buffers only)."""
-        if not self._subscribers:
+    def _push_event(
+        self,
+        event: str,
+        data: dict[str, Any],
+        *,
+        writer: asyncio.StreamWriter | None = None,
+    ) -> None:
+        """Push an event to a specific writer or all subscribers of that event category."""
+        if not writer and not self._subscribers:
             return
-        data = (
-            Response(
-                type=ResponseType.NOTIFICATION,
-                data={"level": level, "message": message},
-            )
+        payload = (
+            Response(type=ResponseType.EVENT, event=event, data=data)
             .model_dump_json()
             .encode()
             + b"\n"
         )
-        for writer in list(self._subscribers):
+        targets = (
+            [writer]
+            if writer
+            else [w for w, events in self._subscribers.items() if event in events]
+        )
+        for w in targets:
             try:
-                writer.write(data)
+                w.write(payload)
             except Exception:  # noqa: BLE001
-                self._subscribers.discard(writer)
+                self._subscribers.pop(w, None)
+
+    def _broadcast(self, level: str, message: str) -> None:
+        """Push a notification event to all subscribers (sync-safe, buffers only)."""
+        self._push_event("notification", {"level": level, "message": message})
 
     @staticmethod
     async def _send(writer: asyncio.StreamWriter, response: Response) -> None:

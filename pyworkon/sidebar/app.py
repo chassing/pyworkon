@@ -11,10 +11,10 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Footer, Label, Rule
 
-from pyworkon.config import ProviderType, config
+from pyworkon.config import ProviderType
 from pyworkon.daemon.project_mgr import Project
 from pyworkon.sidebar import icons
-from pyworkon.sidebar.data import SessionDataCollector
+from pyworkon.sidebar.data import parse_sidebar_state
 from pyworkon.sidebar.models import (
     PlainSession,
     PRReviewStatus,
@@ -504,7 +504,6 @@ class SidebarApp(App[None]):
         self, *, popup: bool = False, dashboard: bool = False, **kwargs: Any
     ) -> None:
         super().__init__(**kwargs)
-        self._collector = SessionDataCollector()
         self._all_items: list[SidebarItem] = []
         self._filtered_items: list[SidebarItem] = []
         self._selected_index = 0
@@ -521,10 +520,7 @@ class SidebarApp(App[None]):
             yield Footer()
 
     def on_mount(self) -> None:
-        self._poll_daemon()
-        if not self._popup:
-            self.set_interval(config.sidebar_refresh_interval, self._poll_daemon)
-            self._listen_notifications()
+        self._listen_daemon()
 
     async def on_key(self, event: Key) -> None:
         if self._dashboard:
@@ -556,12 +552,21 @@ class SidebarApp(App[None]):
         if self._notification_client:
             self._notification_client.close()
 
-    @work(thread=True, group="notifications", exclusive=True)
-    def _listen_notifications(self) -> None:
-        """Listen for push notifications from daemon in background thread."""
+    @staticmethod
+    def _close_project(project_id: str) -> None:
         from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
 
-        severity_map: dict[str, str] = {"warning": "warning", "error": "error"}
+        with (
+            contextlib.suppress(DaemonNotRunningError, ConnectionError, OSError),
+            DaemonClient() as client,
+        ):
+            client.close_project(project_id)
+
+    @work(thread=True, group="daemon", exclusive=True)
+    def _listen_daemon(self) -> None:
+        """Subscribe to daemon events in background thread."""
+        from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
+
         client = DaemonClient()
         try:
             client.connect()
@@ -569,41 +574,33 @@ class SidebarApp(App[None]):
             return
         self._notification_client = client
         try:
-            self._consume_notifications(client, severity_map)
+            self._consume_events(client)
         except (ConnectionError, OSError):
             pass
         finally:
             self._notification_client = None
             client.close()
 
-    def _consume_notifications(
-        self,
-        client: DaemonClient,
-        severity_map: dict[str, str],
-    ) -> None:
-        for resp in client.subscribe_notifications():
-            data = resp.data or {}
-            level = data.get("level", "information")
-            message = data.get("message", "")
-            severity = severity_map.get(level, "information")
-            self.call_from_thread(self.notify, message, severity=severity)
+    def _consume_events(self, client: DaemonClient) -> None:
+        severity_map: dict[str, str] = {"warning": "warning", "error": "error"}
+        for resp in client.subscribe(["state", "notification"], full=True):
+            match resp.event:
+                case "state":
+                    self._handle_state_event(resp.data or {})
+                case "notification":
+                    data = resp.data or {}
+                    level = data.get("level", "information")
+                    message = data.get("message", "")
+                    severity = severity_map.get(level, "information")
+                    self.call_from_thread(self.notify, message, severity=severity)
 
-    @work(thread=True, group="poll")
-    def _poll_daemon(self) -> None:
-        """Fetch data from daemon in background thread."""
-        sessions = self._collector.collect()
+    def _handle_state_event(self, state: dict[str, Any]) -> None:
+        """Parse state event and apply to UI."""
+        sessions, projects, plain_names = parse_sidebar_state(state)
         if self._dashboard:
             new_items: list[SidebarItem] = list(sessions)
         else:
-            projects = self._collector.collect_projects()
-            plain = (
-                [
-                    PlainSession(name)
-                    for name in self._collector.collect_plain_sessions()
-                ]
-                if self._popup
-                else []
-            )
+            plain = [PlainSession(name) for name in plain_names] if self._popup else []
             new_items = [*plain, *sessions, *projects]
         self.call_from_thread(self._apply_new_items, new_items)
 
@@ -766,7 +763,7 @@ class SidebarApp(App[None]):
         item = self._filtered_items[self._selected_index]
         if isinstance(item, SessionInfo):
             await tmux_manager.kill_session(item.session_name)
-            self._collector.close_project(item.project.id)
+            self._close_project(item.project.id)
         elif isinstance(item, PlainSession):
             await tmux_manager.kill_session(item.name)
         else:
