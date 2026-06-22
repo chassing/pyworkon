@@ -1,7 +1,7 @@
 # pyworkon
 
 Software development project management tool for tmux-based workflows.
-Manages projects from GitHub/GitLab, organizes them in tmux sessions, and provides a Textual TUI sidebar.
+Manages projects from GitHub/GitLab, organizes them in tmux sessions, and provides Textual TUI apps (dashboard + popup).
 
 ## Quick Reference
 
@@ -17,31 +17,46 @@ uv run pytest                              # tests
 pyworkon/
 ├── config.py              # pydantic-settings Config, YAML-based (~/.config/pyworkon/config.yaml)
 ├── daemon/                # Background daemon (fully async, Unix socket)
-│   ├── server.py          # asyncio server, polling loop (tmux, git, PR data)
+│   ├── server.py          # asyncio server, event-based push, tmux/PR polling
 │   ├── client.py          # Sync socket client (DaemonClient)
-│   ├── protocol.py        # JSON-Lines protocol models (Command/Response)
+│   ├── protocol.py        # JSON-Lines protocol models (Command/Response/Event)
 │   ├── models.py          # Daemon-internal dataclasses (OpenProject, AgentInfo)
 │   ├── project_mgr.py     # ProjectManager + Project model, diskcache
+│   ├── git_watcher.py     # GitWatcher — per-project file watchers (watchfiles)
 │   └── providers/         # GitHub/GitLab API via clientele
 │       ├── github/        # GitHubApi (clientele standalone functions)
 │       └── gitlab/        # GitLabApi (clientele standalone functions)
-├── sidebar/               # Textual TUI sidebar
-│   ├── app.py             # SidebarApp, SessionRow, ProjectRow, PlainSessionRow, PRLink
-│   ├── data.py            # SessionDataCollector (reads from daemon socket)
-│   ├── models.py          # Pydantic/dataclass models (SessionInfo, PRInfo, etc.)
-│   └── icons.py           # Nerd Font icon constants
-├── interfaces/shell/      # Click CLI (pyworkon command)
-│   └── commands/          # Subcommands: workon, sidebar, daemon, clone, provider, agent, shell
-├── tmux_mgr.py            # TmuxManager — all tmux subprocess calls (async)
+├── interfaces/
+│   ├── shell/             # Click CLI (pyworkon command)
+│   │   └── commands/      # Subcommands: workon, dashboard, popup, daemon, clone, provider, agent, shell
+│   └── tui/               # Textual TUI apps and widgets
+│       ├── base.py        # BaseApp — shared daemon subscription, item management, navigation
+│       ├── dashboard.py   # DashboardApp — full-detail monitoring, sessions only
+│       ├── popup.py       # PopupApp — quick switcher, filter, select+exit
+│       ├── data.py        # parse_sidebar_state() — converts daemon state to models
+│       ├── models.py      # Pydantic/dataclass models (SessionInfo, PRInfo, etc.)
+│       ├── icons.py       # Nerd Font icon constants
+│       └── widgets/       # Reusable Textual widgets
+│           ├── session_card.py     # SessionCard — composes all sub-widgets per session
+│           ├── session_header.py   # SessionHeader — indicator + name + provider icon
+│           ├── branch_row.py       # BranchRow — branch icon + name + dirty indicator
+│           ├── pr_detail.py        # PRDetail — title, link, state, review, CI checks
+│           ├── agent_list.py       # AgentList — dynamic agent rows with status
+│           ├── pr_link.py          # PRLink — clickable label → webbrowser
+│           ├── project_row.py      # ProjectRow — unattached project display
+│           └── plain_session_row.py # PlainSessionRow — plain tmux session
+├── tmux_mgr.py            # TmuxManager — tmux subprocess calls (async)
 └── utils.py               # run_cmd() — async subprocess helper
 ```
 
-### Daemon ↔ Sidebar Flow
+### Daemon ↔ TUI Flow
 
-1. **Daemon** (`server.py`) runs as a background process, listens on a Unix socket (`~/.cache/pyworkon/daemon.sock`)
-2. Daemon polls tmux sessions, git branches, and PR data on a configurable interval (`sidebar_refresh_interval`)
-3. **Sidebar TUI** (`app.py`) connects via `DaemonClient` (sync socket), polls with `@work(thread=True)`
-4. `call_from_thread()` bridges background thread data into Textual's main thread
+1. **Daemon** (`server.py`) runs as a background process, listens on a Unix socket
+2. Daemon polls tmux sessions and PR data periodically; git branch/dirty state detected via filesystem watchers (`watchfiles`)
+3. After each poll cycle or git change, daemon pushes `EVENT(state)` to all subscribers
+4. Agent status updates push immediately (no polling delay)
+5. **TUI apps** subscribe via `DaemonClient.subscribe()` in a background thread
+6. `call_from_thread()` bridges data into Textual's main thread
 
 ### Providers
 
@@ -49,9 +64,19 @@ Providers use `clientele`'s **standalone function pattern** (not class methods).
 
 ## Textual TUI — CRITICAL Rules
 
+### Widget Architecture
+
+Widgets are fine-grained and composable. Each widget owns its own reactives, CSS (`DEFAULT_CSS`), and `update()` method:
+
+- `SessionCard` composes `SessionHeader`, `BranchRow`, `PRDetail`, `AgentList`
+- `PRDetail` is independently reusable (has `show_ci_checks` parameter)
+- `AgentList` is independently reusable
+- `BaseApp` provides shared daemon subscription, item management, navigation
+- `DashboardApp` and `PopupApp` override hooks for different behavior
+
 ### Use Reactive Properties — NEVER Manual Widget Updates
 
-The sidebar uses Textual's **reactive system** for all widget updates. This is non-negotiable.
+The TUI uses Textual's **reactive system** for all widget updates. This is non-negotiable.
 
 **Pattern:**
 
@@ -77,7 +102,7 @@ class MyWidget(Widget):
 
 ### Incremental Updates vs Full Rebuild
 
-- **Structure unchanged** (same sessions, same order): update existing `SessionRow` widgets via `update_session()` → triggers reactive watchers
+- **Structure unchanged** (same sessions, same order): update existing `SessionCard` widgets via `update_session()` → delegates to child widget `update()` methods
 - **Structure changed** (session added/removed/reordered): full `_render_items()` rebuild with new `_render_generation` counter
 
 ### Widget ID Scheme
@@ -95,8 +120,9 @@ All widget styles are defined as `DEFAULT_CSS` class variables, not in external 
 - Commands/responses defined as pydantic models in `protocol.py`
 - Daemon-internal state uses `dataclasses` (`models.py`), not pydantic
 - All subprocess calls go through `utils.run_cmd()` (async wrapper around `asyncio.create_subprocess_exec`)
-- **Circuit breaker** (`pybreaker`) per provider via `get_provider()`. After 3 consecutive API failures, the provider is paused for 5 minutes (one WARNING logged). On recovery, one INFO logged. Manual `provider sync` resets the breaker (`force=True`). Config: `providers/circuit_breaker.py`.
-- **Push notifications** via `SUBSCRIBE` command. Sidebar/dashboard opens a dedicated second socket connection, daemon pushes `NOTIFICATION` responses for circuit breaker events, sync results, and manual `daemon notify` messages. Circuit breaker integration via `set_notification_callback()` in `circuit_breaker.py`. Client: `subscribe_notifications()` (blocking iterator). App: `_listen_notifications()` worker → `self.notify()` toasts.
+- **Event-based push** via `SUBSCRIBE` command with event categories (`state`, `notification`). Clients specify which events they want and whether to receive initial state (`full=True`). Daemon pushes `EVENT` responses whenever state changes.
+- **Git filesystem watchers** (`git_watcher.py`) using `watchfiles` — watches project root with custom filter for `.git/HEAD` (branch) and working tree files (dirty state). Branch changes detected instantly, dirty state via `git status --porcelain -uno`.
+- **Circuit breaker** (`pybreaker`) per provider via `get_provider()`. After 3 consecutive API failures, the provider is paused for 5 minutes. Manual `provider sync` resets the breaker (`force=True`).
 
 ## CLI
 
@@ -106,11 +132,11 @@ All widget styles are defined as `DEFAULT_CSS` class variables, not in external 
 
 ## Nerd Font Icons
 
-Icons are defined in `sidebar/icons.py`. **ALWAYS use explicit Unicode escapes** (e.g., `""`) — never paste the raw glyph character. Raw glyphs get silently stripped by formatters and editors, producing empty strings that are hard to debug.
+Icons are defined in `interfaces/tui/icons.py`. **ALWAYS use explicit Unicode escapes** (e.g., `""`) — never paste the raw glyph character. Raw glyphs get silently stripped by formatters and editors, producing empty strings that are hard to debug.
 
 ```python
 # GOOD
-ICON_GITHUB = ""  # (nf-fa-github)
+ICON_GITHUB = ""  # (nf-fa-github)
 
 # BAD — glyph will be silently stripped
 ICON_GITHUB = ""  # (nf-fa-github)
@@ -120,7 +146,7 @@ ICON_GITHUB = ""  # (nf-fa-github)
 
 ### Agent Status Icons
 
-Agent status is set via CLI hooks as plain strings (`idle`, `working`, `waiting`). The sidebar maps these to colored Nerd Font icons via `_AGENT_STATUS_ICONS` in `app.py`. Unknown status values are rendered as-is.
+Agent status is set via CLI hooks as plain strings (`idle`, `working`, `waiting`). The TUI maps these to colored Nerd Font icons via `_AGENT_STATUS_ICONS` in `widgets/agent_list.py`. Unknown status values are rendered as-is.
 
 ## Key Patterns
 

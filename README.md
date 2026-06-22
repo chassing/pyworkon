@@ -89,34 +89,30 @@ Run `pyworkon` without arguments to enter an interactive shell with fuzzy auto-c
   - `--title, -t` — Set terminal title
 - **`clone <project_id>`** — Clone a remote repository to your workspace directory with streaming progress.
 
-### 📊 Sidebar TUI
+### 📺 Dashboard
 
-A [Textual](https://github.com/Textualize/textual)-based terminal UI that shows all your active projects at a glance:
+A [Textual](https://github.com/Textualize/textual)-based terminal UI that shows all your active sessions at a glance with real-time updates:
 
-- **`sidebar`** — Full sidebar with continuous polling and auto-refresh
-- **`sidebar toggle`** — Toggle a sidebar pane in the current tmux window (auto-creates in new windows via tmux hooks)
+- **`dashboard`** — Full-detail monitoring of all open sessions
 
-For each session the sidebar displays:
+For each session the dashboard displays:
 
-- 🌿 Current git branch
-- 🔀 PR/MR number with state (🟢 open / 🔴 closed / 🟣 merged) and CI status (✅ success / ❌ failure / ⏳ pending)
+- 🌿 Current git branch with dirty indicator (uncommitted changes)
+- 🔀 PR/MR title, clickable link, state (🟢 open / 🔴 closed / 🟣 merged), review status (✅ approved / ❌ changes requested)
+- 🔧 CI check status with clickable links to individual failed checks
 - 🤖 Active AI agents (e.g. Claude Code) with status icons (idle/working/waiting)
 
-**⌨️ Keyboard shortcuts:** Arrow keys to navigate, Enter to select, Escape to clear filter or exit popup, Ctrl+X to kill a session, type to fuzzy-filter.
+**⌨️ Keyboard shortcuts:** Arrow keys to navigate, Enter to select session, Escape/Ctrl+Q to quit.
 
-![Sidebar TUI](docs/screenshots/sidebar.png)
+![Dashboard](docs/screenshots/dashboard.png)
 
 ### 🔍 Popup
 
-One-shot project switcher: shows plain tmux sessions, pyworkon sessions, and local projects — including branch, PR/MR, and agent info. Exits immediately after selection.
+One-shot project switcher: shows plain tmux sessions, pyworkon sessions, and local projects. Compact view (no CI check links). Exits immediately after selection.
+
+**⌨️ Keyboard shortcuts:** Type to fuzzy-filter, Enter to select, Escape to clear filter or exit, Ctrl+X to kill a session.
 
 ![Popup](docs/screenshots/popup.png)
-
-### 📺 Dashboard
-
-Read-only monitoring view of all open pyworkon sessions. Shows branch, PR/MR state, CI status, and active agents — same information as the sidebar, but without interaction (no filtering, navigation, or selection). Useful for a dedicated monitoring pane or screen.
-
-![Dashboard](docs/screenshots/dashboard.png)
 
 ### 👻 Background Daemon
 
@@ -125,6 +121,7 @@ The daemon is an async Unix socket server that manages all project state:
 - **`daemon start`** — Start in background (or `--foreground` for init systems, `--debug` for debug logging)
 - **`daemon stop`** — Graceful shutdown
 - **`daemon status`** — Show PID, open/total project count
+- **`daemon notify "message"`** — Send a toast notification to all connected TUI apps
 
 #### Auto-start at login
 
@@ -183,8 +180,9 @@ systemctl --user enable --now pyworkon-daemon
 The daemon automatically:
 
 - 🔍 Discovers tmux sessions with pyworkon projects
-- 🌿 Polls git branches for open projects
-- 🔀 Fetches PR/MR data (cached 60s per project)
+- 🌿 Watches git branches and dirty state in real-time via filesystem watchers (`watchfiles`)
+- 🔀 Fetches PR/MR data with review status and CI checks (cached 60s per project)
+- 📡 Pushes state updates to all connected TUI apps instantly (event-based, no polling delay)
 - 🔄 Auto-syncs providers every 24 hours
 - 🔌 Circuit breaker per provider — when a provider is unreachable (e.g., VPN down), polling pauses automatically and resumes when connectivity returns
 
@@ -245,8 +243,7 @@ prompt_sign: "🖖🏻"
 workspace_dir: ~/workspace
 workon_command: /bin/zsh           # default: user's login shell
 workon_pre_command: ""             # runs before workon_command
-sidebar_width: 40
-sidebar_refresh_interval: 5        # seconds
+sidebar_refresh_interval: 5        # seconds (daemon poll interval for tmux/PR data)
 debug: false
 
 providers:

@@ -16,7 +16,7 @@ from rich import print as rich_print
 from pyworkon.config import Provider, config
 from pyworkon.daemon.providers import get_provider
 from pyworkon.daemon.providers.circuit_breaker import get_breaker
-from pyworkon.sidebar.models import PRInfo
+from pyworkon.interfaces.tui.models import PRInfo
 from pyworkon.utils import run_cmd
 
 log = logging.getLogger(__name__)

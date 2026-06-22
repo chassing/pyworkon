@@ -24,46 +24,61 @@ pyworkon/
 ├── __main__.py                     # Entry point, logging setup
 ├── config.py                       # Config model (pydantic-settings, YAML source)
 ├── exceptions.py                   # Custom exceptions
-├── tmux_mgr.py                     # Tmux subprocess integration (sessions, panes, hooks, agents)
+├── tmux_mgr.py                     # Tmux subprocess integration (sessions, panes, agents)
 ├── defaults/
 │   └── tmuxp.yml                   # Default tmuxp layout (main + AI windows)
 ├── interfaces/
 │   ├── __init__.py                 # CLI initialization
-│   └── shell/
-│       ├── __init__.py             # Click CLI group, PyworkonContext
-│       ├── command.py              # Custom Click command classes with completion support
-│       ├── common.py               # Utilities (in_shell detection)
-│       └── commands/
-│           ├── __init__.py         # Re-exports all commands
-│           ├── workon.py           # Enter a project (session-based or pane-based)
-│           ├── clone.py            # Clone a remote project
-│           ├── provider.py         # Provider sync + ls
-│           ├── daemon.py           # Daemon start/stop/status
-│           ├── shell.py            # Interactive shell with fuzzy completion
-│           ├── sidebar.py          # Sidebar, popup, dashboard, sidebar toggle
-│           └── agent.py            # Set/clear AI agent status
+│   ├── shell/
+│   │   ├── __init__.py             # Click CLI group, PyworkonContext
+│   │   ├── command.py              # Custom Click command classes with completion support
+│   │   ├── common.py               # Utilities (in_shell detection)
+│   │   └── commands/
+│   │       ├── __init__.py         # Re-exports all commands
+│   │       ├── workon.py           # Enter a project (session-based or pane-based)
+│   │       ├── clone.py            # Clone a remote project
+│   │       ├── provider.py         # Provider sync + ls
+│   │       ├── daemon.py           # Daemon start/stop/status
+│   │       ├── shell.py            # Interactive shell with fuzzy completion
+│   │       ├── dashboard.py        # Dashboard TUI command
+│   │       ├── popup.py            # Popup TUI command
+│   │       └── agent.py            # Set/clear AI agent status
+│   └── tui/                        # Textual TUI apps and widgets
+│       ├── base.py                 # BaseApp — shared daemon subscription, navigation
+│       ├── dashboard.py            # DashboardApp — full-detail monitoring
+│       ├── popup.py                # PopupApp — quick switcher with filtering
+│       ├── data.py                 # parse_sidebar_state() — daemon state → models
+│       ├── models.py               # TUI data models (SessionInfo, PRInfo, etc.)
+│       ├── icons.py                # Nerd Font / Unicode icon constants
+│       └── widgets/                # Reusable Textual widgets
+│           ├── __init__.py         # Re-exports, SidebarItem type alias
+│           ├── session_card.py     # SessionCard — composes sub-widgets per session
+│           ├── session_header.py   # SessionHeader — indicator + name + provider icon
+│           ├── branch_row.py       # BranchRow — branch + dirty indicator
+│           ├── pr_detail.py        # PRDetail — PR title, link, state, review, CI checks
+│           ├── agent_list.py       # AgentList — dynamic agent rows with status
+│           ├── pr_link.py          # PRLink — clickable label → webbrowser
+│           ├── project_row.py      # ProjectRow — unattached project display
+│           └── plain_session_row.py # PlainSessionRow — plain tmux session
 ├── daemon/
-│   ├── server.py                   # Async Unix socket daemon with polling loop
+│   ├── server.py                   # Async Unix socket daemon with event-based push
 │   ├── client.py                   # Sync client for daemon communication
-│   ├── protocol.py                 # JSON-Lines protocol models (Command, Response)
+│   ├── protocol.py                 # JSON-Lines protocol models (Command, Response, Event)
 │   ├── models.py                   # Daemon-internal models (OpenProject, AgentInfo)
 │   ├── project_mgr.py             # Project discovery, git operations, PR lookup
+│   ├── git_watcher.py             # Per-project filesystem watchers (watchfiles)
 │   └── providers/
 │       ├── __init__.py             # Provider factory (get_provider)
 │       ├── models.py               # ProviderApi protocol + ProviderProject model
+│       ├── circuit_breaker.py      # Per-provider circuit breaker (pybreaker)
 │       ├── github/
-│       │   ├── github.py           # GitHub API: repos, PRs, CI status
+│       │   ├── github.py           # GitHub API: repos, PRs, check runs, reviews
 │       │   ├── consumer.py         # clientele HTTP bindings
 │       │   └── models.py           # GitHub API response models
 │       └── gitlab/
-│           ├── gitlab.py           # GitLab API: projects, MRs, pipeline status
+│           ├── gitlab.py           # GitLab API: projects, MRs, pipeline, approvals
 │           ├── consumer.py         # clientele HTTP bindings
 │           └── models.py           # GitLab API response models
-└── sidebar/
-    ├── app.py                      # Textual TUI (SidebarApp, SessionRow, ProjectRow)
-    ├── data.py                     # Daemon data collector for sidebar
-    ├── models.py                   # Sidebar data models (SessionInfo, PRInfo, AgentInfo)
-    └── icons.py                    # Nerd Font / Unicode icon constants
 ```
 
 **Entry point:** `pyworkon.__main__:run` → `interfaces/__init__.py:init_cli()` → `interfaces/shell/__init__.py:cli()` (Click group)
@@ -72,12 +87,13 @@ pyworkon/
 
 ```text
 ┌──────────────────┐     ┌──────────────────┐
-│   CLI Commands   │     │  Sidebar TUI     │
-│  (Click + shell) │     │  (Textual app)   │
+│   CLI Commands   │     │   TUI Apps       │
+│  (Click + shell) │     │  (Dashboard /    │
+│                  │     │   Popup)         │
 └────────┬─────────┘     └────────┬─────────┘
          │                        │
          │    Unix Socket         │    Unix Socket
-         │    (JSON-Lines)        │    (polling)
+         │    (JSON-Lines)        │    (SUBSCRIBE + events)
          │                        │
     ┌────▼────────────────────────▼────┐
     │         Daemon Server            │
@@ -85,48 +101,50 @@ pyworkon/
     │                                  │
     │  ┌────────────┐ ┌────────────┐   │
     │  │ ProjectMgr │ │  Polling   │   │
-    │  │ (diskcache)│ │  Loop      │   │
+    │  │ (diskcache)│ │  + Watch   │   │
     │  └────────────┘ └─────┬──────┘   │
     │                       │          │
     │            ┌──────────┼─────┐    │
     │            ▼          ▼     ▼    │
-    │         tmux        git   APIs   │
+    │         tmux    watchfiles APIs  │
     └──────────────────────────────────┘
-              │                 │
-    ┌─────────▼──────┐  ┌──────▼──────┐
-    │  tmux process  │  │  GitHub /   │
-    │  (subprocess)  │  │  GitLab API │
-    └────────────────┘  └─────────────┘
+              │          │         │
+    ┌─────────▼──┐ ┌─────▼───┐ ┌──▼──────┐
+    │  tmux      │ │ .git/   │ │ GitHub/ │
+    │  (IPC)     │ │ files   │ │ GitLab  │
+    └────────────┘ └─────────┘ └─────────┘
 ```
 
 ### Component Roles
 
-| Component                                    | Role                                                                                                                                                                                   |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Daemon** (`daemon/server.py`)              | Central async server. Manages project state, runs the polling loop (tmux sessions, git branches, PR data, provider auto-sync). Communicates via Unix socket using JSON-Lines protocol. |
-| **CLI** (`interfaces/shell/`)                | User-facing commands built with Click. Communicates with daemon via sync client.                                                                                                       |
-| **TUI** (`sidebar/app.py`)                   | Textual app that polls daemon for state. Three modes: sidebar (continuous), popup (one-shot), dashboard (read-only).                                                                   |
-| **TmuxManager** (`tmux_mgr.py`)              | Wraps tmux subprocess calls: sessions, panes, hooks, variables, agent discovery.                                                                                                       |
-| **ProjectManager** (`daemon/project_mgr.py`) | Discovers local projects by scanning `workspace_dir/*/*/`, merges with diskcache. Handles git branch detection and PR lookups.                                                         |
-| **Providers** (`daemon/providers/`)          | GitHub and GitLab API implementations using clientele. Fetch repos, PRs/MRs, CI status.                                                                                                |
+| Component | Role |
+|---|---|
+| **Daemon** (`daemon/server.py`) | Central async server. Polls tmux sessions and PR data. Watches git state via filesystem watchers. Pushes events to subscribers. |
+| **CLI** (`interfaces/shell/`) | User-facing commands built with Click. Communicates with daemon via sync client. |
+| **TUI** (`interfaces/tui/`) | Textual apps (Dashboard, Popup) that subscribe to daemon events. Fine-grained widgets with reactive updates. |
+| **TmuxManager** (`tmux_mgr.py`) | Wraps tmux subprocess calls: sessions, panes, agent discovery. |
+| **ProjectManager** (`daemon/project_mgr.py`) | Discovers local projects, handles git operations and PR lookups via provider APIs. |
+| **GitWatcher** (`daemon/git_watcher.py`) | Per-project filesystem watchers using `watchfiles`. Detects branch changes and working tree modifications in real-time. |
+| **Providers** (`daemon/providers/`) | GitHub and GitLab API implementations. Fetch repos, PRs/MRs with reviews, CI check runs. |
 
 ### Key Design Decisions
 
 - **Unix socket + JSON-Lines** — lightweight IPC, no HTTP overhead. Each line is one JSON message (`Command` or `Response`).
-- **Polling loop** — daemon polls tmux, git, and provider APIs every `sidebar_refresh_interval` seconds. PR data cached 60s per project. Providers auto-sync every 24h.
-- **Reactive TUI updates** — sidebar only does a full widget rebuild when structure changes (sessions added/removed). Data-only changes update reactive properties on existing widgets.
-- **Session-based vs. pane-based projects** — projects can run in their own tmux session (created via tmuxp) or inside an existing tmux pane (tracked via `pane_id` in daemon). Both show up in the sidebar.
+- **Event-based push** — daemon pushes state events to TUI subscribers immediately after changes (agent updates, git watcher events, polling cycles). No polling delay for TUI apps.
+- **Filesystem watchers** — `watchfiles` (kqueue on macOS, inotify on Linux) watches `.git/HEAD` for branch changes and the working tree for dirty state. Replaces git subprocess polling.
+- **Reactive TUI updates** — TUI only does a full widget rebuild when structure changes (sessions added/removed). Data-only changes update reactive properties on existing widgets.
+- **Session-based vs. pane-based projects** — projects can run in their own tmux session (created via tmuxp) or inside an existing tmux pane (tracked via `pane_id` in daemon).
 - **diskcache** — persistent cache for the provider project list, survives daemon restarts.
 
 ### Protocol
 
 **Client → Daemon** (`Command`):
-`LIST_PROJECTS`, `GET_PROJECT`, `OPEN_PROJECT`, `CLOSE_PROJECT`, `CLONE_PROJECT`, `SYNC_PROVIDERS`, `GET_SIDEBAR_STATE`, `AGENT_STATUS`, `AGENT_CLEAR`, `STATUS`, `SHUTDOWN`
+`LIST_PROJECTS`, `GET_PROJECT`, `OPEN_PROJECT`, `CLOSE_PROJECT`, `CLONE_PROJECT`, `SYNC_PROVIDERS`, `GET_SIDEBAR_STATE`, `AGENT_STATUS`, `AGENT_CLEAR`, `STATUS`, `SHUTDOWN`, `SUBSCRIBE`, `NOTIFY`
 
 **Daemon → Client** (`Response`):
-`PROJECTS`, `PROJECT`, `SIDEBAR_STATE`, `PROGRESS`, `OK`, `ERROR`, `STATUS`
+`PROJECTS`, `PROJECT`, `SIDEBAR_STATE`, `PROGRESS`, `OK`, `ERROR`, `STATUS`, `EVENT`
 
-Streaming commands (clone, sync) send multiple `PROGRESS` responses before a final `OK`/`ERROR`.
+**Event subscription**: `SUBSCRIBE` with `events: ["state", "notification"]` and `full: true`. Daemon pushes `EVENT` responses with `event` field identifying the category.
 
 ## Adding a New Provider
 
@@ -143,139 +161,76 @@ These tests require a running tmux session, configured providers, and at least o
 
 ### 1. Daemon Lifecycle
 
-| #   | Steps                                 | Expected                                                                                   |
-| --- | ------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 1.1 | `pyworkon daemon start`               | Prints "Daemon started (PID <n>)." Socket file created at `~/.cache/pyworkon/daemon.sock`. |
-| 1.2 | `pyworkon daemon start` (again)       | Prints "Daemon is already running." — no duplicate process.                                |
-| 1.3 | `pyworkon daemon status`              | Prints "Daemon running (PID <n>)", open projects count, total projects count.              |
-| 1.4 | `pyworkon daemon stop`                | Prints "Daemon stopped." Socket and PID files removed.                                     |
-| 1.5 | `pyworkon daemon status` (after stop) | Prints "Daemon is not running." with exit code 1.                                          |
-| 1.6 | `pyworkon daemon start --debug`       | Runs in foreground with DEBUG-level log output to stderr. Ctrl+C stops it cleanly.         |
+| # | Steps | Expected |
+|---|---|---|
+| 1.1 | `pyworkon daemon start` | Prints "Daemon started (PID <n>)." Socket file created at `~/.cache/pyworkon/daemon.sock`. |
+| 1.2 | `pyworkon daemon start` (again) | Prints "Daemon is already running." — no duplicate process. |
+| 1.3 | `pyworkon daemon status` | Prints "Daemon running (PID <n>)", open projects count, total projects count. |
+| 1.4 | `pyworkon daemon stop` | Prints "Daemon stopped." Socket and PID files removed. |
+| 1.5 | `pyworkon daemon status` (after stop) | Prints "Daemon is not running." with exit code 1. |
+| 1.6 | `pyworkon daemon start --debug` | Runs in foreground with DEBUG-level log output to stderr. Ctrl+C stops it cleanly. |
+| 1.7 | `pyworkon daemon notify "hello"` | Toast notification appears in all connected TUI apps (dashboard/popup). |
 
 ### 2. Provider Sync & List
 
-| #   | Steps                    | Expected                                                                                           |
-| --- | ------------------------ | -------------------------------------------------------------------------------------------------- |
-| 2.1 | `pyworkon provider ls`   | Rich table with columns: Name, Type, API, User. Shows all providers from config.yaml.              |
+| # | Steps | Expected |
+|---|---|---|
+| 2.1 | `pyworkon provider ls` | Rich table with columns: Name, Type, API, User. Shows all providers from config.yaml. |
 | 2.2 | `pyworkon provider sync` | Prints "Fetching projects from <name>..." per provider, then "Done." Projects cached in diskcache. |
 
 ### 3. Workon — Session-Based
 
-| #   | Steps                                                                                 | Expected                                                                                                                                           |
-| --- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3.1 | `pyworkon workon <local_project_id>`                                                  | Drops into project directory. Environment variables set: `PYWORKON_PROJECT_ID`, `PYWORKON_PROJECT_NAME`, `PYWORKON_PROJECT_HOME` (verify with `env | grep PYWORKON`). |
-| 3.2 | `pyworkon workon -c "vim" <project_id>`                                               | Opens vim instead of default shell.                                                                                                                |
-| 3.3 | `pyworkon workon -t "My Title" <project_id>`                                          | Terminal title set to "My Title" (visible in tmux status bar or terminal tab).                                                                     |
-| 3.4 | Set `workon_pre_command: "echo HELLO"` in config, then `pyworkon workon <project_id>` | "HELLO" printed before shell starts.                                                                                                               |
-| 3.5 | `pyworkon workon <non_local_project_id>`                                              | Prints "Project has no local working directory (not cloned yet?)" in red.                                                                          |
+| # | Steps | Expected |
+|---|---|---|
+| 3.1 | `pyworkon workon <local_project_id>` | Drops into project directory. Environment variables set: `PYWORKON_PROJECT_ID`, `PYWORKON_PROJECT_NAME`, `PYWORKON_PROJECT_HOME`. |
+| 3.2 | `pyworkon workon -c "vim" <project_id>` | Opens vim instead of default shell. |
+| 3.3 | `pyworkon workon -t "My Title" <project_id>` | Terminal title set to "My Title". |
 
 ### 4. Workon — Pane-Based (in Existing Tmux Pane)
 
-| #   | Steps                                                                     | Expected                                                                                                                    |
-| --- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| 4.1 | In an existing tmux session, run `pyworkon workon <project_id>` in a pane | Project opens in the current pane (no new tmux session created). Daemon tracks it via `pane_id`.                            |
-| 4.2 | Open sidebar (`pyworkon sidebar`)                                         | The pane-based project appears in the session list with its branch and PR info. Session name is the enclosing tmux session. |
-| 4.3 | Exit the workon shell (Ctrl+D or `exit`)                                  | Daemon receives `CLOSE_PROJECT` — project disappears from sidebar on next poll.                                             |
+| # | Steps | Expected |
+|---|---|---|
+| 4.1 | In an existing tmux session, run `pyworkon workon <project_id>` in a pane | Project opens in the current pane. Daemon tracks it via `pane_id`. |
+| 4.2 | Open dashboard (`pyworkon dashboard`) | The pane-based project appears in the session list. |
+| 4.3 | Exit the workon shell (Ctrl+D or `exit`) | Daemon receives `CLOSE_PROJECT` — project disappears from dashboard. |
 
-### 5. Clone
+### 5. Dashboard
 
-| #   | Steps                                | Expected                                                                                  |
-| --- | ------------------------------------ | ----------------------------------------------------------------------------------------- |
-| 5.1 | `pyworkon clone <remote_project_id>` | Prints "Cloning <id>...", then "Done." Directory created at `workspace_dir/<project_id>`. |
-| 5.2 | `pyworkon clone <already_cloned_id>` | Prints "Project directory exists already! Use 'workon' instead!" in red.                  |
+| # | Steps | Expected |
+|---|---|---|
+| 5.1 | `pyworkon dashboard` | TUI opens showing only pyworkon sessions with full details (branch, dirty, PR title/link, CI checks, agents). |
+| 5.2 | Switch branch in a project | Dashboard updates instantly (filesystem watcher). |
+| 5.3 | Edit a file in a project | Dirty indicator (pencil icon) appears within ~2 seconds. |
+| 5.4 | Set agent status via hook | Agent status updates instantly (event push, no polling delay). |
+| 5.5 | PR with failed CI checks | Red background on PR link row, individual failed check names listed as clickable links. |
+| 5.6 | Draft PR | "[Draft]" prefix in title, dimmed state icon, no review icon. |
+| 5.7 | Enter on a session | Switches to that tmux session. Dashboard stays open. |
 
-### 6. Interactive Shell
+### 6. Popup
 
-| #   | Steps                                      | Expected                                                                      |
-| --- | ------------------------------------------ | ----------------------------------------------------------------------------- |
-| 6.1 | `pyworkon` (no arguments)                  | Enters interactive shell. Prompt shows configured `prompt_sign` (default: 🖖🏻). |
-| 6.2 | Type partial command (e.g., `wor`) and Tab | Fuzzy completion suggests `workon`.                                           |
-| 6.3 | `help`                                     | Shows all available commands and special shell commands (help, exit).         |
-| 6.4 | `exit`                                     | Prints "Bye!" and returns to normal shell.                                    |
-| 6.5 | Type a command, exit, re-enter shell       | Previous command appears in history (auto-suggest).                           |
+| # | Steps | Expected |
+|---|---|---|
+| 6.1 | `pyworkon popup` | TUI opens showing three sections: plain tmux sessions, pyworkon sessions, and local projects. |
+| 6.2 | Type to filter | Filter bar appears. Only matching items shown. |
+| 6.3 | Select a session and press Enter | Switches to session. Popup exits. |
+| 6.4 | Select a local project and press Enter | Creates new tmux session. Popup exits. |
+| 6.5 | Ctrl+X on a session | Session killed. Removed from list. |
+| 6.6 | Escape (no filter) | Popup exits. |
 
-### 7. Sidebar TUI
+### 7. Agent Status
 
-| #    | Steps                                                                     | Expected                                                                                                                                                 |
-| ---- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7.1  | `pyworkon sidebar`                                                        | Textual TUI launches. Shows pyworkon sessions with project names. Local projects (without open sessions) shown in a separate section below.              |
-| 7.2  | Open a project with a non-default branch in another session               | After refresh interval (default 5s), sidebar shows the branch name next to the session (with  icon).                                                     |
-| 7.3  | Open a project with an open PR/MR on the current branch                   | Sidebar shows PR number (e.g., `#42`), state icon (green ● for open), and CI status icon (green ✓ for success, red ✗ for failure, yellow ◷ for pending). |
-| 7.4  | Set an agent status: `pyworkon agent --status "🤔"` from a project session | Sidebar shows agent row with name and status emoji (e.g., `claude 🤔`) under the session.                                                                 |
-| 7.5  | Change agent status to a different emoji                                  | Sidebar updates agent status on next poll.                                                                                                               |
-| 7.6  | `pyworkon agent --clear`                                                  | Agent row disappears from sidebar on next poll.                                                                                                          |
-| 7.7  | Type characters in sidebar                                                | Filter bar appears at top (`> <text>_`). Only matching sessions/projects shown.                                                                          |
-| 7.8  | Press Escape                                                              | Filter cleared. All items visible again.                                                                                                                 |
-| 7.9  | Arrow keys to navigate, Enter to select a session                         | Highlighted row changes. Enter switches tmux to the selected session.                                                                                    |
-| 7.10 | Select a local project (no active session) with Enter                     | New tmux session created for the project (via tmuxp), then switched to.                                                                                  |
-| 7.11 | Ctrl+X on a session                                                       | Session killed. Removed from sidebar immediately.                                                                                                        |
-| 7.12 | Wait without interaction for 2+ refresh intervals                         | Sidebar updates reactively (branch/PR/agent changes reflected without full rebuild, no flicker).                                                         |
+| # | Steps | Expected |
+|---|---|---|
+| 7.1 | `pyworkon agent --status "idle"` | Agent appears in dashboard/popup with moon icon. |
+| 7.2 | `pyworkon agent --status "working"` | Agent icon changes to green cog instantly. |
+| 7.3 | `pyworkon agent --clear` | Agent disappears from dashboard/popup instantly. |
 
-### 8. Sidebar Toggle (tmux pane)
+### 8. PR/MR Display
 
-| #   | Steps                                      | Expected                                                                               |
-| --- | ------------------------------------------ | -------------------------------------------------------------------------------------- |
-| 8.1 | `pyworkon sidebar toggle` (in tmux)        | Left pane created with sidebar TUI. Width matches `sidebar_width` config (default 40). |
-| 8.2 | Open a new tmux window in the same session | Sidebar pane auto-created in the new window (via `after-new-window` hook).             |
-| 8.3 | `pyworkon sidebar toggle` (again)          | Sidebar pane removed. Hook uninstalled.                                                |
-| 8.4 | `pyworkon sidebar toggle --no-focus`       | Sidebar pane created but cursor stays in the main pane.                                |
-
-### 9. Popup
-
-| #   | Steps                                  | Expected                                                                                                                                         |
-| --- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 9.1 | `pyworkon popup`                       | TUI opens showing three sections: plain tmux sessions (▸ icon), pyworkon sessions (with branch/PR/agent info), and local projects (folder icon). |
-| 9.2 | Sessions with PRs/MRs                  | PR number, state icon, and CI status icon visible — same as sidebar.                                                                             |
-| 9.3 | Sessions with active agents            | Agent name and status emoji visible — same as sidebar.                                                                                           |
-| 9.4 | Select a session and press Enter       | Switches to selected session. Popup exits immediately.                                                                                           |
-| 9.5 | Select a local project and press Enter | Creates new tmux session for the project. Popup exits.                                                                                           |
-| 9.6 | Press Escape (no filter active)        | Popup exits without selecting anything.                                                                                                          |
-| 9.7 | Type to filter, then Escape            | Filter cleared first. Second Escape exits popup.                                                                                                 |
-
-### 10. Dashboard
-
-| #    | Steps                             | Expected                                                                            |
-| ---- | --------------------------------- | ----------------------------------------------------------------------------------- |
-| 10.1 | `pyworkon dashboard`              | TUI opens showing only pyworkon sessions (no plain sessions, no local projects).    |
-| 10.2 | Sessions with PRs/MRs and agents  | PR and agent info displayed — same icons and format as sidebar.                     |
-| 10.3 | Type characters, press arrow keys | No interaction — dashboard is read-only. No filter bar, no navigation highlighting. |
-| 10.4 | Wait for refresh                  | Dashboard auto-refreshes, showing updated branch/PR/agent data.                     |
-
-### 11. Agent Status
-
-| #    | Steps                                                                   | Expected                                                                                                     |
-| ---- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 11.1 | `pyworkon agent --status "🔨"` (in a project session)                    | Status set. `pyworkon daemon status` still works. Agent appears in sidebar/popup/dashboard for that session. |
-| 11.2 | `pyworkon agent --name "my-agent" --status "⏳"`                         | Agent with custom name "my-agent" shown in sidebar.                                                          |
-| 11.3 | `pyworkon agent --status "❓"` (simulating agent asking a question)      | Status emoji changes to ❓ in sidebar/popup/dashboard. Useful to signal that the AI agent needs user input.   |
-| 11.4 | `pyworkon agent --clear`                                                | All agents cleared for current session.                                                                      |
-| 11.5 | `pyworkon agent --clear --name "my-agent"`                              | Only "my-agent" cleared, other agents remain.                                                                |
-| 11.6 | `pyworkon agent --status "🔨"` (outside tmux)                            | Prints "Not inside tmux" to stderr, exit code 1.                                                             |
-| 11.7 | Auto-detection: run from a directory with an active Claude Code session | Agent name auto-resolved from `~/.claude/sessions/*.json` matching cwd.                                      |
-
-### 12. PR/MR Display Across Views
-
-| #    | Steps                                                             | Expected                                          |
-| ---- | ----------------------------------------------------------------- | ------------------------------------------------- |
-| 12.1 | Open project on a branch with an **open** PR                      | Green ● state icon, PR number shown.              |
-| 12.2 | Merge the PR, wait for refresh                                    | Purple ● state icon (merged).                     |
-| 12.3 | Close PR without merging, wait for refresh                        | Red ● state icon (closed).                        |
-| 12.4 | CI passing on PR                                                  | Green ✓ next to PR number.                        |
-| 12.5 | CI failing on PR                                                  | Red ✗ next to PR number.                          |
-| 12.6 | CI still running                                                  | Yellow ◷ next to PR number.                       |
-| 12.7 | Switch to a branch without a PR                                   | PR row disappears from session display.           |
-| 12.8 | Verify PR/MR display in **sidebar**, **popup**, and **dashboard** | All three views show identical PR state/CI icons. |
-
-### 13. Fork Support
-
-| #    | Steps                                                              | Expected                                                                |
-| ---- | ------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| 13.1 | Open a project that is a fork with an `upstream` remote configured | PR lookup uses the upstream repo's owner/repo for matching.             |
-| 13.2 | Push a branch to your fork and open a PR against upstream          | Sidebar shows the PR from the upstream repo, not a self-referencing PR. |
-
-### 14. tmuxp Session Layout
-
-| #    | Steps                                                  | Expected                                                                       |
-| ---- | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| 14.1 | Enter a project without `.tmuxp.yml` via sidebar/popup | New tmux session created with default layout: "main 👨🏼‍💻" window + "AI 🤖" window. |
-| 14.2 | Add `.tmuxp.yml` to project root, enter project        | Custom layout from project's `.tmuxp.yml` used instead of default.             |
+| # | Steps | Expected |
+|---|---|---|
+| 8.1 | Open PR, all checks pass | PR title + review icon on line 1, clickable link + green state icon on line 2. |
+| 8.2 | Open PR, checks failing | Red ✗ state icon, red background on link row, failed check names listed below. |
+| 8.3 | Switch to default branch (main/master) | PR rows disappear (no PR lookup for default branch). |
+| 8.4 | Click PR number | Opens PR in browser. |
+| 8.5 | Click failed check name | Opens check detail page in browser. |

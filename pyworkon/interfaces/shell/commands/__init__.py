@@ -1,9 +1,10 @@
 from .agent import agent
 from .clone import clone
 from .daemon import daemon
+from .dashboard import dashboard
+from .popup import popup
 from .provider import provider
 from .shell import shell
-from .sidebar import dashboard, popup, sidebar
 from .workon import workon
 
 __all__ = [
@@ -14,6 +15,5 @@ __all__ = [
     "popup",
     "provider",
     "shell",
-    "sidebar",
     "workon",
 ]

@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from pyworkon.daemon.project_mgr import Project
-from pyworkon.sidebar.models import AgentInfo, PRInfo, SessionInfo
+from pyworkon.interfaces.tui.models import AgentInfo, PRInfo, SessionInfo
 
 SessionInfo.model_rebuild(_types_namespace={"Project": Project})
 

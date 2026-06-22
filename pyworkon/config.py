@@ -47,7 +47,6 @@ class Config(BaseSettings):
     providers: list[Provider] = []
     debug: bool = False
     history_file: Path = user_cache_dir / "history"
-    sidebar_width: int = 40
     sidebar_refresh_interval: int = 5
 
     model_config = SettingsConfigDict(
