@@ -2,31 +2,19 @@
 
 from __future__ import annotations
 
-import json
+import os
 import subprocess
 import sys
-from pathlib import Path
 
 import click
 
 from pyworkon.daemon.client import require_daemon
 from pyworkon.interfaces.shell import cli
 
-_CLAUDE_SESSIONS_DIR = Path.home() / ".claude" / "sessions"
-
 
 def _resolve_agent_name() -> str:
-    """Resolve agent name from Claude Code session file matching current cwd."""
-    cwd = str(Path.cwd())
-    for session_file in _CLAUDE_SESSIONS_DIR.glob("*.json"):
-        try:
-            with session_file.open() as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            continue
-        if data.get("cwd") == cwd and data.get("status") in {"busy", "idle", "waiting"}:
-            return data.get("name") or f"claude-{data.get('pid', '?')}"
-    return "claude"
+    """Derive agent name from parent PID (the Claude Code process running this hook)."""
+    return f"claude-{os.getppid()}"
 
 
 def _get_tmux_session() -> str | None:
@@ -56,7 +44,8 @@ def agent(name: str | None, status: str | None, *, clear: bool) -> None:
     client = require_daemon()
     try:
         if clear:
-            client.clear_agent(session, name=name)
+            resolved_name = name or _resolve_agent_name()
+            client.clear_agent(session, name=resolved_name)
             return
         if not status:
             click.echo("--status required (or use --clear)", err=True)

@@ -34,8 +34,9 @@ class TmuxManager:
         await run_cmd("tmux", "switch-client", "-t", session_name)
 
     async def select_pane(self, session_name: str, pane_id: str) -> None:
-        """Switch to a session and select a specific pane."""
+        """Switch to a session, window, and pane."""
         await self.attach_session(session_name)
+        await run_cmd("tmux", "select-window", "-t", pane_id)
         await run_cmd("tmux", "select-pane", "-t", pane_id)
 
     async def get_pane_session(self, pane_id: str) -> str | None:

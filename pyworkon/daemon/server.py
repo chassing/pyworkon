@@ -229,7 +229,7 @@ class Daemon:
     async def _cmd_sync_providers(self, cmd: Command) -> AsyncResponseIterator:
         for provider in config.providers:
             yield progress(f"Fetching projects from {provider.name}...")
-        await self._project_mgr.sync()
+        await self._project_mgr.sync(force=True)
         self._last_provider_sync = time.monotonic()
         yield ok()
 
@@ -285,15 +285,12 @@ class Daemon:
         yield error(f"No open project for session: {cmd.session}")
 
     async def _cmd_agent_clear(self, cmd: Command) -> AsyncResponseIterator:
-        if not cmd.session:
-            yield error("session required")
+        if not cmd.session or not cmd.name:
+            yield error("session and name required")
             return
         for op in self._open_projects.values():
             if op.session == cmd.session:
-                if cmd.name:
-                    op.agents = [a for a in op.agents if a.name != cmd.name]
-                else:
-                    op.agents.clear()
+                op.agents = [a for a in op.agents if a.name != cmd.name]
                 yield ok()
                 return
         yield ok()
@@ -408,10 +405,11 @@ def run_daemon(*, debug: bool = False) -> None:
     """Entry point for running the daemon."""
     if debug:
         logging.basicConfig(
-            level="DEBUG",
+            level="INFO",
             format="%(asctime)s %(name)s %(levelname)s: %(message)s",
             force=True,
         )
+        logging.getLogger("pyworkon").setLevel("DEBUG")
     else:
         log_file = user_cache_dir / "daemon.log"
         log_handle = log_file.open("a")

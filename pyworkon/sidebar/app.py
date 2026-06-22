@@ -10,14 +10,19 @@ from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Label, Rule, Static
+from textual.widgets import Footer, Label, Rule, Static
 
-from pyworkon.config import config
+from pyworkon.config import ProviderType, config
 from pyworkon.daemon.project_mgr import Project
 from pyworkon.sidebar import icons
 from pyworkon.sidebar.data import SessionDataCollector
 from pyworkon.sidebar.models import PlainSession, PRState, PRStatus, SessionInfo
 from pyworkon.tmux_mgr import tmux_manager
+
+_PROVIDER_ICONS: dict[ProviderType, str] = {
+    ProviderType.github: icons.ICON_GITHUB,
+    ProviderType.gitlab: icons.ICON_GITLAB,
+}
 
 if TYPE_CHECKING:
     from textual.events import Key
@@ -63,13 +68,21 @@ class SessionRow(Widget):
         border-left: tall $success;
         padding-left: 1;
     }
+    SessionRow .name-row {
+        height: 1;
+    }
     SessionRow .session-name {
+        width: 1fr;
         text-style: bold;
     }
     SessionRow .session-name.--current {
         color: $success;
     }
     SessionRow .session-name.--other {
+        color: $text-muted;
+    }
+    SessionRow .provider-icon {
+        width: auto;
         color: $text-muted;
     }
     SessionRow .detail-row {
@@ -84,6 +97,9 @@ class SessionRow(Widget):
     }
     SessionRow .detail-icon.--pr {
         color: $accent;
+    }
+    SessionRow .detail-row.--ci-failure {
+        background: $error 15%;
     }
     SessionRow .detail-icon.--agent {
         color: ansi_bright_magenta;
@@ -109,9 +125,11 @@ class SessionRow(Widget):
     """
 
     name_text: reactive[str] = reactive("")
+    provider_icon_text: reactive[str] = reactive("")
     branch_text: reactive[str] = reactive("")
     pr_number_text: reactive[str] = reactive("")
     pr_icons_text: reactive[str] = reactive("")
+    pr_ci_failure: reactive[bool] = reactive(default=False)
     agent_data: reactive[tuple[tuple[str, str], ...]] = reactive(())
 
     def __init__(self, session: SessionInfo, **kwargs: Any) -> None:
@@ -123,15 +141,21 @@ class SessionRow(Widget):
         s = self.session
         indicator = icons.INDICATOR_CURRENT if s.is_current else icons.INDICATOR_OTHER
         self.name_text = f"{indicator} {s.project.name}"
+        provider_type = s.project.provider.type if s.project.provider else None
+        self.provider_icon_text = (
+            _PROVIDER_ICONS.get(provider_type, "") if provider_type else ""
+        )
         self.branch_text = s.branch or ""
         if s.pr:
             state_icon = _PR_STATE_ICONS.get(s.pr.state, "")
             ci_icon = _PR_STATUS_ICONS.get(s.pr.status, "")
             self.pr_number_text = f"#{s.pr.number}"
             self.pr_icons_text = f"{state_icon} {ci_icon}".rstrip()
+            self.pr_ci_failure = s.pr.status == PRStatus.FAILURE
         else:
             self.pr_number_text = ""
             self.pr_icons_text = ""
+            self.pr_ci_failure = False
         self.agent_data = tuple((a.name, a.status) for a in s.agents)
 
     def update_session(self, session: SessionInfo) -> None:
@@ -146,7 +170,11 @@ class SessionRow(Widget):
         if self.session.is_current:
             self.add_class("--current-session")
         current_cls = "--current" if self.session.is_current else "--other"
-        yield Label(self.name_text, id="sname", classes=f"session-name {current_cls}")
+        yield Horizontal(
+            Label(self.name_text, id="sname", classes=f"session-name {current_cls}"),
+            Label(self.provider_icon_text, id="sprovider", classes="provider-icon"),
+            classes="name-row",
+        )
 
         branch_row = Horizontal(
             Label(icons.ICON_BRANCH, classes="detail-icon --branch"),
@@ -181,6 +209,10 @@ class SessionRow(Widget):
         with contextlib.suppress(Exception):
             self.query_one("#sname", Label).update(value)
 
+    def watch_provider_icon_text(self, value: str) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#sprovider", Label).update(value)
+
     def watch_branch_text(self, value: str) -> None:
         with contextlib.suppress(Exception):
             self.query_one("#sbranch", Label).update(value)
@@ -194,6 +226,11 @@ class SessionRow(Widget):
     def watch_pr_icons_text(self, value: str) -> None:
         with contextlib.suppress(Exception):
             self.query_one("#spricons", Label).update(value)
+
+    def watch_pr_ci_failure(self, value: bool) -> None:  # noqa: FBT001
+        with contextlib.suppress(Exception):
+            row = self.query_one("#row-pr")
+            row.set_class(value, "--ci-failure")
 
     def _render_agents(self) -> Table | str:
         if not self.agent_data:
@@ -242,6 +279,10 @@ class ProjectRow(Widget):
         color: $text-muted;
         overflow: hidden;
     }
+    ProjectRow .provider-icon {
+        width: auto;
+        color: $text-muted;
+    }
     """
 
     def __init__(self, project: Project, **kwargs: Any) -> None:
@@ -249,9 +290,12 @@ class ProjectRow(Widget):
         self.project = project
 
     def compose(self) -> ComposeResult:
+        provider_type = self.project.provider.type if self.project.provider else None
+        provider_icon = _PROVIDER_ICONS.get(provider_type, "") if provider_type else ""
         yield Horizontal(
             Label(icons.ICON_FOLDER, classes="detail-icon"),
             Label(self.project.id, classes="detail-left"),
+            Label(provider_icon, classes="provider-icon"),
             classes="detail-row",
         )
 
@@ -319,8 +363,10 @@ class SidebarApp(App[None]):
     BINDINGS: ClassVar = [
         Binding("down", "move_down", show=False),
         Binding("up", "move_up", show=False),
-        Binding("enter", "select", show=False),
-        Binding("escape", "escape_key", show=False),
+        Binding("enter", "select", description="Select"),
+        Binding("escape", "escape_key", description="Close"),
+        Binding("ctrl+x", "kill_session", description="Kill"),
+        Binding("ctrl+q", "quit", description="Quit"),
         Binding("backspace", "backspace_key", show=False),
         Binding("pagedown", "page_down", show=False),
         Binding("pageup", "page_up", show=False),
@@ -342,6 +388,8 @@ class SidebarApp(App[None]):
     def compose(self) -> ComposeResult:
         yield Label("", id="filter-bar")
         yield VerticalScroll(id="item-list", can_focus=False)
+        if self._popup or self._dashboard:
+            yield Footer()
 
     def on_mount(self) -> None:
         self._poll_daemon()
@@ -351,17 +399,17 @@ class SidebarApp(App[None]):
     async def on_key(self, event: Key) -> None:
         if self._dashboard:
             return
-        if event.key == "ctrl+x":
-            await self._do_kill_session()
-            event.prevent_default()
-            return
         if event.character and event.is_printable:
             self._filter_text += event.character
             self._apply_filter()
             event.prevent_default()
 
+    async def action_kill_session(self) -> None:
+        await self._do_kill_session()
+
     def action_escape_key(self) -> None:
         if self._dashboard:
+            self.exit()
             return
         if self._filter_text:
             self._filter_text = ""

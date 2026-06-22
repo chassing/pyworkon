@@ -8,12 +8,14 @@ from pathlib import Path
 from subprocess import run
 from urllib.parse import urlparse
 
+import pybreaker
 from diskcache import Cache
 from pydantic import BaseModel
 from rich import print as rich_print
 
 from pyworkon.config import Provider, config
 from pyworkon.daemon.providers import get_provider
+from pyworkon.daemon.providers.circuit_breaker import get_breaker
 from pyworkon.sidebar.models import PRInfo
 from pyworkon.utils import run_cmd
 
@@ -97,6 +99,8 @@ class Project(BaseModel):
                 owner, _, _ = self.owner_repo.partition("/")
                 target = await self.get_upstream_owner_repo() or self.owner_repo
                 return await api.get_pr_info(target, branch, head_owner=owner)
+        except pybreaker.CircuitBreakerError:
+            pass
         except Exception:  # noqa: BLE001
             log.debug("Failed to fetch PR info for %s branch=%s", self.id, branch)
         return None
@@ -131,21 +135,17 @@ class Project(BaseModel):
     async def clone(self) -> None:
         """Clone project."""
         if self.is_local:
-            rich_print(
-                "[b red]Project directory exists already! Use 'workon' instead![/]"
-            )
+            log.warning("Project directory exists already: %s", self.id)
             return
         if not self.repository_url:
-            rich_print("[b red]No repository URL found![/]")
+            log.error("No repository URL for %s", self.id)
             return
 
-        rich_print(
-            f"[green]Cloning repository {self.repository_url} to {self.project_home}. This may take a while ...[/]"
-        )
+        log.info("Cloning %s to %s ...", self.repository_url, self.project_home)
         try:
             await run_cmd("git", "clone", self.repository_url, str(self.project_home))
         except subprocess.CalledProcessError:
-            rich_print(f"[b red]Cloning {self.repository_url} failed[/]")
+            log.exception("Cloning %s failed", self.repository_url)
             return
 
 
@@ -182,23 +182,31 @@ class ProjectManager:
                     cached.provider = self._find_provider(cached.id)
                 self._projects[cached.id] = cached
 
-    async def sync(self) -> None:
+    async def sync(self, *, force: bool = False) -> None:
         projects: list[Project] = []
         for provider in config.providers:
-            rich_print(f"[blue]Fetching projects from provider {provider.name}...[/]")
-            async with get_provider(provider) as api:
-                provider_projects = [
-                    Project(
-                        id=p.project_id,
-                        repository_url=p.repository_url,
-                        provider=provider,
+            if force:
+                get_breaker(provider.name).close()
+            try:
+                async with get_provider(provider) as api:
+                    provider_projects = [
+                        Project(
+                            id=p.project_id,
+                            repository_url=p.repository_url,
+                            provider=provider,
+                        )
+                        for p in await api.projects()
+                    ]
+                    log.info(
+                        "Fetched %d projects from %s",
+                        len(provider_projects),
+                        provider.name,
                     )
-                    for p in await api.projects()
-                ]
-                rich_print(
-                    f"[green]Fetched {len(provider_projects)} projects from {provider.name}[/]"
-                )
-                projects.extend(provider_projects)
+                    projects.extend(provider_projects)
+            except pybreaker.CircuitBreakerError:
+                log.info("Skipping provider %s (unreachable)", provider.name)
+            except Exception:
+                log.exception("Failed to sync provider %s", provider.name)
         self._cache.set("PROJECTS", [p.model_dump_json() for p in projects])
         self._init_project_list()
 

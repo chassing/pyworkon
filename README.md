@@ -123,9 +123,63 @@ Read-only monitoring view of all open pyworkon sessions. Shows branch, PR/MR sta
 
 The daemon is an async Unix socket server that manages all project state:
 
-- **`daemon start`** — Start in background (or `--debug` for foreground)
+- **`daemon start`** — Start in background (or `--foreground` for init systems, `--debug` for debug logging)
 - **`daemon stop`** — Graceful shutdown
 - **`daemon status`** — Show PID, open/total project count
+
+#### Auto-start at login
+
+**macOS (launchd):**
+
+```bash
+cat > ~/Library/LaunchAgents/com.pyworkon.daemon.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pyworkon.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/path/to/pyworkon</string>
+        <string>daemon</string>
+        <string>start</string>
+        <string>--foreground</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>
+EOF
+# Adjust /path/to/pyworkon (find it with: which pyworkon)
+launchctl load ~/Library/LaunchAgents/com.pyworkon.daemon.plist
+```
+
+**Linux (systemd):**
+
+```bash
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/pyworkon-daemon.service << 'EOF'
+[Unit]
+Description=PyWorkon Daemon
+
+[Service]
+ExecStart=/path/to/pyworkon daemon start --foreground
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+EOF
+# Adjust /path/to/pyworkon (find it with: which pyworkon)
+systemctl --user enable --now pyworkon-daemon
+```
 
 The daemon automatically:
 
@@ -133,6 +187,7 @@ The daemon automatically:
 - 🌿 Polls git branches for open projects
 - 🔀 Fetches PR/MR data (cached 60s per project)
 - 🔄 Auto-syncs providers every 24 hours
+- 🔌 Circuit breaker per provider — when a provider is unreachable (e.g., VPN down), polling pauses automatically and resumes when connectivity returns
 
 ### 🔌 Providers
 

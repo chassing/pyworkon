@@ -19,8 +19,11 @@ def daemon() -> None:
 
 
 @daemon.command()
-@click.option("--debug", is_flag=True, help="Run in foreground with stderr logging")
-def start(*, debug: bool) -> None:
+@click.option("--debug", is_flag=True, help="Run in foreground with debug logging")
+@click.option(
+    "--foreground", is_flag=True, help="Run in foreground (for launchd/systemd)"
+)
+def start(*, debug: bool, foreground: bool) -> None:
     """Start the daemon in the background."""
     if _is_running():
         rich_print("[yellow]Daemon is already running.[/]")
@@ -28,8 +31,8 @@ def start(*, debug: bool) -> None:
 
     from pyworkon.daemon.server import run_daemon
 
-    if debug:
-        run_daemon(debug=True)
+    if debug or foreground:
+        run_daemon(debug=debug)
         return
 
     pid = os.fork()

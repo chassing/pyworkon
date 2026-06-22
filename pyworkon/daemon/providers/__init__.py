@@ -1,4 +1,8 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from pyworkon.config import Provider, ProviderType
+from pyworkon.daemon.providers.circuit_breaker import get_breaker
 from pyworkon.daemon.providers.models import ProviderApi
 from pyworkon.exceptions import UnknownProviderTypeError
 
@@ -11,14 +15,25 @@ PROVIDER_MAPPING: dict[ProviderType, type[GitHubApi] | type[GitLabApi]] = {
 }
 
 
-def get_provider(provider: Provider) -> ProviderApi:
+@asynccontextmanager
+async def get_provider(provider: Provider) -> AsyncIterator[ProviderApi]:
+    """Get a provider API client wrapped in a circuit breaker.
+
+    Raises pybreaker.CircuitBreakerError when the provider is unreachable.
+    """
     try:
-        return PROVIDER_MAPPING[provider.type](
+        cls = PROVIDER_MAPPING[provider.type]
+    except KeyError:
+        msg = f"{provider.name}: {provider.type=} not supported"
+        raise UnknownProviderTypeError(msg) from None
+
+    breaker = get_breaker(provider.name)
+    with breaker.calling():
+        api = cls(
             name=provider.name,
             api_url=str(provider.api_url),
             username=provider.username,
             password=provider.password,
         )
-    except KeyError:
-        msg = f"{provider.name}: {provider.type=} not supported"
-        raise UnknownProviderTypeError(msg) from None
+        async with api as instance:
+            yield instance
