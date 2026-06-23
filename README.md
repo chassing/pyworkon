@@ -74,6 +74,7 @@ pyworkon sidebar toggle
 - 🔔 **Push notifications** — daemon events as Textual toast notifications
 - 🤖 **AI agent tracking** — Claude Code hook integration with per-agent status
 - 🖥️ **tmux native** — sessions, panes, tmuxp layouts, sidebar toggle per window
+- 🍎 **macOS app** — install the dashboard as a standalone app with Spotlight/Launchpad support
 
 ---
 
@@ -186,6 +187,23 @@ The daemon automatically:
 - 📡 Pushes state updates to all connected TUI apps instantly (event-based, no polling delay)
 - 🔄 Auto-syncs providers every 24 hours
 - 🔌 Circuit breaker per provider — when a provider is unreachable (e.g., VPN down), polling pauses automatically and resumes when connectivity returns
+
+### 🍎 macOS App
+
+On macOS, you can install the dashboard as a standalone app that's launchable from Spotlight and Launchpad. It opens in a dedicated [Ghostty](https://ghostty.org/) terminal window.
+
+```bash
+# Install the app bundle to ~/Applications
+pyworkon app install
+
+# Launch it
+open -a "Pyworkon Dashboard"   # or search "Pyworkon Dashboard" in Spotlight
+
+# Remove the app
+pyworkon app uninstall
+```
+
+**Requirements:** [Ghostty.app](https://ghostty.org/) must be installed in `/Applications`. Your existing Ghostty theme, font, and keybindings are inherited automatically.
 
 ### 🔌 Providers
 
