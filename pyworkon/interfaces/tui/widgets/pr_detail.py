@@ -112,6 +112,8 @@ class PRDetail(Widget):
             self.ci_failure = bool(failed)
             if failed:
                 self.state_text = icons.PR_CI_FAILURE
+            elif pr.status == PRStatus.PENDING:
+                self.state_text = icons.PR_CI_PENDING
             elif pr.is_draft:
                 self.state_text = icons.PR_STATE_DRAFT
             else:
