@@ -129,24 +129,24 @@ All widget styles are defined as `DEFAULT_CSS` class variables, not in external 
 
 ### Protocol Commands
 
-| Command | Fields | Purpose |
-|---------|--------|---------|
-| `OPEN_PROJECT` | `project_id`, `pane_id?`, `session?` | Register a project as open (called by `workon` on shell entry) |
-| `CLOSE_PROJECT` | `project_id`, `pane_id?` | Unregister a single pane (called by `workon` on shell exit) |
-| `ENTER_PROJECT` | `project_id` | Create tmux session (if needed) and switch to it (called by popup/TUI) |
-| `SWITCH_SESSION` | `session`, `pane_id?` | Switch to an existing tmux session/pane (called by popup/TUI) |
-| `KILL_SESSION` | `session` | Kill a tmux session and clean up all tracking (called by popup Ctrl-X) |
-| `SUBSCRIBE` | `events[]`, `full?` | Subscribe to push events (`state`, `notification`) |
-| `AGENT_STATUS` | `session`, `name`, `status` | Update agent status for a session |
-| `AGENT_CLEAR` | `session`, `name` | Remove an agent from a session |
-| `LIST_PROJECTS` | `local?` | List all known projects |
-| `GET_PROJECT` | `project_id` | Get a single project |
-| `CLONE_PROJECT` | `project_id` | Clone a project repository |
-| `SYNC_PROVIDERS` | — | Force-sync all providers |
-| `GET_SIDEBAR_STATE` | — | One-shot state query (no subscription) |
-| `STATUS` | — | Daemon health/stats |
-| `NOTIFY` | `message`, `level?` | Broadcast a notification to subscribers |
-| `SHUTDOWN` | — | Stop the daemon |
+| Command             | Fields                               | Purpose                                                                |
+| ------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
+| `OPEN_PROJECT`      | `project_id`, `pane_id?`, `session?` | Register a project as open (called by `workon` on shell entry)         |
+| `CLOSE_PROJECT`     | `project_id`, `pane_id?`             | Unregister a single pane (called by `workon` on shell exit)            |
+| `ENTER_PROJECT`     | `project_id`                         | Create tmux session (if needed) and switch to it (called by popup/TUI) |
+| `SWITCH_SESSION`    | `session`, `pane_id?`                | Switch to an existing tmux session/pane (called by popup/TUI)          |
+| `KILL_SESSION`      | `session`                            | Kill a tmux session and clean up all tracking (called by popup Ctrl-X) |
+| `SUBSCRIBE`         | `events[]`, `full?`                  | Subscribe to push events (`state`, `notification`)                     |
+| `AGENT_STATUS`      | `session`, `name`, `status`          | Update agent status for a session                                      |
+| `AGENT_CLEAR`       | `session`, `name`                    | Remove an agent from a session                                         |
+| `LIST_PROJECTS`     | `local?`                             | List all known projects                                                |
+| `GET_PROJECT`       | `project_id`                         | Get a single project                                                   |
+| `CLONE_PROJECT`     | `project_id`                         | Clone a project repository                                             |
+| `SYNC_PROVIDERS`    | —                                    | Force-sync all providers                                               |
+| `GET_SIDEBAR_STATE` | —                                    | One-shot state query (no subscription)                                 |
+| `STATUS`            | —                                    | Daemon health/stats                                                    |
+| `NOTIFY`            | `message`, `level?`                  | Broadcast a notification to subscribers                                |
+| `SHUTDOWN`          | —                                    | Stop the daemon                                                        |
 
 ### CRITICAL: State Event Push Rule
 
@@ -157,6 +157,7 @@ Commands that push state: `OPEN_PROJECT`, `CLOSE_PROJECT`, `KILL_SESSION`, `AGEN
 ### `_open_projects` Key Schema
 
 Keys follow the pattern `{project_id}|{qualifier}`:
+
 - `github/owner/repo|%5` — opened by `workon` with tmux pane `%5`
 - `github/owner/repo|default` — opened without pane_id
 - `github/owner/repo|tmux` — auto-discovered by `_poll_tmux()` or created by `ENTER_PROJECT`
@@ -179,11 +180,11 @@ Sessions created by pyworkon (via `tmuxp load`) get `PYWORKON_PROJECT_ID` as a t
 
 ## Nerd Font Icons
 
-Icons are defined in `interfaces/tui/icons.py`. **ALWAYS use explicit Unicode escapes** (e.g., `""`) — never paste the raw glyph character. Raw glyphs get silently stripped by formatters and editors, producing empty strings that are hard to debug.
+Icons are defined in `interfaces/tui/icons.py`. **ALWAYS use explicit Unicode escapes** (e.g., `""`) — never paste the raw glyph character. Raw glyphs get silently stripped by formatters and editors, producing empty strings that are hard to debug.
 
 ```python
 # GOOD
-ICON_GITHUB = ""  # (nf-fa-github)
+ICON_GITHUB = ""  # (nf-fa-github)
 
 # BAD — glyph will be silently stripped
 ICON_GITHUB = ""  # (nf-fa-github)
@@ -206,6 +207,7 @@ make ci                                    # lint + typecheck + tests
 ```
 
 **Rules:**
+
 - ALWAYS use pytest functions, never class-based tests
 - Use `@pytest.fixture` for reusable test data and dependencies
 - Use `@pytest.mark.parametrize` for testing with different inputs
