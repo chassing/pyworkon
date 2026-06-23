@@ -60,7 +60,7 @@ class PRDetail(Widget):
     PRDetail .detail-row.--ci-failure {
         background: $error 15%;
     }
-    PRDetail .detail-row.--ci-failure-row {
+    PRDetail .detail-row.--ci-check-row {
         padding-left: 7;
     }
     PRDetail .detail-left {
@@ -72,9 +72,15 @@ class PRDetail(Widget):
         color: $accent;
         text-style: underline;
     }
-    PRDetail .detail-left.--ci-check-link {
+    PRDetail .detail-left.--ci-check-failure {
         color: $error;
         text-style: underline;
+    }
+    PRDetail .detail-left.--ci-check-pending {
+        color: $warning;
+    }
+    PRDetail .detail-left.--ci-check-success {
+        color: $success;
     }
     PRDetail .detail-right {
         width: auto;
@@ -87,7 +93,7 @@ class PRDetail(Widget):
     link_text: reactive[str] = reactive("")
     state_text: reactive[str] = reactive("")
     ci_failure: reactive[bool] = reactive(default=False)
-    failed_checks: reactive[tuple[tuple[str, str], ...]] = reactive(())
+    ci_checks: reactive[tuple[tuple[str, str, str], ...]] = reactive(())
 
     def __init__(self, *, show_ci_checks: bool = True, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -104,13 +110,9 @@ class PRDetail(Widget):
             )
             self._pr_url = pr.url
             self.link_text = f"{owner_repo}#{pr.number}"
-            failed = [
-                (c.name, c.url or "")
-                for c in pr.ci_checks
-                if c.status == PRStatus.FAILURE
-            ]
-            self.ci_failure = bool(failed)
-            if failed:
+            has_failure = any(c.status == PRStatus.FAILURE for c in pr.ci_checks)
+            self.ci_failure = has_failure
+            if has_failure:
                 self.state_text = icons.PR_CI_FAILURE
             elif pr.status == PRStatus.PENDING:
                 self.state_text = icons.PR_CI_PENDING
@@ -118,7 +120,11 @@ class PRDetail(Widget):
                 self.state_text = icons.PR_STATE_DRAFT
             else:
                 self.state_text = _PR_STATE_ICONS.get(pr.state, "")
-            self.failed_checks = tuple(failed) if self._show_ci_checks else ()
+            self.ci_checks = (
+                tuple((c.name, c.url or "", c.status.value) for c in pr.ci_checks)
+                if self._show_ci_checks
+                else ()
+            )
             self.display = True
         else:
             self._pr_url = None
@@ -127,7 +133,7 @@ class PRDetail(Widget):
             self.link_text = ""
             self.state_text = ""
             self.ci_failure = False
-            self.failed_checks = ()
+            self.ci_checks = ()
             self.display = False
 
     def compose(self) -> ComposeResult:
@@ -153,12 +159,16 @@ class PRDetail(Widget):
             classes="detail-row --ci-failure" if self.ci_failure else "detail-row",
         )
         if self._show_ci_checks:
-            for name, url in self.failed_checks:
+            for name, url, status in self.ci_checks:
+                icon = _PR_STATUS_ICONS.get(PRStatus(status), "")
                 yield Horizontal(
                     PRLink(
-                        name, url=url or None, classes="detail-left --ci-check-link"
+                        name,
+                        url=url or None,
+                        classes=f"detail-left --ci-check-{status}",
                     ),
-                    classes="detail-row --ci-failure-row",
+                    Label(icon, classes="detail-right", markup=True),
+                    classes="detail-row --ci-check-row",
                 )
 
     def watch_title_text(self, value: str) -> None:
@@ -183,7 +193,7 @@ class PRDetail(Widget):
         with contextlib.suppress(Exception):
             self.query_one("#row-pr-link").set_class(value, "--ci-failure")
 
-    async def watch_failed_checks(self, value: tuple[tuple[str, str], ...]) -> None:
+    async def watch_ci_checks(self, value: tuple[tuple[str, str, str], ...]) -> None:
         if not self.is_mounted or not self._show_ci_checks:
             return
         await self.recompose()

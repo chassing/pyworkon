@@ -166,8 +166,8 @@ async def test_pr_detail_ci_checks_shown() -> None:
     async with app.run_test() as pilot:
         widget.update(pr, "acme/repo")
         await pilot.pause()
-        failure_rows = app.query(".--ci-failure-row")
-        assert len(failure_rows) == 1
+        check_rows = app.query(".--ci-check-row")
+        assert len(check_rows) == 2
 
 
 async def test_pr_detail_ci_checks_hidden_when_disabled() -> None:
@@ -180,8 +180,8 @@ async def test_pr_detail_ci_checks_hidden_when_disabled() -> None:
     async with app.run_test():
         widget.update(pr, "acme/repo")
         await app._animator.wait_for_idle()
-        failure_rows = app.query(".--ci-failure-row")
-        assert len(failure_rows) == 0
+        check_rows = app.query(".--ci-check-row")
+        assert len(check_rows) == 0
 
 
 # ---------------------------------------------------------------------------

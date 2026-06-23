@@ -28,6 +28,13 @@ _CONCLUSION_STATUS_MAP: dict[str, PRStatus] = {
     "action_required": PRStatus.FAILURE,
 }
 
+_STATUS_PRIORITY: dict[PRStatus, int] = {
+    PRStatus.NONE: 0,
+    PRStatus.SUCCESS: 1,
+    PRStatus.PENDING: 2,
+    PRStatus.FAILURE: 3,
+}
+
 _REVIEW_STATE_MAP: dict[str, PRReviewStatus] = {
     "APPROVED": PRReviewStatus.APPROVED,
     "CHANGES_REQUESTED": PRReviewStatus.CHANGES_REQUESTED,
@@ -122,17 +129,20 @@ class GitHubApi:
         if not response.check_runs:
             return PRStatus.NONE, []
 
-        failed: list[CICheck] = []
+        checks: list[CICheck] = []
         overall = PRStatus.SUCCESS
         for run in response.check_runs:
             if run.status != "completed":
-                overall = PRStatus.PENDING
-                continue
-            status = _CONCLUSION_STATUS_MAP.get(run.conclusion or "", PRStatus.NONE)
-            if status == PRStatus.FAILURE:
-                overall = PRStatus.FAILURE
-                failed.append(CICheck(name=run.name, status=status, url=run.html_url))
-        return overall, failed
+                status = PRStatus.PENDING
+            else:
+                status = _CONCLUSION_STATUS_MAP.get(
+                    run.conclusion or "", PRStatus.SUCCESS
+                )
+            checks.append(CICheck(name=run.name, status=status, url=run.html_url))
+            if _STATUS_PRIORITY[status] > _STATUS_PRIORITY[overall]:
+                overall = status
+        checks.sort(key=lambda c: c.name)
+        return overall, checks if overall != PRStatus.SUCCESS else []
 
     async def _get_review_status(
         self, owner: str, repo: str, pull_number: int

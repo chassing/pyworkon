@@ -131,15 +131,27 @@ class Project(BaseModel):
         if branch == await self.get_default_branch():
             return None
         try:
-            async with get_provider(self.provider) as api:
-                owner, _, _ = self.owner_repo.partition("/")
-                target = await self.get_upstream_owner_repo() or self.owner_repo
-                return await api.get_pr_info(target, branch, head_owner=owner)
+            return await self._fetch_pr_info(branch)
         except pybreaker.CircuitBreakerError:
             pass
         except Exception:  # noqa: BLE001
             log.debug("Failed to fetch PR info for %s branch=%s", self.id, branch)
         return None
+
+    async def _fetch_pr_info(self, branch: str) -> PRInfo | None:
+        assert self.provider
+        async with get_provider(self.provider) as api:
+            owner, _, _ = self.owner_repo.partition("/")
+            upstream = await self.get_upstream_owner_repo()
+            target = upstream or self.owner_repo
+            if result := await api.get_pr_info(target, branch, head_owner=owner):
+                return result
+            # For forks: retry with upstream owner to find PRs created
+            # directly on the upstream repo (e.g. Konflux/Renovate bot PRs)
+            if upstream:
+                upstream_owner, _, _ = upstream.partition("/")
+                return await api.get_pr_info(target, branch, head_owner=upstream_owner)
+            return None
 
     def enter(self, command: str | None = None, title: str | None = None) -> None:
         """Enter project."""
