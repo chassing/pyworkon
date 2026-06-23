@@ -232,6 +232,7 @@ class Daemon:
             op.branch = await project.get_current_branch()
             op.is_dirty = await project.has_uncommitted_changes()
             await self._git_watcher.watch(cmd.project_id, project.project_home)
+        self._push_event("state", self._build_sidebar_state())
         yield ok()
 
     def _find_session_for_project(self, project_id: str) -> str | None:
@@ -262,6 +263,7 @@ class Daemon:
             )
             if not remaining:
                 await self._git_watcher.unwatch(cmd.project_id)
+            self._push_event("state", self._build_sidebar_state())
         yield ok()
 
     async def _cmd_kill_session(self, cmd: Command) -> AsyncResponseIterator:

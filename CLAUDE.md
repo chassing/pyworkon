@@ -125,7 +125,51 @@ All widget styles are defined as `DEFAULT_CSS` class variables, not in external 
 - **Event-based push** via `SUBSCRIBE` command with event categories (`state`, `notification`). Clients specify which events they want and whether to receive initial state (`full=True`). Daemon pushes `EVENT` responses whenever state changes.
 - **Git filesystem watchers** (`git_watcher.py`) using `watchfiles` — watches project root with custom filter for `.git/HEAD` (branch) and working tree files (dirty state). Branch changes detected instantly, dirty state via `git status --porcelain -uno`.
 - **Circuit breaker** (`pybreaker`) per provider via `get_provider()`. After 3 consecutive API failures, the provider is paused for 5 minutes. Manual `provider sync` resets the breaker (`force=True`).
-- **Tmux management** (`tmux_mgr.py`) lives in the daemon package. The daemon is the single owner of all tmux operations: session creation (`ENTER_PROJECT`), switching (`SWITCH_SESSION`), killing (`KILL_SESSION`), and polling. `KILL_SESSION` checks `PYWORKON_PROJECT_ID` env var to protect non-pyworkon sessions.
+- **Tmux management** (`tmux_mgr.py`) lives in the daemon package. The daemon is the single owner of all tmux operations: session creation, switching, killing, and polling. TUI and CLI never import `tmux_mgr` directly.
+
+### Protocol Commands
+
+| Command | Fields | Purpose |
+|---------|--------|---------|
+| `OPEN_PROJECT` | `project_id`, `pane_id?`, `session?` | Register a project as open (called by `workon` on shell entry) |
+| `CLOSE_PROJECT` | `project_id`, `pane_id?` | Unregister a single pane (called by `workon` on shell exit) |
+| `ENTER_PROJECT` | `project_id` | Create tmux session (if needed) and switch to it (called by popup/TUI) |
+| `SWITCH_SESSION` | `session`, `pane_id?` | Switch to an existing tmux session/pane (called by popup/TUI) |
+| `KILL_SESSION` | `session` | Kill a tmux session and clean up all tracking (called by popup Ctrl-X) |
+| `SUBSCRIBE` | `events[]`, `full?` | Subscribe to push events (`state`, `notification`) |
+| `AGENT_STATUS` | `session`, `name`, `status` | Update agent status for a session |
+| `AGENT_CLEAR` | `session`, `name` | Remove an agent from a session |
+| `LIST_PROJECTS` | `local?` | List all known projects |
+| `GET_PROJECT` | `project_id` | Get a single project |
+| `CLONE_PROJECT` | `project_id` | Clone a project repository |
+| `SYNC_PROVIDERS` | — | Force-sync all providers |
+| `GET_SIDEBAR_STATE` | — | One-shot state query (no subscription) |
+| `STATUS` | — | Daemon health/stats |
+| `NOTIFY` | `message`, `level?` | Broadcast a notification to subscribers |
+| `SHUTDOWN` | — | Stop the daemon |
+
+### CRITICAL: State Event Push Rule
+
+**Every command that modifies `_open_projects` MUST call `_push_event("state", self._build_sidebar_state())`.** Without this, TUI subscribers (dashboard, popup) won't see the change until the next 5-second polling cycle. This was the root cause of multiple "session doesn't appear" bugs.
+
+Commands that push state: `OPEN_PROJECT`, `CLOSE_PROJECT`, `KILL_SESSION`, `AGENT_STATUS`, `AGENT_CLEAR`, branch/dirty change callbacks.
+
+### `_open_projects` Key Schema
+
+Keys follow the pattern `{project_id}|{qualifier}`:
+- `github/owner/repo|%5` — opened by `workon` with tmux pane `%5`
+- `github/owner/repo|default` — opened without pane_id
+- `github/owner/repo|tmux` — auto-discovered by `_poll_tmux()` or created by `ENTER_PROJECT`
+
+The same project can have **multiple entries** (different panes/windows). `CLOSE_PROJECT` removes one entry by key. Git watcher is only unwatched when **no entries** remain for that `project_id`.
+
+### Session Ownership (`PYWORKON_PROJECT_ID`)
+
+Sessions created by pyworkon (via `tmuxp load`) get `PYWORKON_PROJECT_ID` as a tmux session environment variable. `KILL_SESSION` checks for this before killing — sessions without it are protected (daemon sends a warning notification instead). This prevents killing manually-created tmux sessions that happen to have `workon` running inside them.
+
+### `_push_event` is Sync
+
+`_push_event` uses `writer.write()` (buffer-only, no `drain()`) so it can be called from sync contexts like the circuit breaker callback (`_broadcast`). This means it doesn't await — data goes into the kernel buffer but delivery is not guaranteed before the next `await`.
 
 ## CLI
 
