@@ -9,15 +9,15 @@ import logging
 import operator
 import os
 import subprocess
+import sys
 import time
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
-if TYPE_CHECKING:
-    from pyworkon.daemon.git_watcher import GitWatcher
-
-from pyworkon.config import config, user_cache_dir
+from pyworkon.config import Provider, ProviderType, config, user_cache_dir
+from pyworkon.daemon.git_watcher import GitWatcher
 from pyworkon.daemon.models import AgentInfo, OpenProject
+from pyworkon.daemon.project_mgr import ProjectManager
 from pyworkon.daemon.protocol import (
     Command,
     CommandType,
@@ -27,6 +27,10 @@ from pyworkon.daemon.protocol import (
     ok,
     progress,
 )
+from pyworkon.daemon.providers import get_provider
+from pyworkon.daemon.providers.circuit_breaker import set_notification_callback
+from pyworkon.daemon.providers.github import GitHubApi
+from pyworkon.daemon.tmux_mgr import tmux_manager
 from pyworkon.utils import run_cmd
 
 log = logging.getLogger(__name__)
@@ -36,6 +40,7 @@ AsyncResponseIterator = AsyncGenerator[Response, None]
 SOCKET_PATH = user_cache_dir / "daemon.sock"
 PID_FILE = user_cache_dir / "daemon.pid"
 PR_CACHE_TTL = 60.0
+REVIEW_PR_CACHE_TTL = 60.0
 PROVIDER_SYNC_INTERVAL = 86400
 
 
@@ -43,21 +48,19 @@ class Daemon:
     """Central pyworkon daemon — fully async."""
 
     def __init__(self) -> None:
-        from pyworkon.daemon.project_mgr import ProjectManager
-
         self._project_mgr = ProjectManager()
         self._open_projects: dict[str, OpenProject] = {}
         self._tmux_sessions: list[tuple[str, str | None]] = []
         self._plain_sessions: list[str] = []
         self._last_provider_sync: float = time.monotonic()
+        self._review_prs: dict[str, list[dict[str, Any]]] = {}
+        self._review_prs_fetched_at: float = 0.0
         self._running = True
         self._subscribers: dict[asyncio.StreamWriter, set[str]] = {}
         self._git_watcher = self._create_git_watcher()
 
     async def start(self) -> None:
         """Start the daemon server."""
-        from pyworkon.daemon.providers.circuit_breaker import set_notification_callback
-
         set_notification_callback(self._broadcast)
 
         SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -247,8 +250,6 @@ class Daemon:
         """Resolve tmux session name from a pane ID."""
         if not pane_id:
             return None
-        from pyworkon.daemon.tmux_mgr import tmux_manager
-
         return await tmux_manager.get_pane_session(pane_id)
 
     async def _cmd_close_project(self, cmd: Command) -> AsyncResponseIterator:
@@ -271,8 +272,6 @@ class Daemon:
             yield error("session required")
             return
         session_name = cmd.session
-
-        from pyworkon.daemon.tmux_mgr import tmux_manager
 
         if not await self._is_pyworkon_session(session_name):
             self._broadcast(
@@ -315,8 +314,6 @@ class Daemon:
             yield error("session required")
             return
 
-        from pyworkon.daemon.tmux_mgr import tmux_manager
-
         if cmd.pane_id:
             await tmux_manager.select_pane(cmd.session, cmd.pane_id)
         else:
@@ -332,8 +329,6 @@ class Daemon:
         except KeyError:
             yield error(f"Project not found: {cmd.project_id}")
             return
-
-        from pyworkon.daemon.tmux_mgr import tmux_manager
 
         await tmux_manager.enter(project)
         yield ok()
@@ -383,6 +378,7 @@ class Daemon:
                 for p in self._project_mgr.list(local=True)
                 if not any(op.project_id == p.id for op in self._open_projects.values())
             ],
+            "review_prs": self._review_prs,
         }
 
     async def _cmd_get_sidebar_state(self, cmd: Command) -> AsyncResponseIterator:
@@ -434,8 +430,6 @@ class Daemon:
         )
 
     def _create_git_watcher(self) -> GitWatcher:
-        from pyworkon.daemon.git_watcher import GitWatcher
-
         return GitWatcher(
             on_branch_change=self._on_branch_change,
             on_dirty_change=self._on_dirty_change,
@@ -473,6 +467,7 @@ class Daemon:
             try:
                 await self._poll_tmux()
                 await self._poll_pr_data()
+                await self._poll_review_prs()
                 await self._maybe_sync_providers()
                 self._push_event("state", self._build_sidebar_state())
             except Exception:
@@ -480,8 +475,6 @@ class Daemon:
             await asyncio.sleep(config.sidebar_refresh_interval)
 
     async def _poll_tmux(self) -> None:
-        from pyworkon.daemon.tmux_mgr import tmux_manager
-
         self._tmux_sessions = await tmux_manager.list_sessions_with_project_id()
         self._plain_sessions = [name for name, pid in self._tmux_sessions if not pid]
 
@@ -538,6 +531,40 @@ class Daemon:
         op.pr_fetched_at = now
         if pr:
             log.info("PR data: %s #%s (%s)", op.project_id, pr.number, pr.state)
+
+    async def _poll_review_prs(self) -> None:
+        """Fetch PRs where the authenticated user is a requested reviewer."""
+        now = time.monotonic()
+        if now - self._review_prs_fetched_at < REVIEW_PR_CACHE_TTL:
+            return
+
+        review_prs: dict[str, list[dict[str, Any]]] = {}
+        for provider in config.providers:
+            if provider.type != ProviderType.github:
+                continue
+            try:
+                prs = await self._fetch_review_prs_for_provider(provider)
+                review_prs.update(prs)
+            except Exception:  # noqa: BLE001
+                log.debug("Failed to poll review PRs for %s", provider.name)
+
+        self._review_prs = review_prs
+        self._review_prs_fetched_at = now
+
+    @staticmethod
+    async def _fetch_review_prs_for_provider(
+        provider: Provider,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Fetch review-requested PRs for a single GitHub provider."""
+        result: dict[str, list[dict[str, Any]]] = {}
+        async with get_provider(provider) as api:
+            if not isinstance(api, GitHubApi):
+                return result
+            prs_by_repo = await api.get_review_requested_prs()
+        for owner_repo, prs in prs_by_repo.items():
+            project_id = f"{provider.name}/{owner_repo}"
+            result[project_id] = [pr.model_dump() for pr in prs]
+        return result
 
     async def _maybe_sync_providers(self) -> None:
         if time.monotonic() - self._last_provider_sync > PROVIDER_SYNC_INTERVAL:
@@ -608,8 +635,6 @@ def run_daemon(*, debug: bool = False) -> None:
             handlers=[logging.FileHandler(log_file)],
             force=True,
         )
-        import sys
-
         sys.stdout = log_handle
         sys.stderr = log_handle
 

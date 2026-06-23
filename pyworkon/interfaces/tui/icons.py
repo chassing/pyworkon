@@ -39,3 +39,6 @@ PR_STATE_DRAFT = "[dim]●[/]"
 PR_REVIEW_APPROVED = "[green]✓[/]"
 PR_REVIEW_CHANGES_REQUESTED = "[red]✗[/]"
 PR_REVIEW_PENDING = "[yellow]○[/]"
+
+# Review request icon
+ICON_REVIEW_REQUEST = ""  # (nf-fa-eye)

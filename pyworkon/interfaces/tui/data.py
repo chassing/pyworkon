@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from pyworkon.daemon.project_mgr import Project
-from pyworkon.interfaces.tui.models import AgentInfo, PRInfo, SessionInfo
+from pyworkon.interfaces.tui.models import AgentInfo, PRInfo, ReviewPR, SessionInfo
 
 SessionInfo.model_rebuild(_types_namespace={"Project": Project})
 
@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 def parse_sidebar_state(
     state: dict[str, Any],
-) -> tuple[list[SessionInfo], list[Project], list[str]]:
+) -> tuple[list[SessionInfo], list[Project], list[str], dict[str, list[ReviewPR]]]:
     """Parse daemon sidebar state into typed models."""
     sessions: list[SessionInfo] = []
     for s in state.get("sessions", []):
@@ -49,4 +49,9 @@ def parse_sidebar_state(
             continue
 
     plain_sessions: list[str] = state.get("plain_sessions", [])
-    return sessions, projects, plain_sessions
+
+    review_prs: dict[str, list[ReviewPR]] = {}
+    for project_id, prs in state.get("review_prs", {}).items():
+        review_prs[project_id] = [ReviewPR(**pr) for pr in prs]
+
+    return sessions, projects, plain_sessions, review_prs

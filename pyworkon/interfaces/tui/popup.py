@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from textual.binding import Binding
 
 from pyworkon.interfaces.tui.base import BaseApp
-from pyworkon.interfaces.tui.models import PlainSession, SessionInfo
+from pyworkon.interfaces.tui.models import PlainSession, ReviewPR, SessionInfo
 from pyworkon.interfaces.tui.widgets import SessionCard, SidebarItem
 
 if TYPE_CHECKING:
@@ -30,6 +30,7 @@ class PopupApp(BaseApp):
         sessions: list[SessionInfo],
         projects: list[Project],
         plain_names: list[str],
+        review_prs: dict[str, list[ReviewPR]],
     ) -> list[SidebarItem]:
         plain = [PlainSession(name) for name in plain_names]
         return [*plain, *sessions, *projects]

@@ -44,3 +44,21 @@ class ReviewUser(BaseModel):
 class Review(BaseModel):
     state: str  # APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED
     user: ReviewUser
+
+
+class SearchUser(BaseModel):
+    login: str
+
+
+class SearchIssueItem(BaseModel):
+    number: int
+    title: str
+    html_url: str
+    draft: bool = False
+    user: SearchUser
+    repository_url: str
+
+
+class SearchIssuesResponse(BaseModel):
+    total_count: int
+    items: list[SearchIssueItem]

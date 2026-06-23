@@ -14,7 +14,7 @@ from textual.widgets import Footer, Label, Rule
 from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
 from pyworkon.daemon.project_mgr import Project
 from pyworkon.interfaces.tui.data import parse_sidebar_state
-from pyworkon.interfaces.tui.models import PlainSession, SessionInfo
+from pyworkon.interfaces.tui.models import PlainSession, ReviewPR, SessionInfo
 from pyworkon.interfaces.tui.widgets import (
     PlainSessionRow,
     ProjectRow,
@@ -88,6 +88,7 @@ class BaseApp(App[None]):
         sessions: list[SessionInfo],
         projects: list[Project],
         plain_names: list[str],
+        review_prs: dict[str, list[ReviewPR]],
     ) -> list[SidebarItem]:
         """Subclass decides which item types to include."""
         raise NotImplementedError
@@ -165,8 +166,8 @@ class BaseApp(App[None]):
                     self.call_from_thread(self.notify, message, severity=severity)
 
     def _handle_state_event(self, state: dict[str, Any]) -> None:
-        sessions, projects, plain_names = parse_sidebar_state(state)
-        new_items = self._build_items(sessions, projects, plain_names)
+        sessions, projects, plain_names, review_prs = parse_sidebar_state(state)
+        new_items = self._build_items(sessions, projects, plain_names, review_prs)
         self.call_from_thread(self._apply_new_items, new_items)
 
     # --- Item management ---

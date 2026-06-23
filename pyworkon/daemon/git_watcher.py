@@ -7,6 +7,8 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING
 
+from watchfiles import awatch
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from pathlib import Path
@@ -68,7 +70,6 @@ class GitWatcher:
         self._tasks.clear()
 
     async def _watch_loop(self, project_id: str, project_home: Path) -> None:
-        from watchfiles import awatch
 
         try:
             async for changes in awatch(

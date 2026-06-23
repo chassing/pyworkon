@@ -10,12 +10,13 @@ from pyworkon.interfaces.tui.models import (
     PRReviewStatus,
     PRState,
     PRStatus,
+    ReviewPR,
 )
 
 from . import consumer
 
 if TYPE_CHECKING:
-    from .models import PullRequest, Repository
+    from .models import PullRequest, Repository, SearchIssueItem
 
 log = logging.getLogger(__name__)
 
@@ -161,3 +162,37 @@ class GitHubApi:
         if any(s == "APPROVED" for s in latest_per_user.values()):
             return PRReviewStatus.APPROVED
         return PRReviewStatus.PENDING
+
+    async def get_review_requested_prs(self) -> dict[str, list[ReviewPR]]:
+        """Get all open PRs where the authenticated user is a requested reviewer.
+
+        Returns a dict keyed by owner/repo with lists of ReviewPR objects.
+        """
+        try:
+            response = await consumer.search_issues(
+                q=f"is:open is:pr review-requested:{self._username}",
+                per_page=100,
+            )
+        except (ConnectionError, TimeoutError, OSError):
+            log.debug("Failed to fetch review-requested PRs")
+            return {}
+
+        result: dict[str, list[ReviewPR]] = {}
+        api_prefix = "https://api.github.com/repos/"
+        for item in response.items:
+            owner_repo = item.repository_url.removeprefix(api_prefix)
+            if not owner_repo or owner_repo == item.repository_url:
+                continue
+            review_pr = self._build_review_pr(item)
+            result.setdefault(owner_repo, []).append(review_pr)
+        return result
+
+    @staticmethod
+    def _build_review_pr(item: SearchIssueItem) -> ReviewPR:
+        return ReviewPR(
+            number=item.number,
+            title=item.title,
+            url=item.html_url,
+            author=item.user.login,
+            is_draft=item.draft,
+        )

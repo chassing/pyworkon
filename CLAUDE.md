@@ -43,6 +43,7 @@ pyworkon/
 │           ├── branch_row.py       # BranchRow — branch icon + name + dirty indicator
 │           ├── pr_detail.py        # PRDetail — title, link, state, review, CI checks
 │           ├── agent_list.py       # AgentList — dynamic agent rows with status
+│           ├── review_request_list.py # ReviewRequestList — PRs requesting user review
 │           ├── pr_link.py          # PRLink — clickable label → webbrowser
 │           ├── project_row.py      # ProjectRow — unattached project display
 │           └── plain_session_row.py # PlainSessionRow — plain tmux session
@@ -70,7 +71,7 @@ Providers use `clientele`'s **standalone function pattern** (not class methods).
 
 Widgets are fine-grained and composable. Each widget owns its own reactives, CSS (`DEFAULT_CSS`), and `update()` method:
 
-- `SessionCard` composes `SessionHeader`, `BranchRow`, `PRDetail`, `AgentList`
+- `SessionCard` composes `SessionHeader`, `BranchRow`, `PRDetail`, `ReviewRequestList`, `AgentList`
 - `PRDetail` is independently reusable (has `show_ci_checks` parameter)
 - `AgentList` is independently reusable
 - `BaseApp` provides shared daemon subscription, item management, navigation
@@ -218,6 +219,7 @@ make ci                                    # lint + typecheck + tests
 
 ## Key Patterns
 
+- **No inline imports.** All imports go at the top of the file. Never use `from X import Y` inside functions or methods — there are no circular import issues in this codebase that would justify it.
 - `contextlib.suppress(Exception)` for best-effort DOM queries in watchers
 - `contextlib.suppress(subprocess.CalledProcessError)` for optional tmux/git calls
 - `StrEnum` for all enum types (`PRStatus`, `PRState`, `ProviderType`, `CommandType`, `ResponseType`)

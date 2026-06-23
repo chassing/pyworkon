@@ -3,7 +3,14 @@ import logging
 
 from clientele import api as clientele_api
 
-from .models import CheckRunsResponse, CombinedStatus, PullRequest, Repository, Review
+from .models import (
+    CheckRunsResponse,
+    CombinedStatus,
+    PullRequest,
+    Repository,
+    Review,
+    SearchIssuesResponse,
+)
 
 log = logging.getLogger(__name__)
 
@@ -77,4 +84,14 @@ async def pull_reviews(  # noqa: RUF029
     pull_number: int,
 ) -> list[Review]:
     """Get reviews for a pull request."""
+    return result
+
+
+@client.get("/search/issues")
+async def search_issues(  # noqa: RUF029
+    result: SearchIssuesResponse,
+    q: str,
+    per_page: int = 100,
+) -> SearchIssuesResponse:
+    """Search issues and pull requests."""
     return result

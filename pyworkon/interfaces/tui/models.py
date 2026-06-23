@@ -47,6 +47,14 @@ class PRInfo(BaseModel):
     ci_checks: list[CICheck] = []
 
 
+class ReviewPR(BaseModel):
+    number: int
+    title: str
+    url: str
+    author: str
+    is_draft: bool = False
+
+
 class AgentInfo(BaseModel):
     name: str
     status: str
@@ -58,6 +66,7 @@ class SessionInfo(BaseModel):
     branch: str | None = None
     is_dirty: bool = False
     pr: PRInfo | None = None
+    review_prs: list[ReviewPR] = []
     agents: list[AgentInfo] = []
     is_current: bool = False
     pane_id: str | None = None
