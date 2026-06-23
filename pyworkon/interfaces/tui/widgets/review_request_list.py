@@ -94,37 +94,9 @@ class ReviewRequestList(Widget):
                     classes="detail-row --review-row",
                 )
 
-    def watch_review_data(
+    async def watch_review_data(
         self, value: tuple[tuple[str, str, str | None, str], ...]
     ) -> None:
         if not self.is_mounted:
             return
-        for widget in self.query(".review-header, .--review-row"):
-            widget.remove()
-        if not value:
-            self.display = False
-            return
-        self.mount(
-            Horizontal(
-                Label(icons.ICON_REVIEW_REQUEST, classes="review-header-icon"),
-                Label(
-                    f"Reviews requested ({len(value)})",
-                    classes="review-header-text",
-                ),
-                classes="review-header",
-            )
-        )
-        for title, number, url, author in value:
-            self.mount(
-                Horizontal(
-                    Label("", classes="detail-icon"),
-                    PRLink(
-                        f"{title} ({number})",
-                        url=url,
-                        classes="detail-left --review-link",
-                    ),
-                    Label(author, classes="detail-right"),
-                    classes="detail-row --review-row",
-                )
-            )
-        self.display = True
+        await self.recompose()

@@ -70,18 +70,7 @@ class AgentList(Widget):
                 classes="detail-row --agent-row",
             )
 
-    def watch_agent_data(self, value: tuple[tuple[str, str], ...]) -> None:
+    async def watch_agent_data(self, value: tuple[tuple[str, str], ...]) -> None:
         if not self.is_mounted:
             return
-        for widget in self.query(".--agent-row"):
-            widget.remove()
-        for name, status in value:
-            self.mount(
-                Horizontal(
-                    Label(icons.ICON_AGENT, classes="detail-icon"),
-                    Label(name, classes="detail-left"),
-                    Label(status, classes="detail-right", markup=True),
-                    classes="detail-row --agent-row",
-                )
-            )
-        self.display = bool(value)
+        await self.recompose()

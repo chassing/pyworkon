@@ -150,7 +150,7 @@ class PRDetail(Widget):
             ),
             Label(self.state_text, id="spr-state", classes="detail-right", markup=True),
             id="row-pr-link",
-            classes="detail-row",
+            classes="detail-row --ci-failure" if self.ci_failure else "detail-row",
         )
         if self._show_ci_checks:
             for name, url in self.failed_checks:
@@ -183,17 +183,7 @@ class PRDetail(Widget):
         with contextlib.suppress(Exception):
             self.query_one("#row-pr-link").set_class(value, "--ci-failure")
 
-    def watch_failed_checks(self, value: tuple[tuple[str, str], ...]) -> None:
+    async def watch_failed_checks(self, value: tuple[tuple[str, str], ...]) -> None:
         if not self.is_mounted or not self._show_ci_checks:
             return
-        for widget in self.query(".--ci-failure-row"):
-            widget.remove()
-        for name, url in value:
-            self.mount(
-                Horizontal(
-                    PRLink(
-                        name, url=url or None, classes="detail-left --ci-check-link"
-                    ),
-                    classes="detail-row --ci-failure-row",
-                )
-            )
+        await self.recompose()

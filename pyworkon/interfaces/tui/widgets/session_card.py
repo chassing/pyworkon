@@ -67,6 +67,8 @@ class SessionCard(Widget):
         """Update all child widgets with new session data."""
         self.session = session
         self.set_class(session.is_current, "--current-session")
+        if not self.children:
+            return
         self.query_one(SessionHeader).update(session)
         self.query_one(BranchRow).update(session)
         self.query_one(PRDetail).update(session.pr, session.project.owner_repo)

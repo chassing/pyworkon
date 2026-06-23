@@ -163,9 +163,9 @@ async def test_pr_detail_ci_checks_shown() -> None:
     pr = make_pr_info(ci_checks=checks, status=PRStatus.FAILURE)
     widget = PRDetail(show_ci_checks=True)
     app = WidgetTestApp(widget)
-    async with app.run_test():
+    async with app.run_test() as pilot:
         widget.update(pr, "acme/repo")
-        await app._animator.wait_for_idle()
+        await pilot.pause()
         failure_rows = app.query(".--ci-failure-row")
         assert len(failure_rows) == 1
 
@@ -196,9 +196,9 @@ async def test_agent_list_renders_rows() -> None:
     ]
     widget = AgentList()
     app = WidgetTestApp(widget)
-    async with app.run_test():
+    async with app.run_test() as pilot:
         widget.update(agents)
-        await app._animator.wait_for_idle()
+        await pilot.pause()
         rows = app.query(".--agent-row")
         assert len(rows) == 2
 
