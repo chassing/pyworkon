@@ -102,8 +102,8 @@ class PRDetail(Widget):
             self.review_text = (
                 "" if pr.is_draft else _PR_REVIEW_ICONS.get(pr.review_status, "")
             )
-            self.link_text = f"{owner_repo}#{pr.number}"
             self._pr_url = pr.url
+            self.link_text = f"{owner_repo}#{pr.number}"
             failed = [
                 (c.name, c.url or "")
                 for c in pr.ci_checks
@@ -121,13 +121,13 @@ class PRDetail(Widget):
             self.failed_checks = tuple(failed) if self._show_ci_checks else ()
             self.display = True
         else:
+            self._pr_url = None
             self.title_text = ""
             self.review_text = ""
             self.link_text = ""
             self.state_text = ""
             self.ci_failure = False
             self.failed_checks = ()
-            self._pr_url = None
             self.display = False
 
     def compose(self) -> ComposeResult:
