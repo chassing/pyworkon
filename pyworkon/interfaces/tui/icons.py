@@ -27,7 +27,7 @@ BRANCH_DIRTY = "[yellow][/]"  #  (nf-fa-pencil)
 # PR status icons (with Rich markup)
 PR_CI_SUCCESS = "[green]✓[/]"
 PR_CI_FAILURE = "[red]✗[/]"
-PR_CI_PENDING = "[yellow]◷[/]"
+PR_CI_PENDING = "[yellow][/]"
 
 # PR state icons (with Rich markup)
 PR_STATE_OPEN = "[green]●[/]"
