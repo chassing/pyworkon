@@ -21,7 +21,6 @@ class PopupApp(BaseApp):
 
     BINDINGS: ClassVar = [
         *BaseApp.BINDINGS,
-        Binding("ctrl+x", "kill_session", description="Kill"),
         Binding("backspace", "backspace_key", show=False),
     ]
 
@@ -52,20 +51,3 @@ class PopupApp(BaseApp):
         if self._filter_text:
             self._filter_text = self._filter_text[:-1]
             self._apply_filter()
-
-    async def action_kill_session(self) -> None:
-        if not self._filtered_items:
-            return
-        item = self._filtered_items[self._selected_index]
-        if isinstance(item, SessionInfo):
-            self._kill_session(item.session_name)
-        elif isinstance(item, PlainSession):
-            self._kill_session(item.name)
-        else:
-            return
-        self._all_items = [i for i in self._all_items if i is not item]
-        self._filtered_items = [i for i in self._filtered_items if i is not item]
-        self._selected_index = min(
-            self._selected_index, max(0, len(self._filtered_items) - 1)
-        )
-        self._render_items()

@@ -54,6 +54,7 @@ class BaseApp(App[None]):
         Binding("down", "move_down", show=False),
         Binding("up", "move_up", show=False),
         Binding("enter", "select", description="Select"),
+        Binding("ctrl+x", "kill_session", description="Kill"),
         Binding("escape", "escape_key", description="Close"),
         Binding("ctrl+q", "quit", description="Quit"),
         Binding("pagedown", "page_down", show=False),
@@ -323,6 +324,23 @@ class BaseApp(App[None]):
             self._enter_project(item.id)
         if self._on_select(item):
             self.exit()
+
+    async def action_kill_session(self) -> None:
+        if not self._filtered_items:
+            return
+        item = self._filtered_items[self._selected_index]
+        if isinstance(item, SessionInfo):
+            self._kill_session(item.session_name)
+        elif isinstance(item, PlainSession):
+            self._kill_session(item.name)
+        else:
+            return
+        self._all_items = [i for i in self._all_items if i is not item]
+        self._filtered_items = [i for i in self._filtered_items if i is not item]
+        self._selected_index = min(
+            self._selected_index, max(0, len(self._filtered_items) - 1)
+        )
+        self._render_items()
 
     def action_escape_key(self) -> None:
         if self._filter_text:
