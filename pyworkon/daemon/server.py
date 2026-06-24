@@ -505,8 +505,10 @@ class Daemon:
             if (k.endswith("|tmux") and v.project_id not in tmux_project_ids)
             or (
                 not k.endswith("|tmux")
-                and v.session
-                and v.session not in active_sessions
+                and (
+                    (v.session and v.session not in active_sessions)
+                    or (not v.session and v.project_id not in tmux_project_ids)
+                )
             )
         ]
         for k in stale:
@@ -550,6 +552,20 @@ class Daemon:
 
         self._review_prs = review_prs
         self._review_prs_fetched_at = now
+        await self._map_review_prs_to_forks()
+
+    async def _map_review_prs_to_forks(self) -> None:
+        """Duplicate review PR entries for fork projects under their fork project ID."""
+        if not self._review_prs:
+            return
+        for project in self._project_mgr.list(local=True):
+            upstream = await project.get_upstream_owner_repo()
+            if not upstream:
+                continue
+            provider_name = project.id.split("/", 1)[0]
+            upstream_id = f"{provider_name}/{upstream}"
+            if prs := self._review_prs.get(upstream_id):
+                self._review_prs[project.id] = prs
 
     @staticmethod
     async def _fetch_review_prs_for_provider(

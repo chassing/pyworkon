@@ -296,3 +296,148 @@ async def test_enter_project_success(daemon: Daemon) -> None:
 
     assert responses == [(ResponseType.OK, None)]
     mock_enter.assert_awaited_once_with(project)
+
+
+def test_build_sidebar_state_includes_review_prs(daemon: Daemon) -> None:
+    daemon._review_prs = {
+        "github/app-sre/automated-actions": [
+            {
+                "number": 610,
+                "title": "Fix bug",
+                "url": "https://github.com/app-sre/automated-actions/pull/610",
+                "author": "bot",
+                "is_draft": False,
+            }
+        ]
+    }
+    state = daemon._build_sidebar_state()
+    assert state["review_prs"] == daemon._review_prs
+
+
+async def test_map_review_prs_to_forks(daemon: Daemon) -> None:
+    upstream_prs = [
+        {
+            "number": 610,
+            "title": "Fix bug",
+            "url": "https://example.com/pr/610",
+            "author": "bot",
+            "is_draft": False,
+        }
+    ]
+    daemon._review_prs = {"github/upstream-org/repo": upstream_prs}
+
+    fork_project = Project(id="github/my-fork/repo")
+    daemon._project_mgr.list = MagicMock(return_value=[fork_project])
+
+    with patch.object(
+        Project,
+        "get_upstream_owner_repo",
+        new_callable=AsyncMock,
+        return_value="upstream-org/repo",
+    ):
+        await daemon._map_review_prs_to_forks()
+
+    assert daemon._review_prs["github/my-fork/repo"] is upstream_prs
+    assert daemon._review_prs["github/upstream-org/repo"] is upstream_prs
+
+
+async def test_map_review_prs_to_forks_no_match(daemon: Daemon) -> None:
+    daemon._review_prs = {"github/other-org/other-repo": [{"number": 1}]}
+
+    fork_project = Project(id="github/my-fork/repo")
+    daemon._project_mgr.list = MagicMock(return_value=[fork_project])
+
+    with patch.object(
+        Project,
+        "get_upstream_owner_repo",
+        new_callable=AsyncMock,
+        return_value="upstream-org/repo",
+    ):
+        await daemon._map_review_prs_to_forks()
+
+    assert "github/my-fork/repo" not in daemon._review_prs
+
+
+async def test_map_review_prs_to_forks_skips_non_forks(daemon: Daemon) -> None:
+    daemon._review_prs = {"github/org/repo": [{"number": 1}]}
+
+    project = Project(id="github/org/repo")
+    daemon._project_mgr.list = MagicMock(return_value=[project])
+
+    with patch.object(
+        Project,
+        "get_upstream_owner_repo",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        await daemon._map_review_prs_to_forks()
+
+    assert len(daemon._review_prs) == 1
+
+
+async def test_poll_tmux_cleans_stale_null_session_entries(daemon: Daemon) -> None:
+    daemon._open_projects["github/owner/repo|%5"] = OpenProject(
+        project_id="github/owner/repo",
+        pane_id="%5",
+        session=None,
+    )
+
+    with (
+        patch(
+            "pyworkon.daemon.tmux_mgr.tmux_manager.list_sessions_with_project_id",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "pyworkon.daemon.tmux_mgr.tmux_manager.list_sessions",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
+        await daemon._poll_tmux()
+
+    assert "github/owner/repo|%5" not in daemon._open_projects
+    daemon._git_watcher.unwatch.assert_called_once_with("github/owner/repo")
+
+
+async def test_poll_tmux_preserves_null_session_with_active_project(
+    daemon: Daemon,
+) -> None:
+    daemon._open_projects["github/owner/repo|%5"] = OpenProject(
+        project_id="github/owner/repo",
+        pane_id="%5",
+        session=None,
+    )
+
+    project = Project(id="github/owner/repo")
+    daemon._project_mgr.get = MagicMock(return_value=project)
+
+    with (
+        patch(
+            "pyworkon.daemon.tmux_mgr.tmux_manager.list_sessions_with_project_id",
+            new_callable=AsyncMock,
+            return_value=[("my-session", "github/owner/repo")],
+        ),
+        patch(
+            "pyworkon.daemon.tmux_mgr.tmux_manager.list_sessions",
+            new_callable=AsyncMock,
+            return_value=["my-session"],
+        ),
+        patch.object(
+            Project,
+            "get_current_branch",
+            new_callable=AsyncMock,
+            return_value="main",
+        ),
+        patch.object(
+            Project,
+            "has_uncommitted_changes",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+    ):
+        await daemon._poll_tmux()
+
+    assert "github/owner/repo|%5" in daemon._open_projects
+    op = daemon._open_projects["github/owner/repo|%5"]
+    assert op.session == "my-session"
