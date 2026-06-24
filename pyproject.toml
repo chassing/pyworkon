@@ -65,6 +65,7 @@ testpaths = ["tests"]
     "ASYNC220", # blocking process in async — same
     "PLR0913",  # too many arguments — test factory functions
     "F841",     # unused variable — unpacked tuple results
+    "PLC2701",  # private name import — testing internal filter functions
 ]
 
 [build-system]

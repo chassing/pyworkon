@@ -124,7 +124,7 @@ All widget styles are defined as `DEFAULT_CSS` class variables, not in external 
 - Daemon-internal state uses `dataclasses` (`models.py`), not pydantic
 - All subprocess calls go through `utils.run_cmd()` (async wrapper around `asyncio.create_subprocess_exec`)
 - **Event-based push** via `SUBSCRIBE` command with event categories (`state`, `notification`). Clients specify which events they want and whether to receive initial state (`full=True`). Daemon pushes `EVENT` responses whenever state changes.
-- **Git filesystem watchers** (`git_watcher.py`) using `watchfiles` — watches project root with custom filter for `.git/HEAD` (branch) and working tree files (dirty state). Branch changes detected instantly, dirty state via `git status --porcelain -uno`.
+- **Git filesystem watchers** (`git_watcher.py`) using `watchfiles` — watches project root with custom filter for `.git/HEAD` (branch), `.git/index`, `.git/refs/heads/` (commit detection), and working tree files (dirty state). Branch changes detected instantly, dirty state via `git status --porcelain -uno`.
 - **Circuit breaker** (`pybreaker`) per provider via `get_provider()`. After 3 consecutive API failures, the provider is paused for 5 minutes. Manual `provider sync` resets the breaker (`force=True`).
 - **Tmux management** (`tmux_mgr.py`) lives in the daemon package. The daemon is the single owner of all tmux operations: session creation, switching, killing, and polling. TUI and CLI never import `tmux_mgr` directly.
 

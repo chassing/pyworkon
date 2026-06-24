@@ -1,4 +1,4 @@
-"""Tests for GitWatcher lifecycle (watch, unwatch, stop)."""
+"""Tests for GitWatcher lifecycle (watch, unwatch, stop) and project filter."""
 
 from __future__ import annotations
 
@@ -6,8 +6,29 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from watchfiles import Change
 
-from pyworkon.daemon.git_watcher import GitWatcher
+from pyworkon.daemon.git_watcher import GitWatcher, _project_filter
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("/repo/.git/HEAD", True),
+        ("/repo/.git/index", True),
+        ("/repo/.git/refs/heads/main", True),
+        ("/repo/.git/refs/heads/feature/foo", True),
+        ("/repo/.git/refs/remotes/origin/main", False),
+        ("/repo/.git/objects/ab/cdef1234", False),
+        ("/repo/.git/logs/HEAD", False),
+        ("/repo/.git/index.lock", False),
+        ("/repo/.git/COMMIT_EDITMSG", False),
+        ("/repo/src/main.py", True),
+        ("/repo/.github/workflows/ci.yml", True),
+    ],
+)
+def test_project_filter(path: str, expected: bool) -> None:
+    assert _project_filter(Change.modified, path) is expected
 
 
 @pytest.fixture

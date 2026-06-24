@@ -18,11 +18,14 @@ logging.getLogger("watchfiles").setLevel(logging.WARNING)
 
 _GIT_HEAD = "/.git/HEAD"
 _GIT_INDEX = "/.git/index"
+_GIT_REFS_HEADS = "/.git/refs/heads/"
 
 
 def _project_filter(change: object, path: str) -> bool:
-    """Include .git/HEAD and .git/index, exclude rest of .git/, use defaults otherwise."""
+    """Include .git/HEAD, .git/index, and branch refs; exclude rest of .git/."""
     if path.endswith((_GIT_HEAD, _GIT_INDEX)):
+        return True
+    if _GIT_REFS_HEADS in path:
         return True
     if "/.git/" in path:
         return False
