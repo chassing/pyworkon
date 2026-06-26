@@ -21,6 +21,9 @@ from pyworkon.utils import run_cmd
 
 log = logging.getLogger(__name__)
 
+# Prevent index.lock conflicts with concurrent git operations (e.g. AI agents).
+_GIT_ENV = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+
 
 class Project(BaseModel):
     id: str
@@ -68,6 +71,7 @@ class Project(BaseModel):
                 str(self.project_home),
                 "branch",
                 "--show-current",
+                env=_GIT_ENV,
             )
             return result.stdout.strip() or None
         return None
@@ -84,6 +88,7 @@ class Project(BaseModel):
                 "symbolic-ref",
                 "refs/remotes/origin/HEAD",
                 "--short",
+                env=_GIT_ENV,
             )
             ref = result.stdout.strip()
             return ref.removeprefix("origin/") if ref else None
@@ -102,6 +107,7 @@ class Project(BaseModel):
                 "--porcelain",
                 "-uno",
                 check=False,
+                env=_GIT_ENV,
             )
             return bool(result.stdout.strip())
         return False
@@ -118,6 +124,7 @@ class Project(BaseModel):
                 "remote",
                 "get-url",
                 "upstream",
+                env=_GIT_ENV,
             )
             url = result.stdout.strip()
             if url:
