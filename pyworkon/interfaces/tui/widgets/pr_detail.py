@@ -88,6 +88,9 @@ class PRDetail(Widget):
         width: auto;
         color: $text;
     }
+    PRDetail.--draft {
+        opacity: 0.6;
+    }
     """
 
     title_text: reactive[str] = reactive("")
@@ -133,10 +136,12 @@ class PRDetail(Widget):
                 if self._show_ci_checks
                 else ()
             )
+            self.set_class(pr.is_draft, "--draft")
             self.display = True
         else:
             self._pr_url = None
             self._is_pending_state = False
+            self.remove_class("--draft")
             self.title_text = ""
             self.review_text = ""
             self.link_text = ""

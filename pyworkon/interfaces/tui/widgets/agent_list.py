@@ -49,6 +49,9 @@ class AgentList(Widget):
         width: auto;
         color: $text;
     }
+    AgentList .--agent-working {
+        background: $success 10%;
+    }
     """
 
     agent_data: reactive[tuple[tuple[str, str], ...]] = reactive(())
@@ -71,11 +74,14 @@ class AgentList(Widget):
                 status_display: str | Spinner = self._spinner
             else:
                 status_display = _AGENT_STATUS_ICONS.get(status, status)
+            row_classes = "detail-row --agent-row"
+            if status == "working":
+                row_classes += " --agent-working"
             yield Horizontal(
                 Label(icons.ICON_AGENT, classes="detail-icon"),
                 Label(name, classes="detail-left"),
                 Label(status_display, classes=classes, markup=True),
-                classes="detail-row --agent-row",
+                classes=row_classes,
             )
 
     async def watch_agent_data(self, value: tuple[tuple[str, str], ...]) -> None:
