@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any
 
+from rich.spinner import Spinner
 from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.widget import Widget
@@ -16,6 +17,7 @@ from pyworkon.interfaces.tui.widgets.pr_link import PRLink
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
+    from textual.timer import Timer
 
     from pyworkon.interfaces.tui.models import PRInfo
 
@@ -99,6 +101,9 @@ class PRDetail(Widget):
         super().__init__(**kwargs)
         self._show_ci_checks = show_ci_checks
         self._pr_url: str | None = None
+        self._spinner = Spinner(icons.PR_CI_PENDING_SPINNER, style="yellow")
+        self._spinner_timer: Timer | None = None
+        self._is_pending_state: bool = False
 
     def update(self, pr: PRInfo | None, owner_repo: str) -> None:
         """Update with new PR data."""
@@ -112,9 +117,12 @@ class PRDetail(Widget):
             self.link_text = f"{owner_repo}#{pr.number}"
             has_failure = any(c.status == PRStatus.FAILURE for c in pr.ci_checks)
             self.ci_failure = has_failure
+            self._is_pending_state = (
+                not has_failure and not pr.is_draft and pr.status == PRStatus.PENDING
+            )
             if has_failure:
                 self.state_text = icons.PR_CI_FAILURE
-            elif pr.status == PRStatus.PENDING:
+            elif self._is_pending_state:
                 self.state_text = icons.PR_CI_PENDING
             elif pr.is_draft:
                 self.state_text = icons.PR_STATE_DRAFT
@@ -128,6 +136,7 @@ class PRDetail(Widget):
             self.display = True
         else:
             self._pr_url = None
+            self._is_pending_state = False
             self.title_text = ""
             self.review_text = ""
             self.link_text = ""
@@ -135,8 +144,17 @@ class PRDetail(Widget):
             self.ci_failure = False
             self.ci_checks = ()
             self.display = False
+        self._manage_spinner()
 
     def compose(self) -> ComposeResult:
+        state_classes = "detail-right"
+        state_content: str | Spinner
+        if self._is_pending_state:
+            state_classes += " --ci-pending"
+            state_content = self._spinner
+        else:
+            state_content = self.state_text
+
         yield Horizontal(
             Label(icons.ICON_PR, classes="detail-icon --pr"),
             Label(self.title_text, id="spr-title", classes="detail-left"),
@@ -154,20 +172,29 @@ class PRDetail(Widget):
                 id="spr-link",
                 classes="detail-left --pr-link",
             ),
-            Label(self.state_text, id="spr-state", classes="detail-right", markup=True),
+            Label(state_content, id="spr-state", classes=state_classes, markup=True),
             id="row-pr-link",
             classes="detail-row --ci-failure" if self.ci_failure else "detail-row",
         )
         if self._show_ci_checks:
             for name, url, status in self.ci_checks:
-                icon = _PR_STATUS_ICONS.get(PRStatus(status), "")
+                if status == PRStatus.PENDING.value:
+                    icon_content: str | Spinner = self._spinner
+                    extra_class = " --ci-pending"
+                else:
+                    icon_content = _PR_STATUS_ICONS.get(PRStatus(status), "")
+                    extra_class = ""
                 yield Horizontal(
                     PRLink(
                         name,
                         url=url or None,
                         classes=f"detail-left --ci-check-{status}",
                     ),
-                    Label(icon, classes="detail-right", markup=True),
+                    Label(
+                        icon_content,
+                        classes=f"detail-right{extra_class}",
+                        markup=True,
+                    ),
                     classes="detail-row --ci-check-row",
                 )
 
@@ -187,7 +214,13 @@ class PRDetail(Widget):
 
     def watch_state_text(self, value: str) -> None:
         with contextlib.suppress(Exception):
-            self.query_one("#spr-state", Label).update(value)
+            label = self.query_one("#spr-state", Label)
+            if self._is_pending_state:
+                label.update(self._spinner)
+                label.add_class("--ci-pending")
+            else:
+                label.update(value)
+                label.remove_class("--ci-pending")
 
     def watch_ci_failure(self, value: bool) -> None:  # noqa: FBT001
         with contextlib.suppress(Exception):
@@ -197,3 +230,20 @@ class PRDetail(Widget):
         if not self.is_mounted or not self._show_ci_checks:
             return
         await self.recompose()
+
+    def _manage_spinner(self) -> None:
+        """Start or stop the spinner timer based on pending CI state."""
+        has_pending = self._is_pending_state or any(
+            status == PRStatus.PENDING.value for _, _, status in self.ci_checks
+        )
+        if has_pending and self._spinner_timer is None:
+            self._spinner_timer = self.set_interval(1 / 12, self._tick_spinner)
+        elif not has_pending and self._spinner_timer is not None:
+            self._spinner_timer.stop()
+            self._spinner_timer = None
+
+    def _tick_spinner(self) -> None:
+        """Update all pending CI labels with the current spinner frame."""
+        with contextlib.suppress(Exception):
+            for label in self.query(Label).filter(".--ci-pending"):
+                label.update(self._spinner)

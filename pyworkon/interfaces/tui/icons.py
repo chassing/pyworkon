@@ -18,7 +18,7 @@ ICON_GITLAB = ""  # (nf-fa-gitlab)
 
 # Agent status icons (single-width Nerd Font)
 AGENT_IDLE = ""  #  (nf-fa-moon_o)
-AGENT_WORKING = ""  #  (nf-fa-cog)
+AGENT_WORKING_SPINNER = "dots"
 AGENT_WAITING = ""  #  (nf-fa-clock_o)
 
 # Branch status icons (with Rich markup)
@@ -28,6 +28,7 @@ BRANCH_DIRTY = "[yellow][/]"  #  (nf-fa-pencil)
 PR_CI_SUCCESS = "[green]✓[/]"
 PR_CI_FAILURE = "[red]✗[/]"
 PR_CI_PENDING = "[yellow][/]"
+PR_CI_PENDING_SPINNER = "dots"
 
 # PR state icons (with Rich markup)
 PR_STATE_OPEN = "[green]●[/]"
