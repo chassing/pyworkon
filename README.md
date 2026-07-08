@@ -152,7 +152,11 @@ cat > ~/Library/LaunchAgents/com.pyworkon.daemon.plist << 'EOF'
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <false/>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/pyworkon-daemon.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/pyworkon-daemon.stderr.log</string>
 </dict>
 </plist>
 EOF
