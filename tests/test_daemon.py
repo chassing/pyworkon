@@ -272,6 +272,47 @@ async def test_switch_session_select_pane(daemon: Daemon) -> None:
     mock_select.assert_awaited_once_with("my-session", "%5")
 
 
+async def test_open_project_single_pane_keeps_pane_id(daemon: Daemon) -> None:
+    cmd = Command(
+        cmd=CommandType.OPEN_PROJECT, project_id="github/owner/repo", pane_id="%1"
+    )
+    await _collect_responses(daemon, cmd)
+
+    assert len(daemon._open_projects) == 1
+    op = next(iter(daemon._open_projects.values()))
+    assert op.pane_id == "%1"
+
+
+async def test_open_project_second_pane_clears_pane_id(daemon: Daemon) -> None:
+    first = Command(
+        cmd=CommandType.OPEN_PROJECT, project_id="github/owner/repo", pane_id="%1"
+    )
+    await _collect_responses(daemon, first)
+
+    second = Command(
+        cmd=CommandType.OPEN_PROJECT, project_id="github/owner/repo", pane_id="%2"
+    )
+    await _collect_responses(daemon, second)
+
+    assert len(daemon._open_projects) == 1
+    op = next(iter(daemon._open_projects.values()))
+    assert op.pane_id is None
+
+
+async def test_open_project_third_pane_stays_none(daemon: Daemon) -> None:
+    for pane_id in ("%1", "%2", "%3"):
+        cmd = Command(
+            cmd=CommandType.OPEN_PROJECT,
+            project_id="github/owner/repo",
+            pane_id=pane_id,
+        )
+        await _collect_responses(daemon, cmd)
+
+    assert len(daemon._open_projects) == 1
+    op = next(iter(daemon._open_projects.values()))
+    assert op.pane_id is None
+
+
 async def test_enter_project_missing_id(daemon: Daemon) -> None:
     cmd = Command(cmd=CommandType.ENTER_PROJECT)
     responses = await _collect_responses(daemon, cmd)

@@ -206,10 +206,14 @@ class Daemon:
         if not cmd.project_id:
             yield error("project_id required")
             return
-        # Remove existing entry for this project (e.g. tmux-discovered)
+        # Remove existing entry for this project (e.g. tmux-discovered).
+        # If one already existed, the project is open in more than one pane
+        # (e.g. the default tmuxp template's main + AI windows both register
+        # themselves) — the pane is then ambiguous, so don't track one.
         stale = [
             k for k, v in self._open_projects.items() if v.project_id == cmd.project_id
         ]
+        pane_id = None if stale else cmd.pane_id
         for k in stale:
             del self._open_projects[k]
         session = (
@@ -220,7 +224,7 @@ class Daemon:
         key = f"{cmd.project_id}|{cmd.pane_id or 'default'}"
         op = OpenProject(
             project_id=cmd.project_id,
-            pane_id=cmd.pane_id,
+            pane_id=pane_id,
             session=session,
         )
         self._open_projects[key] = op
