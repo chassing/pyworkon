@@ -54,7 +54,7 @@ class PRDetail(Widget):
         height: 1;
     }
     PRDetail .detail-icon {
-        width: 3;
+        width: 2;
     }
     PRDetail .detail-icon.--pr {
         color: $accent;

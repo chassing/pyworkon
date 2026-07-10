@@ -3,7 +3,7 @@
 
 # Session indicators
 INDICATOR_CURRENT = "●"
-INDICATOR_OTHER = "○"
+INDICATOR_OTHER = "[blue]●[/]"
 
 # Git / PR detail icons
 ICON_BRANCH = ""  # (nf-pl-branchadfadfadfadf)

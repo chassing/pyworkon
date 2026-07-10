@@ -24,7 +24,7 @@ class SessionCard(Widget):
     DEFAULT_CSS = """
     SessionCard {
         height: auto;
-        padding: 0 1 0 2;
+        padding: 0 1 0 1;
     }
     SessionCard.--highlight {
         background: $surface-lighten-1;

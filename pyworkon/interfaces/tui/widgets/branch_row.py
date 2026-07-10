@@ -30,7 +30,7 @@ class BranchRow(Widget):
         height: 1;
     }
     BranchRow .detail-icon {
-        width: 3;
+        width: 2;
         color: cyan;
     }
     BranchRow .detail-left {

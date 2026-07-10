@@ -22,7 +22,7 @@ class PlainSessionRow(Widget):
     DEFAULT_CSS = """
     PlainSessionRow {
         height: auto;
-        padding: 0 1 0 2;
+        padding: 0 1 0 1;
     }
     PlainSessionRow.--highlight {
         background: $surface-lighten-1;

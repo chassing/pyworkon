@@ -37,7 +37,7 @@ class AgentList(Widget):
         height: 1;
     }
     AgentList .detail-icon {
-        width: 3;
+        width: 2;
         color: ansi_bright_magenta;
     }
     AgentList .detail-left {
