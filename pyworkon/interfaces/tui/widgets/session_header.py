@@ -45,6 +45,10 @@ class SessionHeader(Widget):
         width: auto;
         color: $text-muted;
     }
+    SessionHeader .detail-icon {
+        width: 2;
+        color: $primary;
+    }
     """
 
     name_text: reactive[str] = reactive("")
@@ -59,10 +63,7 @@ class SessionHeader(Widget):
         self._sync(session)
 
     def _sync(self, session: SessionInfo) -> None:
-        indicator = (
-            icons.INDICATOR_CURRENT if session.is_current else icons.INDICATOR_OTHER
-        )
-        self.name_text = f"{indicator} {session.project.name}"
+        self.name_text = session.project.name
         provider_type = (
             session.project.provider.type if session.project.provider else None
         )
@@ -72,6 +73,7 @@ class SessionHeader(Widget):
 
     def compose(self) -> ComposeResult:
         yield Horizontal(
+            Label(icons.SESSION_INDICATOR, classes="detail-icon"),
             Label(self.name_text, id="sname", classes="session-name --other"),
             Label(self.provider_icon_text, id="sprovider", classes="provider-icon"),
         )

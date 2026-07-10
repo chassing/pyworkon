@@ -2,8 +2,7 @@
 # Defined as constants with explicit Unicode escapes to survive formatters and editors.
 
 # Session indicators
-INDICATOR_CURRENT = "●"
-INDICATOR_OTHER = "[blue]●[/]"
+SESSION_INDICATOR = "●"
 
 # Git / PR detail icons
 ICON_BRANCH = ""  # (nf-pl-branchadfadfadfadf)
