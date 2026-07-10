@@ -2,16 +2,45 @@
 
 from __future__ import annotations
 
-import json
 import socket
 import sys
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Self
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from pyworkon.daemon.project_mgr import Project
+
 from pyworkon.config import user_cache_dir
-from pyworkon.daemon.protocol import Command, CommandType, Response, ResponseType
+from pyworkon.daemon.protocol import (
+    AgentClearCommand,
+    AgentStatusCommand,
+    CloneProjectCommand,
+    CloseProjectCommand,
+    CommandUnion,
+    EnterProjectCommand,
+    ErrorResponse,
+    EventResponse,
+    GetProjectCommand,
+    GetSidebarStateCommand,
+    KillSessionCommand,
+    ListProjectsCommand,
+    NotifyCommand,
+    OkResponse,
+    OpenProjectCommand,
+    ProgressResponse,
+    ProjectResponse,
+    ProjectsResponse,
+    ResponseUnion,
+    ShutdownCommand,
+    SidebarStatePayload,
+    StatusCommand,
+    StatusResponse,
+    SubscribeCommand,
+    SwitchSessionCommand,
+    SyncProvidersCommand,
+    response_adapter,
+)
 
 SOCKET_PATH = user_cache_dir / "daemon.sock"
 
@@ -48,12 +77,12 @@ class DaemonClient:
             self._sock.close()
             self._sock = None
 
-    def _send_cmd(self, cmd: Command) -> Response:
+    def _send_cmd(self, cmd: CommandUnion) -> ResponseUnion:
         """Send a command and return the terminal response (ok/error/data)."""
         for resp in self._send_stream(cmd):
-            if resp.type != ResponseType.PROGRESS:
+            if not isinstance(resp, ProgressResponse):
                 return resp
-        return Response(type=ResponseType.ERROR, msg="No response from daemon")
+        return ErrorResponse(msg="No response from daemon")
 
     def _reconnect(self) -> bool:
         """Close and try to reconnect to the daemon."""
@@ -64,20 +93,20 @@ class DaemonClient:
             return False
         return True
 
-    def _send_stream(self, cmd: Command) -> Iterator[Response]:
+    def _send_stream(self, cmd: CommandUnion) -> Iterator[ResponseUnion]:
         """Send a command and yield all responses including progress. Auto-reconnects."""
         try:
             yield from self._do_send(cmd)
         except (BrokenPipeError, ConnectionError, OSError, DaemonNotRunningError):
             if not self._reconnect():
-                yield Response(type=ResponseType.ERROR, msg="Daemon not running")
+                yield ErrorResponse(msg="Daemon not running")
                 return
             try:
                 yield from self._do_send(cmd)
             except (BrokenPipeError, ConnectionError, OSError, DaemonNotRunningError):
-                yield Response(type=ResponseType.ERROR, msg="Daemon not running")
+                yield ErrorResponse(msg="Daemon not running")
 
-    def _do_send(self, cmd: Command) -> Iterator[Response]:
+    def _do_send(self, cmd: CommandUnion) -> Iterator[ResponseUnion]:
         if not self._sock:
             raise DaemonNotRunningError
         self._sock.sendall(cmd.model_dump_json().encode() + b"\n")
@@ -89,103 +118,78 @@ class DaemonClient:
             buf += chunk
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
-                resp = Response(**json.loads(line))
+                resp = response_adapter.validate_json(line)
                 yield resp
-                if resp.type in {ResponseType.OK, ResponseType.ERROR}:
+                if isinstance(resp, (OkResponse, ErrorResponse)):
                     return
 
-    def list_projects(self, *, local: bool = True) -> list[dict[str, Any]]:
-        resp = self._send_cmd(Command(cmd=CommandType.LIST_PROJECTS, local=local))
-        return resp.data.get("projects", []) if resp.data else []
+    def list_projects(self, *, local: bool = True) -> list[Project]:
+        resp = self._send_cmd(ListProjectsCommand(local=local))
+        return resp.projects if isinstance(resp, ProjectsResponse) else []
 
-    def get_project(self, project_id: str) -> dict[str, Any] | None:
-        resp = self._send_cmd(
-            Command(cmd=CommandType.GET_PROJECT, project_id=project_id)
-        )
-        if resp.type == ResponseType.ERROR:
-            return None
-        return resp.data.get("project") if resp.data else None
+    def get_project(self, project_id: str) -> Project | None:
+        resp = self._send_cmd(GetProjectCommand(project_id=project_id))
+        return resp.project if isinstance(resp, ProjectResponse) else None
 
     def open_project(
         self, project_id: str, pane_id: str | None = None, session: str | None = None
     ) -> None:
         self._send_cmd(
-            Command(
-                cmd=CommandType.OPEN_PROJECT,
-                project_id=project_id,
-                pane_id=pane_id,
-                session=session,
-            )
+            OpenProjectCommand(project_id=project_id, pane_id=pane_id, session=session)
         )
 
     def close_project(self, project_id: str, pane_id: str | None = None) -> None:
-        self._send_cmd(
-            Command(
-                cmd=CommandType.CLOSE_PROJECT, project_id=project_id, pane_id=pane_id
-            )
-        )
+        self._send_cmd(CloseProjectCommand(project_id=project_id, pane_id=pane_id))
 
-    def clone_project(self, project_id: str) -> Iterator[Response]:
-        yield from self._send_stream(
-            Command(cmd=CommandType.CLONE_PROJECT, project_id=project_id)
-        )
+    def clone_project(self, project_id: str) -> Iterator[ResponseUnion]:
+        yield from self._send_stream(CloneProjectCommand(project_id=project_id))
 
-    def sync_providers(self) -> Iterator[Response]:
-        yield from self._send_stream(Command(cmd=CommandType.SYNC_PROVIDERS))
+    def sync_providers(self) -> Iterator[ResponseUnion]:
+        yield from self._send_stream(SyncProvidersCommand())
 
-    def get_sidebar_state(self) -> dict[str, Any]:
-        resp = self._send_cmd(Command(cmd=CommandType.GET_SIDEBAR_STATE))
-        return resp.data or {}
+    def get_sidebar_state(self) -> SidebarStatePayload:
+        resp = self._send_cmd(GetSidebarStateCommand())
+        if not isinstance(resp, SidebarStatePayload):
+            raise DaemonNotRunningError
+        return resp
 
-    def set_agent(
-        self, session: str, name: str, status: str, window: str | None = None
-    ) -> None:
-        self._send_cmd(
-            Command(
-                cmd=CommandType.AGENT_STATUS,
-                session=session,
-                name=name,
-                status=status,
-                window=window,
-            )
-        )
+    def set_agent(self, session: str, name: str, status: str) -> None:
+        self._send_cmd(AgentStatusCommand(session=session, name=name, status=status))
 
-    def clear_agent(self, session: str, name: str | None = None) -> None:
-        self._send_cmd(Command(cmd=CommandType.AGENT_CLEAR, session=session, name=name))
+    def clear_agent(self, session: str, name: str) -> None:
+        self._send_cmd(AgentClearCommand(session=session, name=name))
 
-    def status(self) -> dict[str, Any]:
-        resp = self._send_cmd(Command(cmd=CommandType.STATUS))
-        return resp.data or {}
+    def status(self) -> StatusResponse:
+        resp = self._send_cmd(StatusCommand())
+        if not isinstance(resp, StatusResponse):
+            raise DaemonNotRunningError
+        return resp
 
     def kill_session(self, session_name: str) -> None:
-        self._send_cmd(Command(cmd=CommandType.KILL_SESSION, session=session_name))
+        self._send_cmd(KillSessionCommand(session=session_name))
 
     def switch_session(self, session_name: str, pane_id: str | None = None) -> None:
-        self._send_cmd(
-            Command(
-                cmd=CommandType.SWITCH_SESSION,
-                session=session_name,
-                pane_id=pane_id,
-            )
-        )
+        self._send_cmd(SwitchSessionCommand(session=session_name, pane_id=pane_id))
 
     def enter_project(self, project_id: str) -> None:
-        self._send_cmd(Command(cmd=CommandType.ENTER_PROJECT, project_id=project_id))
+        self._send_cmd(EnterProjectCommand(project_id=project_id))
 
     def send_notification(self, message: str, level: str = "information") -> None:
-        self._send_cmd(Command(cmd=CommandType.NOTIFY, message=message, level=level))
+        self._send_cmd(NotifyCommand(message=message, level=level))
 
     def shutdown(self) -> None:
-        self._send_cmd(Command(cmd=CommandType.SHUTDOWN))
+        self._send_cmd(ShutdownCommand())
 
-    def subscribe(self, events: list[str], *, full: bool = True) -> Iterator[Response]:
+    def subscribe(
+        self, events: list[str], *, full: bool = True
+    ) -> Iterator[EventResponse]:
         """Subscribe to daemon events. Blocks indefinitely, yields EVENT responses.
 
         To interrupt cleanly, close the client from another thread.
         """
         if not self._sock:
             raise DaemonNotRunningError
-        cmd = Command(cmd=CommandType.SUBSCRIBE, events=events, full=full)
+        cmd = SubscribeCommand(events=events, full=full)
         self._sock.sendall(cmd.model_dump_json().encode() + b"\n")
         buf = b""
         while True:
@@ -195,8 +199,8 @@ class DaemonClient:
             buf += chunk
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
-                resp = Response(**json.loads(line))
-                if resp.type == ResponseType.EVENT:
+                resp = response_adapter.validate_json(line)
+                if isinstance(resp, EventResponse):
                     yield resp
 
 

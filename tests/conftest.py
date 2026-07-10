@@ -7,16 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from pyworkon.daemon.project_mgr import Project
-from pyworkon.interfaces.tui.models import (
+from pyworkon.daemon.models import (
     AgentInfo,
     CICheck,
     PRInfo,
     PRReviewStatus,
     PRState,
     PRStatus,
-    SessionInfo,
 )
+from pyworkon.daemon.project_mgr import Project
+from pyworkon.interfaces.tui.models import SessionInfo
 
 
 def make_pr_info(

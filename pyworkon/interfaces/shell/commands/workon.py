@@ -5,7 +5,6 @@ import click
 from rich import print as rich_print
 
 from pyworkon.daemon.client import require_daemon
-from pyworkon.daemon.project_mgr import Project
 from pyworkon.interfaces.shell import cli
 from pyworkon.interfaces.shell.command import PyworkonCommand
 
@@ -16,7 +15,7 @@ def project_completion(
     if argument.name == "project_id":
         client = require_daemon()
         try:
-            return [p["id"] for p in client.list_projects(local=True)]
+            return [p.id for p in client.list_projects(local=True)]
         finally:
             client.close()
     return []
@@ -28,9 +27,9 @@ def project_id_completion(
     client = require_daemon()
     try:
         return [
-            p["id"]
+            p.id
             for p in client.list_projects(local=True)
-            if p["id"].startswith(incomplete)
+            if p.id.startswith(incomplete)
         ]
     finally:
         client.close()
@@ -53,11 +52,10 @@ def workon(
     pane_id = os.environ.get("TMUX_PANE")
     client = require_daemon()
     try:
-        project_data = client.get_project(project_id)
-        if not project_data:
+        project = client.get_project(project_id)
+        if not project:
             rich_print(f"[b red]Project not found: {project_id}[/]")
             sys.exit(1)
-        project = Project(**project_data)
         client.open_project(project_id, pane_id=pane_id)
         project.enter(command, title)
     finally:

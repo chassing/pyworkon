@@ -13,7 +13,7 @@ def project_completion(
     if argument.name == "project_id":
         client = require_daemon()
         try:
-            return [p["id"] for p in client.list_projects(local=False)]
+            return [p.id for p in client.list_projects(local=False)]
         finally:
             client.close()
     return []

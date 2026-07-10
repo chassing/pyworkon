@@ -153,3 +153,6 @@ preview = true
 
 [tool.ruff.lint.isort]
 known-first-party = ["pyworkon"]
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel"]

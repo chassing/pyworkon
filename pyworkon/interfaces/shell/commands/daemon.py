@@ -66,9 +66,9 @@ def status() -> None:
     try:
         with DaemonClient() as client:
             info = client.status()
-        rich_print(f"[green]Daemon running[/] (PID {info.get('pid', '?')})")
-        rich_print(f"  Open projects: {info.get('open_projects', 0)}")
-        rich_print(f"  Total projects: {info.get('total_projects', 0)}")
+        rich_print(f"[green]Daemon running[/] (PID {info.pid})")
+        rich_print(f"  Open projects: {info.open_projects}")
+        rich_print(f"  Total projects: {info.total_projects}")
     except DaemonNotRunningError:
         rich_print("[red]Daemon is not running.[/]")
         sys.exit(1)

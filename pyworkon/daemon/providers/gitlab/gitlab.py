@@ -1,14 +1,14 @@
 import logging
 from typing import TYPE_CHECKING, Any, Self
 
-from pyworkon.daemon.providers.models import Project
-from pyworkon.interfaces.tui.models import (
+from pyworkon.daemon.models import (
     CICheck,
     PRInfo,
     PRReviewStatus,
     PRState,
     PRStatus,
 )
+from pyworkon.daemon.providers.models import Project
 
 from . import consumer
 

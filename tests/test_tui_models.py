@@ -4,14 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from pyworkon.interfaces.tui.models import (
-    AgentInfo,
-    CICheck,
-    PlainSession,
-    PRReviewStatus,
-    PRState,
-    PRStatus,
-)
+from pyworkon.daemon.models import AgentInfo, CICheck, PRReviewStatus, PRState, PRStatus
+from pyworkon.interfaces.tui.models import PlainSession
 from tests.conftest import make_pr_info, make_session_info
 
 

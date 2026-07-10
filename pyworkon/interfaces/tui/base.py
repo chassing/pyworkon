@@ -13,6 +13,7 @@ from textual.widgets import Footer, Label, Rule
 
 from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
 from pyworkon.daemon.project_mgr import Project
+from pyworkon.daemon.protocol import NotificationData, SidebarStatePayload
 from pyworkon.interfaces.tui.data import parse_sidebar_state
 from pyworkon.interfaces.tui.models import PlainSession, ReviewPR, SessionInfo
 from pyworkon.interfaces.tui.widgets import (
@@ -156,17 +157,14 @@ class BaseApp(App[None]):
     def _consume_events(self, client: DaemonClient) -> None:
         severity_map: dict[str, str] = {"warning": "warning", "error": "error"}
         for resp in client.subscribe(["state", "notification"], full=True):
-            match resp.event:
-                case "state":
-                    self._handle_state_event(resp.data or {})
-                case "notification":
-                    data = resp.data or {}
-                    level = data.get("level", "information")
-                    message = data.get("message", "")
+            match resp.data:
+                case SidebarStatePayload():
+                    self._handle_state_event(resp.data)
+                case NotificationData(level=level, message=message):
                     severity = severity_map.get(level, "information")
                     self.call_from_thread(self.notify, message, severity=severity)
 
-    def _handle_state_event(self, state: dict[str, Any]) -> None:
+    def _handle_state_event(self, state: SidebarStatePayload) -> None:
         sessions, projects, plain_names, review_prs = parse_sidebar_state(state)
         new_items = self._build_items(sessions, projects, plain_names, review_prs)
         self.call_from_thread(self._apply_new_items, new_items)

@@ -4,25 +4,51 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
-import operator
 import os
 import subprocess
 import sys
 import time
 from collections.abc import AsyncGenerator
-from typing import Any, ClassVar
+from typing import ClassVar, Literal
+
+from pydantic import ValidationError
 
 from pyworkon.config import Provider, ProviderType, config, user_cache_dir
 from pyworkon.daemon.git_watcher import GitWatcher
-from pyworkon.daemon.models import AgentInfo, OpenProject
+from pyworkon.daemon.models import AgentInfo, OpenProject, ReviewPR
 from pyworkon.daemon.project_mgr import ProjectManager
 from pyworkon.daemon.protocol import (
-    Command,
+    AgentClearCommand,
+    AgentStatusCommand,
+    CloneProjectCommand,
+    CloseProjectCommand,
     CommandType,
-    Response,
-    ResponseType,
+    CommandUnion,
+    EnterProjectCommand,
+    ErrorResponse,
+    EventResponse,
+    GetProjectCommand,
+    GetSidebarStateCommand,
+    KillSessionCommand,
+    ListProjectsCommand,
+    NotificationData,
+    NotifyCommand,
+    OkResponse,
+    OpenProjectCommand,
+    ProjectResponse,
+    ProjectsResponse,
+    ResponseUnion,
+    SessionState,
+    ShutdownCommand,
+    SidebarStatePayload,
+    SidebarStateResponse,
+    StatusCommand,
+    StatusResponse,
+    SubscribeCommand,
+    SwitchSessionCommand,
+    SyncProvidersCommand,
+    command_adapter,
     error,
     ok,
     progress,
@@ -35,7 +61,7 @@ from pyworkon.utils import run_cmd
 
 log = logging.getLogger(__name__)
 
-AsyncResponseIterator = AsyncGenerator[Response, None]
+AsyncResponseIterator = AsyncGenerator[ResponseUnion, None]
 
 SOCKET_PATH = user_cache_dir / "daemon.sock"
 PID_FILE = user_cache_dir / "daemon.pid"
@@ -53,7 +79,7 @@ class Daemon:
         self._tmux_sessions: list[tuple[str, str | None]] = []
         self._plain_sessions: list[str] = []
         self._last_provider_sync: float = time.monotonic()
-        self._review_prs: dict[str, list[dict[str, Any]]] = {}
+        self._review_prs: dict[str, list[ReviewPR]] = {}
         self._review_prs_fetched_at: float = 0.0
         self._running = True
         self._subscribers: dict[asyncio.StreamWriter, set[str]] = {}
@@ -111,8 +137,8 @@ class Daemon:
             if not line:
                 continue
             try:
-                cmd = Command(**json.loads(line))
-            except (json.JSONDecodeError, ValueError):
+                cmd = command_adapter.validate_json(line)
+            except ValidationError:
                 await self._send(writer, error("Invalid command"))
                 continue
 
@@ -121,16 +147,16 @@ class Daemon:
             try:
                 async for resp in gen:
                     await self._send(writer, resp)
-                    if resp.type in {ResponseType.OK, ResponseType.ERROR}:
+                    if isinstance(resp, (OkResponse, ErrorResponse)):
                         break
             finally:
                 await gen.aclose()
 
-            if cmd.cmd == CommandType.SHUTDOWN:
+            if isinstance(cmd, ShutdownCommand):
                 self._running = False
                 raise SystemExit
-            if cmd.cmd == CommandType.SUBSCRIBE:
-                events = set(cmd.events or ["notification"])
+            if isinstance(cmd, SubscribeCommand):
+                events = set(cmd.events)
                 self._subscribers[writer] = events
                 log.debug(
                     "Subscriber added (events=%s, %d total)",
@@ -161,7 +187,7 @@ class Daemon:
         CommandType.ENTER_PROJECT: "_cmd_enter_project",
     }
 
-    async def _dispatch(self, cmd: Command) -> AsyncResponseIterator:
+    async def _dispatch(self, cmd: CommandUnion) -> AsyncResponseIterator:
         if handler_name := self._HANDLERS.get(cmd.cmd):
             handler = getattr(self, handler_name)
             async for resp in handler(cmd):
@@ -169,43 +195,29 @@ class Daemon:
             return
         yield error(f"Unknown command: {cmd.cmd}")
 
-    async def _cmd_shutdown(self, cmd: Command) -> AsyncResponseIterator:
+    async def _cmd_shutdown(self, cmd: ShutdownCommand) -> AsyncResponseIterator:
         yield ok()
 
-    async def _cmd_subscribe(self, cmd: Command) -> AsyncResponseIterator:
+    async def _cmd_subscribe(self, cmd: SubscribeCommand) -> AsyncResponseIterator:
         yield ok()
 
-    async def _cmd_notify(self, cmd: Command) -> AsyncResponseIterator:
-        if not cmd.message:
-            yield error("message required")
-            return
-        self._broadcast(cmd.level or "information", cmd.message)
+    async def _cmd_notify(self, cmd: NotifyCommand) -> AsyncResponseIterator:
+        self._broadcast(cmd.level, cmd.message)
         yield ok()
 
-    async def _cmd_list_projects(self, cmd: Command) -> AsyncResponseIterator:
-        local = cmd.local if cmd.local is not None else True
-        projects = self._project_mgr.list(local=local)
-        yield Response(
-            type=ResponseType.PROJECTS,
-            data={"projects": [p.model_dump() for p in projects]},
-        )
+    async def _cmd_list_projects(
+        self, cmd: ListProjectsCommand
+    ) -> AsyncResponseIterator:
+        yield ProjectsResponse(projects=self._project_mgr.list(local=cmd.local))
 
-    async def _cmd_get_project(self, cmd: Command) -> AsyncResponseIterator:
-        if not cmd.project_id:
-            yield error("project_id required")
-            return
+    async def _cmd_get_project(self, cmd: GetProjectCommand) -> AsyncResponseIterator:
         try:
             project = self._project_mgr.get(cmd.project_id)
-            yield Response(
-                type=ResponseType.PROJECT, data={"project": project.model_dump()}
-            )
+            yield ProjectResponse(project=project)
         except KeyError:
             yield error(f"Project not found: {cmd.project_id}")
 
-    async def _cmd_open_project(self, cmd: Command) -> AsyncResponseIterator:
-        if not cmd.project_id:
-            yield error("project_id required")
-            return
+    async def _cmd_open_project(self, cmd: OpenProjectCommand) -> AsyncResponseIterator:
         # Remove existing entry for this project (e.g. tmux-discovered).
         # If one already existed, the project is open in more than one pane
         # (e.g. the default tmuxp template's main + AI windows both register
@@ -256,10 +268,9 @@ class Daemon:
             return None
         return await tmux_manager.get_pane_session(pane_id)
 
-    async def _cmd_close_project(self, cmd: Command) -> AsyncResponseIterator:
-        if not cmd.project_id:
-            yield error("project_id required")
-            return
+    async def _cmd_close_project(
+        self, cmd: CloseProjectCommand
+    ) -> AsyncResponseIterator:
         key = f"{cmd.project_id}|{cmd.pane_id or 'default'}"
         if self._open_projects.pop(key, None):
             log.info("Project closed: %s (pane=%s)", cmd.project_id, cmd.pane_id)
@@ -271,10 +282,7 @@ class Daemon:
             self._push_event("state", self._build_sidebar_state())
         yield ok()
 
-    async def _cmd_kill_session(self, cmd: Command) -> AsyncResponseIterator:
-        if not cmd.session:
-            yield error("session required")
-            return
+    async def _cmd_kill_session(self, cmd: KillSessionCommand) -> AsyncResponseIterator:
         session_name = cmd.session
 
         if not await self._is_pyworkon_session(session_name):
@@ -313,21 +321,18 @@ class Daemon:
             return bool(result.stdout.strip())
         return False
 
-    async def _cmd_switch_session(self, cmd: Command) -> AsyncResponseIterator:
-        if not cmd.session:
-            yield error("session required")
-            return
-
+    async def _cmd_switch_session(
+        self, cmd: SwitchSessionCommand
+    ) -> AsyncResponseIterator:
         if cmd.pane_id:
             await tmux_manager.select_pane(cmd.session, cmd.pane_id)
         else:
             await tmux_manager.attach_session(cmd.session)
         yield ok()
 
-    async def _cmd_enter_project(self, cmd: Command) -> AsyncResponseIterator:
-        if not cmd.project_id:
-            yield error("project_id required")
-            return
+    async def _cmd_enter_project(
+        self, cmd: EnterProjectCommand
+    ) -> AsyncResponseIterator:
         try:
             project = self._project_mgr.get(cmd.project_id)
         except KeyError:
@@ -337,10 +342,9 @@ class Daemon:
         await tmux_manager.enter(project)
         yield ok()
 
-    async def _cmd_clone_project(self, cmd: Command) -> AsyncResponseIterator:
-        if not cmd.project_id:
-            yield error("project_id required")
-            return
+    async def _cmd_clone_project(
+        self, cmd: CloneProjectCommand
+    ) -> AsyncResponseIterator:
         try:
             project = self._project_mgr.get(cmd.project_id)
         except KeyError:
@@ -350,51 +354,58 @@ class Daemon:
         await project.clone()
         yield ok()
 
-    async def _cmd_sync_providers(self, cmd: Command) -> AsyncResponseIterator:
+    async def _cmd_sync_providers(
+        self, cmd: SyncProvidersCommand
+    ) -> AsyncResponseIterator:
         for provider in config.providers:
             yield progress(f"Fetching projects from {provider.name}...")
         await self._project_mgr.sync(force=True)
         self._last_provider_sync = time.monotonic()
         yield ok()
 
-    def _build_sidebar_state(self) -> dict[str, Any]:
+    def _build_sidebar_state(self) -> SidebarStatePayload:
         sessions = []
         for op in self._open_projects.values():
             try:
                 project = self._project_mgr.get(op.project_id)
             except KeyError:
                 continue
-            sessions.append({
-                "session_name": op.session or project.name,
-                "project": project.model_dump(),
-                "branch": op.branch,
-                "is_dirty": op.is_dirty,
-                "pr": op.pr_data,
-                "agents": [{"name": a.name, "status": a.status} for a in op.agents],
-                "pane_id": op.pane_id,
-            })
-        sessions.sort(key=operator.itemgetter("session_name"))
-        return {
-            "sessions": sessions,
-            "plain_sessions": sorted(self._plain_sessions),
-            "projects": [
-                p.model_dump()
+            sessions.append(
+                SessionState(
+                    session_name=op.session or project.name,
+                    project=project,
+                    branch=op.branch,
+                    is_dirty=op.is_dirty,
+                    pr=op.pr_data,
+                    agents=op.agents,
+                    pane_id=op.pane_id,
+                )
+            )
+        sessions.sort(key=lambda s: s.session_name)
+        return SidebarStatePayload(
+            sessions=sessions,
+            plain_sessions=sorted(self._plain_sessions),
+            projects=[
+                p
                 for p in self._project_mgr.list(local=True)
                 if not any(op.project_id == p.id for op in self._open_projects.values())
             ],
-            "review_prs": self._review_prs,
-        }
-
-    async def _cmd_get_sidebar_state(self, cmd: Command) -> AsyncResponseIterator:
-        yield Response(
-            type=ResponseType.SIDEBAR_STATE, data=self._build_sidebar_state()
+            review_prs=self._review_prs,
         )
 
-    async def _cmd_agent_status(self, cmd: Command) -> AsyncResponseIterator:
-        if not cmd.session or not cmd.name:
-            yield error("session and name required")
-            return
-        new_status = cmd.status or ""
+    async def _cmd_get_sidebar_state(
+        self, cmd: GetSidebarStateCommand
+    ) -> AsyncResponseIterator:
+        payload = self._build_sidebar_state()
+        yield SidebarStateResponse(
+            sessions=payload.sessions,
+            plain_sessions=payload.plain_sessions,
+            projects=payload.projects,
+            review_prs=payload.review_prs,
+        )
+
+    async def _cmd_agent_status(self, cmd: AgentStatusCommand) -> AsyncResponseIterator:
+        new_status = cmd.status
         for op in self._open_projects.values():
             if op.session == cmd.session:
                 existing = next((a for a in op.agents if a.name == cmd.name), None)
@@ -411,10 +422,7 @@ class Daemon:
                 return
         yield error(f"No open project for session: {cmd.session}")
 
-    async def _cmd_agent_clear(self, cmd: Command) -> AsyncResponseIterator:
-        if not cmd.session or not cmd.name:
-            yield error("session and name required")
-            return
+    async def _cmd_agent_clear(self, cmd: AgentClearCommand) -> AsyncResponseIterator:
         for op in self._open_projects.values():
             if op.session == cmd.session:
                 op.agents = [a for a in op.agents if a.name != cmd.name]
@@ -423,14 +431,11 @@ class Daemon:
                 return
         yield ok()
 
-    async def _cmd_status(self, cmd: Command) -> AsyncResponseIterator:
-        yield Response(
-            type=ResponseType.STATUS,
-            data={
-                "open_projects": len(self._open_projects),
-                "total_projects": len(self._project_mgr.list(local=True)),
-                "pid": os.getpid(),
-            },
+    async def _cmd_status(self, cmd: StatusCommand) -> AsyncResponseIterator:
+        yield StatusResponse(
+            open_projects=len(self._open_projects),
+            total_projects=len(self._project_mgr.list(local=True)),
+            pid=os.getpid(),
         )
 
     def _create_git_watcher(self) -> GitWatcher:
@@ -533,7 +538,7 @@ class Daemon:
     async def _fetch_pr_for_project(self, op: OpenProject, now: float) -> None:
         project = self._project_mgr.get(op.project_id)
         pr = await project.get_pr_info(op.branch or "")
-        op.pr_data = pr.model_dump() if pr else None
+        op.pr_data = pr
         op.pr_fetched_at = now
         if pr:
             log.info("PR data: %s #%s (%s)", op.project_id, pr.number, pr.state)
@@ -544,7 +549,7 @@ class Daemon:
         if now - self._review_prs_fetched_at < REVIEW_PR_CACHE_TTL:
             return
 
-        review_prs: dict[str, list[dict[str, Any]]] = {}
+        review_prs: dict[str, list[ReviewPR]] = {}
         for provider in config.providers:
             if provider.type != ProviderType.github:
                 continue
@@ -574,16 +579,16 @@ class Daemon:
     @staticmethod
     async def _fetch_review_prs_for_provider(
         provider: Provider,
-    ) -> dict[str, list[dict[str, Any]]]:
+    ) -> dict[str, list[ReviewPR]]:
         """Fetch review-requested PRs for a single GitHub provider."""
-        result: dict[str, list[dict[str, Any]]] = {}
+        result: dict[str, list[ReviewPR]] = {}
         async with get_provider(provider) as api:
             if not isinstance(api, GitHubApi):
                 return result
             prs_by_repo = await api.get_review_requested_prs()
         for owner_repo, prs in prs_by_repo.items():
             project_id = f"{provider.name}/{owner_repo}"
-            result[project_id] = [pr.model_dump() for pr in prs]
+            result[project_id] = prs
         return result
 
     async def _maybe_sync_providers(self) -> None:
@@ -594,8 +599,8 @@ class Daemon:
 
     def _push_event(
         self,
-        event: str,
-        data: dict[str, Any],
+        event: Literal["state", "notification"],
+        data: SidebarStatePayload | NotificationData,
         *,
         writer: asyncio.StreamWriter | None = None,
     ) -> None:
@@ -603,10 +608,7 @@ class Daemon:
         if not writer and not self._subscribers:
             return
         payload = (
-            Response(type=ResponseType.EVENT, event=event, data=data)
-            .model_dump_json()
-            .encode()
-            + b"\n"
+            EventResponse(event=event, data=data).model_dump_json().encode() + b"\n"
         )
         targets = (
             [writer]
@@ -621,10 +623,10 @@ class Daemon:
 
     def _broadcast(self, level: str, message: str) -> None:
         """Push a notification event to all subscribers (sync-safe, buffers only)."""
-        self._push_event("notification", {"level": level, "message": message})
+        self._push_event("notification", NotificationData(level=level, message=message))
 
     @staticmethod
-    async def _send(writer: asyncio.StreamWriter, response: Response) -> None:
+    async def _send(writer: asyncio.StreamWriter, response: ResponseUnion) -> None:
         writer.write(response.model_dump_json().encode() + b"\n")
         await writer.drain()
 

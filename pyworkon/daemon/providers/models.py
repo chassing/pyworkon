@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Protocol, Self
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from pyworkon.interfaces.tui.models import PRInfo
+    from pyworkon.daemon.models import PRInfo
 
 
 class Project(BaseModel):

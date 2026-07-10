@@ -6,9 +6,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pyworkon.daemon.models import AgentInfo, OpenProject
+from pyworkon.daemon.models import AgentInfo, OpenProject, ReviewPR
 from pyworkon.daemon.project_mgr import Project
-from pyworkon.daemon.protocol import Command, CommandType, ResponseType
+from pyworkon.daemon.protocol import (
+    CommandType,
+    CommandUnion,
+    EnterProjectCommand,
+    KillSessionCommand,
+    OpenProjectCommand,
+    ResponseType,
+    SwitchSessionCommand,
+)
 from pyworkon.daemon.server import Daemon
 
 
@@ -26,11 +34,15 @@ def daemon() -> Daemon:
         return d
 
 
+def test_handlers_cover_every_command_type() -> None:
+    assert set(Daemon._HANDLERS) == set(CommandType)
+
+
 def test_build_sidebar_state_empty(daemon: Daemon) -> None:
     state = daemon._build_sidebar_state()
-    assert state["sessions"] == []
-    assert state["plain_sessions"] == []
-    assert state["projects"] == []
+    assert state.sessions == []
+    assert state.plain_sessions == []
+    assert state.projects == []
 
 
 def test_build_sidebar_state_with_open_project(daemon: Daemon) -> None:
@@ -48,20 +60,20 @@ def test_build_sidebar_state_with_open_project(daemon: Daemon) -> None:
 
     state = daemon._build_sidebar_state()
 
-    assert len(state["sessions"]) == 1
-    session = state["sessions"][0]
-    assert session["session_name"] == "my-session"
-    assert session["branch"] == "feature"
-    assert session["is_dirty"] is True
-    assert session["agents"] == [{"name": "claude", "status": "working"}]
-    assert session["project"]["id"] == "github/owner/repo"
-    assert state["projects"] == []
+    assert len(state.sessions) == 1
+    session = state.sessions[0]
+    assert session.session_name == "my-session"
+    assert session.branch == "feature"
+    assert session.is_dirty is True
+    assert session.agents == [AgentInfo(name="claude", status="working")]
+    assert session.project.id == "github/owner/repo"
+    assert state.projects == []
 
 
 def test_build_sidebar_state_plain_sessions(daemon: Daemon) -> None:
     daemon._plain_sessions = ["scratch", "notes"]
     state = daemon._build_sidebar_state()
-    assert state["plain_sessions"] == ["notes", "scratch"]
+    assert state.plain_sessions == ["notes", "scratch"]
 
 
 def test_build_sidebar_state_unattached_projects(daemon: Daemon) -> None:
@@ -69,8 +81,8 @@ def test_build_sidebar_state_unattached_projects(daemon: Daemon) -> None:
     daemon._project_mgr.list = MagicMock(return_value=[project])
 
     state = daemon._build_sidebar_state()
-    assert len(state["projects"]) == 1
-    assert state["projects"][0]["id"] == "github/owner/repo"
+    assert len(state.projects) == 1
+    assert state.projects[0].id == "github/owner/repo"
 
 
 async def test_on_branch_change(daemon: Daemon) -> None:
@@ -127,16 +139,12 @@ async def test_on_dirty_change(daemon: Daemon) -> None:
 
 
 async def _collect_responses(
-    daemon: Daemon, cmd: Command
+    daemon: Daemon, cmd: CommandUnion
 ) -> list[tuple[ResponseType, str | None]]:
     """Collect all responses from a daemon command handler."""
-    return [(resp.type, resp.msg) async for resp in daemon._dispatch(cmd)]
-
-
-async def test_kill_session_missing_session(daemon: Daemon) -> None:
-    cmd = Command(cmd=CommandType.KILL_SESSION)
-    responses = await _collect_responses(daemon, cmd)
-    assert responses == [(ResponseType.ERROR, "session required")]
+    return [
+        (resp.type, getattr(resp, "msg", None)) async for resp in daemon._dispatch(cmd)
+    ]
 
 
 async def test_kill_session_not_pyworkon_owned(daemon: Daemon) -> None:
@@ -147,7 +155,7 @@ async def test_kill_session_not_pyworkon_owned(daemon: Daemon) -> None:
     with patch.object(
         Daemon, "_is_pyworkon_session", new_callable=AsyncMock, return_value=False
     ):
-        cmd = Command(cmd=CommandType.KILL_SESSION, session="foreign-session")
+        cmd = KillSessionCommand(session="foreign-session")
         responses = await _collect_responses(daemon, cmd)
 
     assert responses == [(ResponseType.OK, None)]
@@ -182,7 +190,7 @@ async def test_kill_session_owned_session(daemon: Daemon) -> None:
             "pyworkon.daemon.tmux_mgr.tmux_manager.kill_session", new_callable=AsyncMock
         ) as mock_kill,
     ):
-        cmd = Command(cmd=CommandType.KILL_SESSION, session="my-session")
+        cmd = KillSessionCommand(session="my-session")
         responses = await _collect_responses(daemon, cmd)
 
     assert responses == [(ResponseType.OK, None)]
@@ -217,7 +225,7 @@ async def test_kill_session_preserves_git_watcher_for_remaining_project(
             "pyworkon.daemon.tmux_mgr.tmux_manager.kill_session", new_callable=AsyncMock
         ),
     ):
-        cmd = Command(cmd=CommandType.KILL_SESSION, session="session-a")
+        cmd = KillSessionCommand(session="session-a")
         await _collect_responses(daemon, cmd)
 
     assert "github/owner/repo|tmux" not in daemon._open_projects
@@ -236,23 +244,17 @@ async def test_kill_session_removes_plain_session(daemon: Daemon) -> None:
             "pyworkon.daemon.tmux_mgr.tmux_manager.kill_session", new_callable=AsyncMock
         ),
     ):
-        cmd = Command(cmd=CommandType.KILL_SESSION, session="my-session")
+        cmd = KillSessionCommand(session="my-session")
         await _collect_responses(daemon, cmd)
 
     assert daemon._plain_sessions == ["scratch", "notes"]
-
-
-async def test_switch_session_missing_session(daemon: Daemon) -> None:
-    cmd = Command(cmd=CommandType.SWITCH_SESSION)
-    responses = await _collect_responses(daemon, cmd)
-    assert responses == [(ResponseType.ERROR, "session required")]
 
 
 async def test_switch_session_attach(daemon: Daemon) -> None:
     with patch(
         "pyworkon.daemon.tmux_mgr.tmux_manager.attach_session", new_callable=AsyncMock
     ) as mock_attach:
-        cmd = Command(cmd=CommandType.SWITCH_SESSION, session="my-session")
+        cmd = SwitchSessionCommand(session="my-session")
         responses = await _collect_responses(daemon, cmd)
 
     assert responses == [(ResponseType.OK, None)]
@@ -263,9 +265,7 @@ async def test_switch_session_select_pane(daemon: Daemon) -> None:
     with patch(
         "pyworkon.daemon.tmux_mgr.tmux_manager.select_pane", new_callable=AsyncMock
     ) as mock_select:
-        cmd = Command(
-            cmd=CommandType.SWITCH_SESSION, session="my-session", pane_id="%5"
-        )
+        cmd = SwitchSessionCommand(session="my-session", pane_id="%5")
         responses = await _collect_responses(daemon, cmd)
 
     assert responses == [(ResponseType.OK, None)]
@@ -273,9 +273,7 @@ async def test_switch_session_select_pane(daemon: Daemon) -> None:
 
 
 async def test_open_project_single_pane_keeps_pane_id(daemon: Daemon) -> None:
-    cmd = Command(
-        cmd=CommandType.OPEN_PROJECT, project_id="github/owner/repo", pane_id="%1"
-    )
+    cmd = OpenProjectCommand(project_id="github/owner/repo", pane_id="%1")
     await _collect_responses(daemon, cmd)
 
     assert len(daemon._open_projects) == 1
@@ -284,14 +282,10 @@ async def test_open_project_single_pane_keeps_pane_id(daemon: Daemon) -> None:
 
 
 async def test_open_project_second_pane_clears_pane_id(daemon: Daemon) -> None:
-    first = Command(
-        cmd=CommandType.OPEN_PROJECT, project_id="github/owner/repo", pane_id="%1"
-    )
+    first = OpenProjectCommand(project_id="github/owner/repo", pane_id="%1")
     await _collect_responses(daemon, first)
 
-    second = Command(
-        cmd=CommandType.OPEN_PROJECT, project_id="github/owner/repo", pane_id="%2"
-    )
+    second = OpenProjectCommand(project_id="github/owner/repo", pane_id="%2")
     await _collect_responses(daemon, second)
 
     assert len(daemon._open_projects) == 1
@@ -301,11 +295,7 @@ async def test_open_project_second_pane_clears_pane_id(daemon: Daemon) -> None:
 
 async def test_open_project_third_pane_stays_none(daemon: Daemon) -> None:
     for pane_id in ("%1", "%2", "%3"):
-        cmd = Command(
-            cmd=CommandType.OPEN_PROJECT,
-            project_id="github/owner/repo",
-            pane_id=pane_id,
-        )
+        cmd = OpenProjectCommand(project_id="github/owner/repo", pane_id=pane_id)
         await _collect_responses(daemon, cmd)
 
     assert len(daemon._open_projects) == 1
@@ -313,14 +303,8 @@ async def test_open_project_third_pane_stays_none(daemon: Daemon) -> None:
     assert op.pane_id is None
 
 
-async def test_enter_project_missing_id(daemon: Daemon) -> None:
-    cmd = Command(cmd=CommandType.ENTER_PROJECT)
-    responses = await _collect_responses(daemon, cmd)
-    assert responses == [(ResponseType.ERROR, "project_id required")]
-
-
 async def test_enter_project_not_found(daemon: Daemon) -> None:
-    cmd = Command(cmd=CommandType.ENTER_PROJECT, project_id="github/unknown/repo")
+    cmd = EnterProjectCommand(project_id="github/unknown/repo")
     responses = await _collect_responses(daemon, cmd)
     assert responses == [(ResponseType.ERROR, "Project not found: github/unknown/repo")]
 
@@ -332,7 +316,7 @@ async def test_enter_project_success(daemon: Daemon) -> None:
     with patch(
         "pyworkon.daemon.tmux_mgr.tmux_manager.enter", new_callable=AsyncMock
     ) as mock_enter:
-        cmd = Command(cmd=CommandType.ENTER_PROJECT, project_id="github/owner/repo")
+        cmd = EnterProjectCommand(project_id="github/owner/repo")
         responses = await _collect_responses(daemon, cmd)
 
     assert responses == [(ResponseType.OK, None)]
@@ -342,28 +326,28 @@ async def test_enter_project_success(daemon: Daemon) -> None:
 def test_build_sidebar_state_includes_review_prs(daemon: Daemon) -> None:
     daemon._review_prs = {
         "github/app-sre/automated-actions": [
-            {
-                "number": 610,
-                "title": "Fix bug",
-                "url": "https://github.com/app-sre/automated-actions/pull/610",
-                "author": "bot",
-                "is_draft": False,
-            }
+            ReviewPR(
+                number=610,
+                title="Fix bug",
+                url="https://github.com/app-sre/automated-actions/pull/610",
+                author="bot",
+                is_draft=False,
+            )
         ]
     }
     state = daemon._build_sidebar_state()
-    assert state["review_prs"] == daemon._review_prs
+    assert state.review_prs == daemon._review_prs
 
 
 async def test_map_review_prs_to_forks(daemon: Daemon) -> None:
     upstream_prs = [
-        {
-            "number": 610,
-            "title": "Fix bug",
-            "url": "https://example.com/pr/610",
-            "author": "bot",
-            "is_draft": False,
-        }
+        ReviewPR(
+            number=610,
+            title="Fix bug",
+            url="https://example.com/pr/610",
+            author="bot",
+            is_draft=False,
+        )
     ]
     daemon._review_prs = {"github/upstream-org/repo": upstream_prs}
 
@@ -383,7 +367,11 @@ async def test_map_review_prs_to_forks(daemon: Daemon) -> None:
 
 
 async def test_map_review_prs_to_forks_no_match(daemon: Daemon) -> None:
-    daemon._review_prs = {"github/other-org/other-repo": [{"number": 1}]}
+    daemon._review_prs = {
+        "github/other-org/other-repo": [
+            ReviewPR(number=1, title="t", url="https://x", author="a")
+        ]
+    }
 
     fork_project = Project(id="github/my-fork/repo")
     daemon._project_mgr.list = MagicMock(return_value=[fork_project])
@@ -400,7 +388,9 @@ async def test_map_review_prs_to_forks_no_match(daemon: Daemon) -> None:
 
 
 async def test_map_review_prs_to_forks_skips_non_forks(daemon: Daemon) -> None:
-    daemon._review_prs = {"github/org/repo": [{"number": 1}]}
+    daemon._review_prs = {
+        "github/org/repo": [ReviewPR(number=1, title="t", url="https://x", author="a")]
+    }
 
     project = Project(id="github/org/repo")
     daemon._project_mgr.list = MagicMock(return_value=[project])

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from textual.app import App, ComposeResult
 
+from pyworkon.daemon.models import AgentInfo, CICheck, PRStatus
 from pyworkon.interfaces.tui import icons
-from pyworkon.interfaces.tui.models import AgentInfo, CICheck, PRStatus
 from pyworkon.interfaces.tui.widgets.agent_list import AgentList
 from pyworkon.interfaces.tui.widgets.branch_row import BranchRow
 from pyworkon.interfaces.tui.widgets.pr_detail import PRDetail
