@@ -39,22 +39,6 @@ async def test_session_header_renders_name() -> None:
         assert "my-app" in widget.name_text
 
 
-async def test_session_header_current_indicator() -> None:
-    session = make_session_info(is_current=True)
-    widget = SessionHeader(session)
-    app = WidgetTestApp(widget)
-    async with app.run_test():
-        assert icons.INDICATOR_CURRENT in widget.name_text
-
-
-async def test_session_header_other_indicator() -> None:
-    session = make_session_info(is_current=False)
-    widget = SessionHeader(session)
-    app = WidgetTestApp(widget)
-    async with app.run_test():
-        assert icons.INDICATOR_OTHER in widget.name_text
-
-
 # ---------------------------------------------------------------------------
 # BranchRow
 # ---------------------------------------------------------------------------

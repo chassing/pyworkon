@@ -35,12 +35,6 @@ class SessionHeader(Widget):
         width: 1fr;
         text-style: bold;
     }
-    SessionHeader .session-name.--current {
-        color: $success;
-    }
-    SessionHeader .session-name.--other {
-        color: $text-muted;
-    }
     SessionHeader .provider-icon {
         width: auto;
         color: $text-muted;
@@ -74,7 +68,7 @@ class SessionHeader(Widget):
     def compose(self) -> ComposeResult:
         yield Horizontal(
             Label(icons.SESSION_INDICATOR, classes="detail-icon"),
-            Label(self.name_text, id="sname", classes="session-name --other"),
+            Label(self.name_text, id="sname", classes="session-name"),
             Label(self.provider_icon_text, id="sprovider", classes="provider-icon"),
         )
 
