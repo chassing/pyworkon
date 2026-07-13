@@ -124,45 +124,22 @@ The daemon is an async Unix socket server that manages all project state:
 - **`daemon stop`** — Graceful shutdown
 - **`daemon status`** — Show PID, open/total project count
 - **`daemon notify "message"`** — Send a toast notification to all connected TUI apps
+- **`daemon install`** — Install a LaunchAgent to auto-start the daemon at login (macOS only)
+- **`daemon uninstall`** — Remove the LaunchAgent (macOS only)
 
 #### Auto-start at login
 
 **macOS (launchd):**
 
 ```bash
-cat > ~/Library/LaunchAgents/com.pyworkon.daemon.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.pyworkon.daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/path/to/pyworkon</string>
-        <string>daemon</string>
-        <string>start</string>
-        <string>--foreground</string>
-    </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/pyworkon-daemon.stdout.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/pyworkon-daemon.stderr.log</string>
-</dict>
-</plist>
-EOF
-# Adjust /path/to/pyworkon (find it with: which pyworkon)
-launchctl load ~/Library/LaunchAgents/com.pyworkon.daemon.plist
+pyworkon daemon install
 ```
+
+This generates `~/Library/LaunchAgents/com.pyworkon.daemon.plist` (resolving
+`pyworkon`'s real path via `PATH`, so it always points at whichever install —
+`uv tool`, pipx, venv — is currently active) and registers it with launchd.
+Re-run it any time to refresh the plist, e.g. after switching how `pyworkon`
+is installed. Remove it with `pyworkon daemon uninstall`.
 
 **Linux (systemd):**
 
