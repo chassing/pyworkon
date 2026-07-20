@@ -9,6 +9,8 @@ import pytest
 from pyworkon.daemon.models import AgentInfo, OpenProject, ReviewPR
 from pyworkon.daemon.project_mgr import Project
 from pyworkon.daemon.protocol import (
+    AgentClearCommand,
+    AgentStatusCommand,
     CommandType,
     CommandUnion,
     EnterProjectCommand,
@@ -55,7 +57,7 @@ def test_build_sidebar_state_with_open_project(daemon: Daemon) -> None:
         session="my-session",
         branch="feature",
         is_dirty=True,
-        agents=[AgentInfo(name="claude", status="working")],
+        agents=[AgentInfo(pid=1, name="claude", status="working")],
     )
 
     state = daemon._build_sidebar_state()
@@ -65,7 +67,7 @@ def test_build_sidebar_state_with_open_project(daemon: Daemon) -> None:
     assert session.session_name == "my-session"
     assert session.branch == "feature"
     assert session.is_dirty is True
-    assert session.agents == [AgentInfo(name="claude", status="working")]
+    assert session.agents == [AgentInfo(pid=1, name="claude", status="working")]
     assert session.project.id == "github/owner/repo"
     assert state.projects == []
 
@@ -145,6 +147,91 @@ async def _collect_responses(
     return [
         (resp.type, getattr(resp, "msg", None)) async for resp in daemon._dispatch(cmd)
     ]
+
+
+async def test_agent_status_updates_existing_entry_by_pid(daemon: Daemon) -> None:
+    """A pid seen before should update the existing agent, not create a duplicate.
+
+    Reproduces the bug where a session's resolved display name changes
+    mid-session (e.g. name-resolution logic improved, or the live
+    `agent-name` transcript field changed) and the daemon, matching only by
+    `name`, appended a second stale entry instead of updating the original.
+    """
+    daemon._open_projects["github/owner/repo|tmux"] = OpenProject(
+        project_id="github/owner/repo",
+        pane_id=None,
+        session="my-session",
+        branch="main",
+    )
+
+    await _collect_responses(
+        daemon,
+        AgentStatusCommand(
+            session="my-session", pid=39666, name="claude-39666", status="idle"
+        ),
+    )
+    responses = await _collect_responses(
+        daemon,
+        AgentStatusCommand(
+            session="my-session",
+            pid=39666,
+            name="resolve-claude-session-title",
+            status="working",
+        ),
+    )
+
+    op = daemon._open_projects["github/owner/repo|tmux"]
+    assert responses == [(ResponseType.OK, None)]
+    assert op.agents == [
+        AgentInfo(pid=39666, name="resolve-claude-session-title", status="working")
+    ]
+
+
+async def test_agent_status_different_pid_adds_separate_entry(daemon: Daemon) -> None:
+    daemon._open_projects["github/owner/repo|tmux"] = OpenProject(
+        project_id="github/owner/repo",
+        pane_id=None,
+        session="my-session",
+        branch="main",
+    )
+
+    await _collect_responses(
+        daemon,
+        AgentStatusCommand(session="my-session", pid=1, name="agent-a", status="idle"),
+    )
+    await _collect_responses(
+        daemon,
+        AgentStatusCommand(
+            session="my-session", pid=2, name="agent-b", status="working"
+        ),
+    )
+
+    op = daemon._open_projects["github/owner/repo|tmux"]
+    assert op.agents == [
+        AgentInfo(pid=1, name="agent-a", status="idle"),
+        AgentInfo(pid=2, name="agent-b", status="working"),
+    ]
+
+
+async def test_agent_clear_removes_by_pid(daemon: Daemon) -> None:
+    daemon._open_projects["github/owner/repo|tmux"] = OpenProject(
+        project_id="github/owner/repo",
+        pane_id=None,
+        session="my-session",
+        branch="main",
+        agents=[
+            AgentInfo(pid=1, name="agent-a", status="idle"),
+            AgentInfo(pid=2, name="agent-b", status="working"),
+        ],
+    )
+
+    responses = await _collect_responses(
+        daemon, AgentClearCommand(session="my-session", pid=1)
+    )
+
+    op = daemon._open_projects["github/owner/repo|tmux"]
+    assert responses == [(ResponseType.OK, None)]
+    assert op.agents == [AgentInfo(pid=2, name="agent-b", status="working")]
 
 
 async def test_kill_session_not_pyworkon_owned(daemon: Daemon) -> None:

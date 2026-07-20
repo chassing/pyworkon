@@ -408,15 +408,24 @@ class Daemon:
         new_status = cmd.status
         for op in self._open_projects.values():
             if op.session == cmd.session:
-                existing = next((a for a in op.agents if a.name == cmd.name), None)
+                existing = next((a for a in op.agents if a.pid == cmd.pid), None)
                 if existing:
-                    if existing.status == new_status:
+                    if existing.status == new_status and existing.name == cmd.name:
                         yield ok()
                         return
                     existing.status = new_status
+                    existing.name = cmd.name
                 else:
-                    op.agents.append(AgentInfo(name=cmd.name, status=new_status))
-                log.info("Agent %s in %s: %s", cmd.name, cmd.session, new_status)
+                    op.agents.append(
+                        AgentInfo(pid=cmd.pid, name=cmd.name, status=new_status)
+                    )
+                log.info(
+                    "Agent %s (pid %d) in %s: %s",
+                    cmd.name,
+                    cmd.pid,
+                    cmd.session,
+                    new_status,
+                )
                 self._push_event("state", self._build_sidebar_state())
                 yield ok()
                 return
@@ -425,7 +434,7 @@ class Daemon:
     async def _cmd_agent_clear(self, cmd: AgentClearCommand) -> AsyncResponseIterator:
         for op in self._open_projects.values():
             if op.session == cmd.session:
-                op.agents = [a for a in op.agents if a.name != cmd.name]
+                op.agents = [a for a in op.agents if a.pid != cmd.pid]
                 self._push_event("state", self._build_sidebar_state())
                 yield ok()
                 return

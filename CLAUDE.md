@@ -138,8 +138,8 @@ All widget styles are defined as `DEFAULT_CSS` class variables, not in external 
 | `SWITCH_SESSION`    | `session`, `pane_id?`                | Switch to an existing tmux session/pane (called by popup/TUI)          |
 | `KILL_SESSION`      | `session`                            | Kill a tmux session and clean up all tracking (called by popup Ctrl-X) |
 | `SUBSCRIBE`         | `events[]`, `full?`                  | Subscribe to push events (`state`, `notification`)                     |
-| `AGENT_STATUS`      | `session`, `name`, `status`          | Update agent status for a session                                      |
-| `AGENT_CLEAR`       | `session`, `name`                    | Remove an agent from a session                                         |
+| `AGENT_STATUS`      | `session`, `pid`, `name`, `status`   | Update agent status for a session (matched by `pid`, not `name`)       |
+| `AGENT_CLEAR`       | `session`, `pid`                     | Remove an agent from a session (matched by `pid`)                      |
 | `LIST_PROJECTS`     | `local?`                             | List all known projects                                                |
 | `GET_PROJECT`       | `project_id`                         | Get a single project                                                   |
 | `CLONE_PROJECT`     | `project_id`                         | Clone a project repository                                             |
@@ -154,6 +154,10 @@ All widget styles are defined as `DEFAULT_CSS` class variables, not in external 
 **Every command that modifies `_open_projects` MUST call `_push_event("state", self._build_sidebar_state())`.** Without this, TUI subscribers (dashboard, popup) won't see the change until the next 5-second polling cycle. This was the root cause of multiple "session doesn't appear" bugs.
 
 Commands that push state: `OPEN_PROJECT`, `CLOSE_PROJECT`, `KILL_SESSION`, `AGENT_STATUS`, `AGENT_CLEAR`, branch/dirty change callbacks.
+
+### `AgentInfo` Identity is `pid`, Not `name`
+
+`AgentInfo.pid` (from `_find_claude_pid()` in `interfaces/shell/commands/agent.py`) is the stable identity the daemon uses to match an existing entry in `OpenProject.agents` — `AgentInfo.name` is display-only and can legitimately change between hook calls for the *same* agent (the resolved title updates as the session's live `agent-name`/`ai-title` transcript field changes, e.g. when a delegated sub-agent starts). `_cmd_agent_status`/`_cmd_agent_clear` in `server.py` match by `pid`; matching by `name` instead caused duplicate stale entries for the same session. When updating an existing entry, update both `name` and `status` in place — never append a second `AgentInfo` for a pid that's already tracked.
 
 ### `_open_projects` Key Schema
 
@@ -178,6 +182,18 @@ Sessions created by pyworkon (via `tmuxp load`) get `PYWORKON_PROJECT_ID` as a t
 - Uses **Click** (not typer) — the CLI is Click-based
 - Subcommands auto-discovered from `interfaces/shell/commands/`
 - `PyworkonContext` passed via Click's `obj`
+- **`interfaces/shell/commands/__init__.py` shadows submodule names**: it does `from .agent import agent` (etc.), so `pyworkon.interfaces.shell.commands.agent` resolves to the Click *command* object, not the submodule, once the package is imported. Tests that need the submodule itself (e.g. `tests/test_agent_cli.py`) must use `importlib.import_module("pyworkon.interfaces.shell.commands.agent")` instead of `from ... import agent` / `import ...agent as x`.
+
+### Agent Name Resolution (`pyworkon agent`)
+
+`_resolve_agent_name()` in `interfaces/shell/commands/agent.py` derives a human-readable agent name instead of a bare PID:
+
+1. `_find_claude_pid()` — Claude Code runs hooks via `sh -c "..."`, so the hook's direct parent (`os.getppid()`) can be a transient shell rather than the stable `claude` process. Walks up the process tree (via `ps`) to find the real `claude` ancestor, bounded to a few hops, falling back to the direct parent PID.
+2. `_process_cwd()` — resolves the `claude` process's cwd (`/proc/<pid>/cwd` on Linux, `lsof -a -d cwd -p <pid>` on macOS).
+3. `_find_active_transcript()` — Claude Code transcripts live at `~/.claude/projects/<cwd-with-slashes-as-dashes>/<session-id>.jsonl`. A running session can silently move to a **new session ID** (e.g. after compaction) without the process's command line changing, so parsing `--resume <uuid>` from argv is unreliable — instead, pick the most recently *modified* `.jsonl` in that project directory, which reflects the session the process is actually writing to right now.
+4. `_extract_latest_transcript_field()` — Claude Code writes live `{"type": "agent-name", "agentName": "..."}` entries to the transcript (the same short slug shown by dashboard/FleetView-style UIs — it can change mid-session as delegated sub-agents run) and a stable `{"type": "ai-title", "aiTitle": "..."}` entry. Use the **latest** `agent-name` entry, falling back to the latest `ai-title` entry.
+
+Falls back to `claude-<pid>` whenever any step fails (cwd unresolvable, no transcript, no `agent-name`/`ai-title` entries) — this fallback is intentional, not a bug. Do NOT synthesize a title from the first user message — Claude Code already provides both fields above, use them instead of re-deriving.
 
 ## Nerd Font Icons
 

@@ -75,8 +75,8 @@ _COMMAND_SAMPLES = [
     CloneProjectCommand(project_id="github/owner/repo"),
     SyncProvidersCommand(),
     GetSidebarStateCommand(),
-    AgentStatusCommand(session="dev", name="copilot", status="working"),
-    AgentClearCommand(session="dev", name="copilot"),
+    AgentStatusCommand(session="dev", pid=123, name="copilot", status="working"),
+    AgentClearCommand(session="dev", pid=123),
     StatusCommand(),
     ShutdownCommand(),
     SubscribeCommand(events=["state", "notification"], full=True),
@@ -114,7 +114,7 @@ def test_command_adapter_unknown_cmd_raises() -> None:
         (OpenProjectCommand, {}),
         (CloseProjectCommand, {}),
         (CloneProjectCommand, {}),
-        (AgentStatusCommand, {"session": "dev", "name": "bot"}),
+        (AgentStatusCommand, {"session": "dev", "pid": 123, "name": "bot"}),
         (AgentClearCommand, {"session": "dev"}),
         (NotifyCommand, {}),
         (KillSessionCommand, {}),
@@ -135,7 +135,11 @@ def test_command_missing_required_field_raises(
         (GetProjectCommand, "project_id", {"project_id": ""}),
         (KillSessionCommand, "session", {"session": ""}),
         (NotifyCommand, "message", {"message": ""}),
-        (AgentStatusCommand, "status", {"session": "s", "name": "n", "status": ""}),
+        (
+            AgentStatusCommand,
+            "status",
+            {"session": "s", "pid": 123, "name": "n", "status": ""},
+        ),
     ],
 )
 def test_command_empty_string_required_field_raises(

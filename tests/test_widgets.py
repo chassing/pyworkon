@@ -175,8 +175,8 @@ async def test_pr_detail_ci_checks_hidden_when_disabled() -> None:
 
 async def test_agent_list_renders_rows() -> None:
     agents = [
-        AgentInfo(name="claude-1", status="working"),
-        AgentInfo(name="claude-2", status="idle"),
+        AgentInfo(pid=1, name="claude-1", status="working"),
+        AgentInfo(pid=2, name="claude-2", status="idle"),
     ]
     widget = AgentList()
     app = WidgetTestApp(widget)
@@ -197,7 +197,7 @@ async def test_agent_list_hidden_when_empty() -> None:
 
 
 async def test_agent_list_visible_when_agents_present() -> None:
-    agents = [AgentInfo(name="agent-a", status="working")]
+    agents = [AgentInfo(pid=1, name="agent-a", status="working")]
     widget = AgentList()
     app = WidgetTestApp(widget)
     async with app.run_test():
@@ -213,7 +213,7 @@ async def test_agent_list_visible_when_agents_present() -> None:
 
 async def test_session_card_composes_sub_widgets() -> None:
     pr = make_pr_info()
-    agents = [AgentInfo(name="agent-1", status="idle")]
+    agents = [AgentInfo(pid=1, name="agent-1", status="idle")]
     session = make_session_info(branch="develop", pr=pr, agents=agents)
     app = WidgetTestApp(SessionCard(session, show_ci_checks=True))
     async with app.run_test():

@@ -117,7 +117,7 @@ def test_pr_info_with_ci_checks() -> None:
 
 
 def test_agent_info() -> None:
-    agent = AgentInfo(name="copilot", status="working")
+    agent = AgentInfo(pid=1, name="copilot", status="working")
     assert agent.name == "copilot"
     assert agent.status == "working"
 
@@ -136,8 +136,8 @@ def test_session_info_with_defaults() -> None:
 def test_session_info_with_pr_and_agents() -> None:
     pr = make_pr_info(number=10, title="WIP")
     agents = [
-        AgentInfo(name="bot-a", status="idle"),
-        AgentInfo(name="bot-b", status="working"),
+        AgentInfo(pid=1, name="bot-a", status="idle"),
+        AgentInfo(pid=2, name="bot-b", status="working"),
     ]
     session = make_session_info(
         session_name="dev",

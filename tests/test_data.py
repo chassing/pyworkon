@@ -94,8 +94,8 @@ def test_session_with_pr() -> None:
 
 def test_session_with_agents() -> None:
     agents = [
-        AgentInfo(name="bot-a", status="idle"),
-        AgentInfo(name="bot-b", status="working"),
+        AgentInfo(pid=1, name="bot-a", status="idle"),
+        AgentInfo(pid=2, name="bot-b", status="working"),
     ]
     state = _payload(
         sessions=[

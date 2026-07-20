@@ -153,11 +153,13 @@ class DaemonClient:
             raise DaemonNotRunningError
         return resp
 
-    def set_agent(self, session: str, name: str, status: str) -> None:
-        self._send_cmd(AgentStatusCommand(session=session, name=name, status=status))
+    def set_agent(self, session: str, pid: int, name: str, status: str) -> None:
+        self._send_cmd(
+            AgentStatusCommand(session=session, pid=pid, name=name, status=status)
+        )
 
-    def clear_agent(self, session: str, name: str) -> None:
-        self._send_cmd(AgentClearCommand(session=session, name=name))
+    def clear_agent(self, session: str, pid: int) -> None:
+        self._send_cmd(AgentClearCommand(session=session, pid=pid))
 
     def status(self) -> StatusResponse:
         resp = self._send_cmd(StatusCommand())

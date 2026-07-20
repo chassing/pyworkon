@@ -59,6 +59,7 @@ class ReviewPR(BaseModel):
 
 
 class AgentInfo(BaseModel):
+    pid: int
     name: str
     status: str
 

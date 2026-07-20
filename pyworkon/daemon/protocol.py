@@ -94,6 +94,7 @@ class GetSidebarStateCommand(_FrozenModel):
 class AgentStatusCommand(_FrozenModel):
     cmd: Literal[CommandType.AGENT_STATUS] = CommandType.AGENT_STATUS
     session: str = Field(min_length=1)
+    pid: int
     name: str = Field(min_length=1)
     status: str = Field(min_length=1)
 
@@ -101,7 +102,7 @@ class AgentStatusCommand(_FrozenModel):
 class AgentClearCommand(_FrozenModel):
     cmd: Literal[CommandType.AGENT_CLEAR] = CommandType.AGENT_CLEAR
     session: str = Field(min_length=1)
-    name: str = Field(min_length=1)
+    pid: int
 
 
 class StatusCommand(_FrozenModel):
