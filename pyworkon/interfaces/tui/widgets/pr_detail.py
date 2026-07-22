@@ -50,7 +50,7 @@ class PRDetail(Widget):
         height: auto;
     }
     PRDetail .detail-row {
-        padding-left: 3;
+        padding-left: 2;
         height: 1;
     }
     PRDetail .detail-icon {
