@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from textual import work
@@ -10,6 +11,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Label, Rule
+from textual.worker import get_current_worker
 
 from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
 from pyworkon.daemon.project_mgr import Project
@@ -50,6 +52,8 @@ class BaseApp(App[None]):
         height: 1fr;
     }
     """
+
+    _RECONNECT_DELAY_SECS: ClassVar[float] = 1.0
 
     BINDINGS: ClassVar = [
         Binding("down", "move_down", show=False),
@@ -139,7 +143,15 @@ class BaseApp(App[None]):
 
     @work(thread=True, group="daemon", exclusive=True)
     def _listen_daemon(self) -> None:
-        """Subscribe to daemon events in background thread."""
+        """Subscribe to daemon events, reconnecting whenever the daemon drops us."""
+        worker = get_current_worker()
+        while not worker.is_cancelled:
+            self._run_daemon_session()
+            if not worker.is_cancelled:
+                time.sleep(self._RECONNECT_DELAY_SECS)
+
+    def _run_daemon_session(self) -> None:
+        """Connect once and consume events until disconnected (returns on any drop)."""
         client = DaemonClient()
         try:
             client.connect()
