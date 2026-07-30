@@ -37,7 +37,7 @@ class Provider(BaseModel):
     password: str
 
 
-# ruff: noqa: ARG003
+# ruff: file-ignore[unused-class-method-argument]
 class Config(BaseSettings):
     prompt_sign: str = "🖖🏻"
     project_cache: Path = user_cache_dir / "project_cache"

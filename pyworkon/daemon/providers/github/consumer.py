@@ -33,7 +33,7 @@ def configure(base_url: str, username: str, password: str) -> None:
 
 
 @client.get("/user/repos")
-async def user_repos(  # noqa: RUF029
+async def user_repos(  # ruff: ignore[unused-async]
     result: list[Repository],
     page: int,
     per_page: int = 100,
@@ -43,7 +43,7 @@ async def user_repos(  # noqa: RUF029
 
 
 @client.get("/repos/{owner}/{repo}/pulls")
-async def repo_pulls(  # noqa: RUF029
+async def repo_pulls(  # ruff: ignore[unused-async]
     result: list[PullRequest],
     owner: str,
     repo: str,
@@ -55,7 +55,7 @@ async def repo_pulls(  # noqa: RUF029
 
 
 @client.get("/repos/{owner}/{repo}/commits/{ref}/status")
-async def combined_status(  # noqa: RUF029
+async def combined_status(  # ruff: ignore[unused-async]
     result: CombinedStatus,
     owner: str,
     repo: str,
@@ -66,7 +66,7 @@ async def combined_status(  # noqa: RUF029
 
 
 @client.get("/repos/{owner}/{repo}/commits/{ref}/check-runs")
-async def check_runs(  # noqa: RUF029
+async def check_runs(  # ruff: ignore[unused-async]
     result: CheckRunsResponse,
     owner: str,
     repo: str,
@@ -77,7 +77,7 @@ async def check_runs(  # noqa: RUF029
 
 
 @client.get("/repos/{owner}/{repo}/pulls/{pull_number}/reviews")
-async def pull_reviews(  # noqa: RUF029
+async def pull_reviews(  # ruff: ignore[unused-async]
     result: list[Review],
     owner: str,
     repo: str,
@@ -88,7 +88,7 @@ async def pull_reviews(  # noqa: RUF029
 
 
 @client.get("/search/issues")
-async def search_issues(  # noqa: RUF029
+async def search_issues(  # ruff: ignore[unused-async]
     result: SearchIssuesResponse,
     q: str,
     per_page: int = 100,

@@ -212,6 +212,6 @@ def require_daemon() -> DaemonClient:
     try:
         client.connect()
     except DaemonNotRunningError:
-        print("Daemon not running. Start with: pyworkon daemon start", file=sys.stderr)  # noqa: T201
+        print("Daemon not running. Start with: pyworkon daemon start", file=sys.stderr)  # ruff: ignore[print]
         sys.exit(1)
     return client

@@ -484,7 +484,7 @@ class Daemon:
 
     async def _polling_loop(self) -> None:
         while self._running:
-            try:
+            try:  # ruff: ignore[too-many-statements-in-try-clause]
                 await self._poll_tmux()
                 await self._poll_pr_data()
                 await self._poll_review_prs()
@@ -570,7 +570,7 @@ class Daemon:
             try:
                 prs = await self._fetch_review_prs_for_provider(provider)
                 review_prs.update(prs)
-            except Exception:  # noqa: BLE001
+            except Exception:  # ruff: ignore[blind-except]
                 log.debug("Failed to poll review PRs for %s", provider.name)
 
         self._review_prs = review_prs
@@ -641,7 +641,7 @@ class Daemon:
         for w in targets:
             try:
                 w.write(payload)
-            except Exception:  # noqa: BLE001
+            except Exception:  # ruff: ignore[blind-except]
                 self._subscribers.pop(w, None)
 
     def _broadcast(self, level: str, message: str) -> None:

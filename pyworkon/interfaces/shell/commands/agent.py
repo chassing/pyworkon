@@ -29,7 +29,7 @@ def _find_claude_pid() -> int:
     pid = start_pid
     for _ in range(_MAX_PROCESS_TREE_HOPS):
         result = subprocess.run(
-            ["ps", "-o", "ppid=,comm=", "-p", str(pid)],  # noqa: S607
+            ["ps", "-o", "ppid=,comm=", "-p", str(pid)],
             capture_output=True,
             text=True,
             check=False,
@@ -51,7 +51,7 @@ def _process_cwd(pid: int) -> Path | None:
         if proc_cwd.exists():
             return proc_cwd.resolve()
     result = subprocess.run(
-        ["lsof", "-a", "-d", "cwd", "-p", str(pid), "-Fn"],  # noqa: S607
+        ["lsof", "-a", "-d", "cwd", "-p", str(pid), "-Fn"],
         capture_output=True,
         text=True,
         check=False,
@@ -122,7 +122,7 @@ def _resolve_agent_name(pid: int) -> str:
 def _get_tmux_session() -> str | None:
     """Get the current tmux session name."""
     result = subprocess.run(
-        ["tmux", "display-message", "-p", "#{session_name}"],  # noqa: S607
+        ["tmux", "display-message", "-p", "#{session_name}"],
         capture_output=True,
         text=True,
         check=False,

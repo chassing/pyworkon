@@ -22,7 +22,7 @@ def configure(base_url: str, token: str) -> None:
 
 
 @client.get("/api/v4/projects")
-async def list_projects(  # noqa: RUF029
+async def list_projects(
     result: list[Repository],
     *,
     membership: bool,
@@ -35,7 +35,7 @@ async def list_projects(  # noqa: RUF029
 
 
 @client.get("/api/v4/projects/{project_id}/merge_requests")
-async def merge_requests(  # noqa: RUF029
+async def merge_requests(
     result: list[MergeRequest],
     project_id: str,
     source_branch: str,
@@ -48,7 +48,7 @@ async def merge_requests(  # noqa: RUF029
 @client.get(
     "/api/v4/projects/{project_id}/merge_requests/{merge_request_iid}/approval_state"
 )
-async def mr_approval_state(  # noqa: RUF029
+async def mr_approval_state(
     result: MRApprovalState,
     project_id: str,
     merge_request_iid: int,

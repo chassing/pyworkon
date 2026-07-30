@@ -140,7 +140,7 @@ class Project(BaseModel):
             return await self._fetch_pr_info(branch)
         except pybreaker.CircuitBreakerError:
             pass
-        except Exception:  # noqa: BLE001
+        except Exception:  # ruff: ignore[blind-except]
             log.debug("Failed to fetch PR info for %s branch=%s", self.id, branch)
         return None
 

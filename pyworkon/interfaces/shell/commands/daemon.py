@@ -160,7 +160,7 @@ def install() -> None:
     )
 
     result = subprocess.run(
-        ["launchctl", "bootstrap", _launchctl_domain(), str(PLIST_PATH)],  # noqa: S607
+        ["launchctl", "bootstrap", _launchctl_domain(), str(PLIST_PATH)],
         capture_output=True,
         text=True,
         check=False,
@@ -200,7 +200,7 @@ def _launchctl_domain() -> str:
 def _launchctl_bootout() -> None:
     """Unload the LaunchAgent if currently loaded (no-op if it isn't)."""
     subprocess.run(
-        ["launchctl", "bootout", f"{_launchctl_domain()}/{LAUNCH_AGENT_LABEL}"],  # noqa: S607
+        ["launchctl", "bootout", f"{_launchctl_domain()}/{LAUNCH_AGENT_LABEL}"],
         capture_output=True,
         check=False,
     )

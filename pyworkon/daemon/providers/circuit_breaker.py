@@ -27,7 +27,7 @@ _notification_callback: Callable[[str, str], None] | None = None
 
 def set_notification_callback(callback: Callable[[str, str], None]) -> None:
     """Register a callback for circuit breaker state changes (level, message)."""
-    global _notification_callback  # noqa: PLW0603
+    global _notification_callback  # ruff: ignore[global-statement]
     _notification_callback = callback
 
 

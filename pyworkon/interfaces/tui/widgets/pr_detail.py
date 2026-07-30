@@ -227,7 +227,7 @@ class PRDetail(Widget):
                 label.update(value)
                 label.remove_class("--ci-pending")
 
-    def watch_ci_failure(self, value: bool) -> None:  # noqa: FBT001
+    def watch_ci_failure(self, value: bool) -> None:  # ruff: ignore[boolean-type-hint-positional-argument]
         with contextlib.suppress(Exception):
             self.query_one("#row-pr-link").set_class(value, "--ci-failure")
 

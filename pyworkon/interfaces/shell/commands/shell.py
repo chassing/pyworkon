@@ -10,7 +10,7 @@ from pyworkon.interfaces.shell import cli, pyworkon_context
 from pyworkon.interfaces.shell.command import PyworkonCommand
 
 
-# ruff: noqa: C901
+# ruff: file-ignore[complex-structure]
 @cli.command(disabled_in=["shell"])
 @click.pass_context
 def shell(ctx: click.Context) -> None:
@@ -31,7 +31,7 @@ def shell(ctx: click.Context) -> None:
             return []
 
     class PyworkonCompleter(Completer):
-        def get_completions(  # noqa: PLR0912
+        def get_completions(  # ruff: ignore[too-many-branches]
             self, document: Document, complete_event: CompleteEvent
         ) -> Iterable[Completion]:
             args = _split_args(document.current_line_before_cursor)
