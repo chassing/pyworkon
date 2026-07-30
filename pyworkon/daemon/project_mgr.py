@@ -1,5 +1,4 @@
 import contextlib
-import glob
 import json
 import logging
 import os
@@ -218,10 +217,9 @@ class ProjectManager:
 
     def _init_project_list(self) -> None:
         self._projects = {}
-        for project_id in glob.glob(  # noqa: PTH207
-            "*/*/*", root_dir=config.workspace_dir, include_hidden=False
-        ):
-            if not os.path.isdir(f"{config.workspace_dir}/{project_id}"):  # noqa: PTH112
+        for project_dir in Path(config.workspace_dir).glob("*/*/*"):
+            project_id = str(project_dir.relative_to(config.workspace_dir))
+            if not project_dir.is_dir() or project_dir.name.startswith("."):
                 continue
             if provider := self._find_provider(project_id):
                 self._projects[project_id] = Project(id=project_id, provider=provider)
@@ -237,32 +235,33 @@ class ProjectManager:
                     cached.provider = self._find_provider(cached.id)
                 self._projects[cached.id] = cached
 
-    async def sync(self, *, force: bool = False) -> None:
+    async def sync(self, *, force: bool = False, local: bool = False) -> None:
         projects: list[Project] = []
-        for provider in config.providers:
-            if force:
-                get_breaker(provider.name).close()
-            try:
-                async with get_provider(provider) as api:
-                    provider_projects = [
-                        Project(
-                            id=p.project_id,
-                            repository_url=p.repository_url,
-                            provider=provider,
+        if not local:
+            for provider in config.providers:
+                if force:
+                    get_breaker(provider.name).close()
+                try:
+                    async with get_provider(provider) as api:
+                        provider_projects = [
+                            Project(
+                                id=p.project_id,
+                                repository_url=p.repository_url,
+                                provider=provider,
+                            )
+                            for p in await api.projects()
+                        ]
+                        log.info(
+                            "Fetched %d projects from %s",
+                            len(provider_projects),
+                            provider.name,
                         )
-                        for p in await api.projects()
-                    ]
-                    log.info(
-                        "Fetched %d projects from %s",
-                        len(provider_projects),
-                        provider.name,
-                    )
-                    projects.extend(provider_projects)
-            except pybreaker.CircuitBreakerError:
-                log.info("Skipping provider %s (unreachable)", provider.name)
-            except Exception:
-                log.exception("Failed to sync provider %s", provider.name)
-        self._cache.set("PROJECTS", [p.model_dump_json() for p in projects])
+                        projects.extend(provider_projects)
+                except pybreaker.CircuitBreakerError:
+                    log.info("Skipping provider %s (unreachable)", provider.name)
+                except Exception:
+                    log.exception("Failed to sync provider %s", provider.name)
+            self._cache.set("PROJECTS", [p.model_dump_json() for p in projects])
         self._init_project_list()
 
     def list(self, *, local: bool) -> list[Project]:

@@ -68,6 +68,7 @@ PID_FILE = user_cache_dir / "daemon.pid"
 PR_CACHE_TTL = 60.0
 REVIEW_PR_CACHE_TTL = 60.0
 PROVIDER_SYNC_INTERVAL = 86400
+PROJECT_MANAGER_SYNC_INTERVAL = 60
 
 
 class Daemon:
@@ -79,6 +80,7 @@ class Daemon:
         self._tmux_sessions: list[tuple[str, str | None]] = []
         self._plain_sessions: list[str] = []
         self._last_provider_sync: float = time.monotonic()
+        self._last_project_manager_sync: float = time.monotonic()
         self._review_prs: dict[str, list[ReviewPR]] = {}
         self._review_prs_fetched_at: float = 0.0
         self._running = True
@@ -487,6 +489,9 @@ class Daemon:
                 await self._poll_pr_data()
                 await self._poll_review_prs()
                 await self._maybe_sync_providers()
+                await (
+                    self._maybe_sync_project_manager()
+                )  # New line for syncing the project manager
                 self._push_event("state", self._build_sidebar_state())
             except Exception:
                 log.exception("Error in polling loop")
@@ -605,6 +610,15 @@ class Daemon:
             log.info("Auto-syncing providers...")
             await self._project_mgr.sync()
             self._last_provider_sync = time.monotonic()
+
+    async def _maybe_sync_project_manager(self) -> None:
+        if (
+            time.monotonic() - self._last_project_manager_sync
+            > PROJECT_MANAGER_SYNC_INTERVAL
+        ):
+            log.info("Auto-syncing project manager...")
+            await self._project_mgr.sync(local=True)
+            self._last_project_manager_sync = time.monotonic()
 
     def _push_event(
         self,
