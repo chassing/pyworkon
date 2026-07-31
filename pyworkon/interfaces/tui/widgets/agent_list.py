@@ -103,4 +103,4 @@ class AgentList(Widget):
         """Update all working agent labels with the current spinner frame."""
         with contextlib.suppress(Exception):
             for label in self.query(Label).filter(".--working"):
-                label.update(self._spinner)
+                label.update(self._spinner, layout=False)

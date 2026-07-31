@@ -251,4 +251,4 @@ class PRDetail(Widget):
         """Update all pending CI labels with the current spinner frame."""
         with contextlib.suppress(Exception):
             for label in self.query(Label).filter(".--ci-pending"):
-                label.update(self._spinner)
+                label.update(self._spinner, layout=False)

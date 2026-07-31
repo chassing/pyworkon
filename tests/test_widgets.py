@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from textual.app import App, ComposeResult
+from textual.widgets import Label
 
 from pyworkon.daemon.models import AgentInfo, CICheck, PRStatus
 from pyworkon.interfaces.tui import icons
@@ -168,6 +171,22 @@ async def test_pr_detail_ci_checks_hidden_when_disabled() -> None:
         assert len(check_rows) == 0
 
 
+async def test_pr_detail_spinner_tick_does_not_trigger_layout() -> None:
+    """Spinner ticks swap a same-size glyph — they must not force a full layout reflow."""
+    pr = make_pr_info(status=PRStatus.PENDING, is_draft=False)
+    widget = PRDetail(show_ci_checks=True)
+    app = WidgetTestApp(widget)
+    async with app.run_test() as pilot:
+        widget.update(pr, "acme/repo")
+        await pilot.pause()
+        label = app.query_one(".--ci-pending", Label)
+        with patch.object(label, "update", wraps=label.update) as mock_update:
+            widget._tick_spinner()
+            mock_update.assert_called_once()
+            _, kwargs = mock_update.call_args
+            assert kwargs.get("layout") is False
+
+
 # ---------------------------------------------------------------------------
 # AgentList
 # ---------------------------------------------------------------------------
@@ -204,6 +223,22 @@ async def test_agent_list_visible_when_agents_present() -> None:
         widget.update(agents)
         await app._animator.wait_for_idle()
         assert widget.display is True
+
+
+async def test_agent_list_spinner_tick_does_not_trigger_layout() -> None:
+    """Spinner ticks swap a same-size glyph — they must not force a full layout reflow."""
+    agents = [AgentInfo(pid=1, name="agent-a", status="working")]
+    widget = AgentList()
+    app = WidgetTestApp(widget)
+    async with app.run_test() as pilot:
+        widget.update(agents)
+        await pilot.pause()
+        label = app.query_one(".--working", Label)
+        with patch.object(label, "update", wraps=label.update) as mock_update:
+            widget._tick_spinner()
+            mock_update.assert_called_once()
+            _, kwargs = mock_update.call_args
+            assert kwargs.get("layout") is False
 
 
 # ---------------------------------------------------------------------------
