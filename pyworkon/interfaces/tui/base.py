@@ -49,6 +49,7 @@ class BaseApp(App[None]):
     #provider-banner {
         height: 1;
         padding: 0 1;
+        margin-bottom: 1;
         background: $warning;
         color: $text;
         display: none;
