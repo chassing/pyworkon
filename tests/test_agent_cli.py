@@ -238,6 +238,39 @@ def test_resolve_agent_name_falls_back_to_pid(
     assert agent_cli._resolve_agent_name(10185) == "claude-10185"
 
 
+def test_get_tmux_session_returns_none_when_not_inside_tmux(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reproduce the cross-project agent leak.
+
+    A headless/background process has no TMUX env var — `tmux display-message`
+    would otherwise silently fall back to whatever session the server considers
+    "current" (e.g. the client's last-attached session), misattributing agent
+    status to an unrelated project. Absence of TMUX must short-circuit before
+    that ambient lookup ever runs.
+    """
+    monkeypatch.delenv("TMUX", raising=False)
+
+    def fake_run(*_a: object, **_k: object) -> subprocess.CompletedProcess[str]:
+        msg = "tmux display-message must not be called when TMUX is unset"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(agent_cli.subprocess, "run", fake_run)
+
+    assert agent_cli._get_tmux_session() is None
+
+
+def test_get_tmux_session_returns_session_when_inside_tmux(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TMUX", "tmux-server-socket,1234,0")
+    monkeypatch.setattr(
+        agent_cli.subprocess, "run", lambda *_a, **_k: _completed("pyworkon\n")
+    )
+
+    assert agent_cli._get_tmux_session() == "pyworkon"
+
+
 def test_resolve_agent_name_falls_back_to_pid_when_no_field_found(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

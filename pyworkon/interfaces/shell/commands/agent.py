@@ -120,7 +120,16 @@ def _resolve_agent_name(pid: int) -> str:
 
 
 def _get_tmux_session() -> str | None:
-    """Get the current tmux session name."""
+    """Get the current tmux session name.
+
+    Requires the `TMUX` env var (set by tmux for processes actually running
+    inside a pane). Without it, `tmux display-message` still succeeds by
+    falling back to the server's ambient "current" session (e.g. whichever
+    session a client last attached to) — misattributing status from a
+    headless/background process (no real pane) to an unrelated project.
+    """
+    if not os.environ.get("TMUX"):
+        return None
     result = subprocess.run(
         ["tmux", "display-message", "-p", "#{session_name}"],
         capture_output=True,
