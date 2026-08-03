@@ -46,6 +46,16 @@ class BaseApp(App[None]):
     #filter-bar.--visible {
         display: block;
     }
+    #provider-banner {
+        height: 1;
+        padding: 0 1;
+        background: $warning;
+        color: $text;
+        display: none;
+    }
+    #provider-banner.--visible {
+        display: block;
+    }
     #item-list {
         scrollbar-size: 0 0;
         width: 1fr;
@@ -76,6 +86,7 @@ class BaseApp(App[None]):
         self._notification_client: DaemonClient | None = None
 
     def compose(self) -> ComposeResult:
+        yield Label("", id="provider-banner")
         yield Label("", id="filter-bar")
         yield VerticalScroll(id="item-list", can_focus=False)
         yield Footer()
@@ -180,6 +191,14 @@ class BaseApp(App[None]):
         sessions, projects, plain_names, review_prs = parse_sidebar_state(state)
         new_items = self._build_items(sessions, projects, plain_names, review_prs)
         self.call_from_thread(self._apply_new_items, new_items)
+        self.call_from_thread(self._update_provider_banner, state.open_providers)
+
+    def _update_provider_banner(self, open_providers: list[str]) -> None:
+        banner = self.query_one("#provider-banner", Label)
+        if open_providers:
+            names = ", ".join(sorted(open_providers))
+            banner.update(f"PR data paused — provider unreachable: {names}")
+        banner.set_class(bool(open_providers), "--visible")
 
     # --- Item management ---
 

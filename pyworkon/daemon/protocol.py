@@ -182,6 +182,7 @@ class SidebarStatePayload(_FrozenModel):
     plain_sessions: list[str]
     projects: list[Project]
     review_prs: dict[str, list[ReviewPR]]
+    open_providers: list[str] = []
 
 
 class NotificationData(_FrozenModel):

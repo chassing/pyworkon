@@ -54,7 +54,10 @@ from pyworkon.daemon.protocol import (
     progress,
 )
 from pyworkon.daemon.providers import get_provider
-from pyworkon.daemon.providers.circuit_breaker import set_notification_callback
+from pyworkon.daemon.providers.circuit_breaker import (
+    get_open_providers,
+    set_notification_callback,
+)
 from pyworkon.daemon.providers.github import GitHubApi
 from pyworkon.daemon.tmux_mgr import tmux_manager
 from pyworkon.utils import run_cmd
@@ -393,6 +396,7 @@ class Daemon:
                 if not any(op.project_id == p.id for op in self._open_projects.values())
             ],
             review_prs=self._review_prs,
+            open_providers=get_open_providers(),
         )
 
     async def _cmd_get_sidebar_state(

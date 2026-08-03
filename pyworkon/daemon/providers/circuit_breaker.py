@@ -60,3 +60,8 @@ def get_breaker(provider_name: str) -> pybreaker.CircuitBreaker:
             listeners=[_listener],
         )
     return _breakers[provider_name]
+
+
+def get_open_providers() -> list[str]:
+    """List provider names whose circuit breaker is currently open (paused)."""
+    return [name for name, cb in _breakers.items() if cb.current_state == "open"]

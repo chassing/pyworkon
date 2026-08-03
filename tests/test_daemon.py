@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pyworkon.daemon.models import AgentInfo, OpenProject, ReviewPR
+from pyworkon.daemon.models import AgentInfo, OpenProject, PRInfo, PRStatus, ReviewPR
 from pyworkon.daemon.project_mgr import Project
 from pyworkon.daemon.protocol import (
     AgentClearCommand,
@@ -19,6 +19,7 @@ from pyworkon.daemon.protocol import (
     ResponseType,
     SwitchSessionCommand,
 )
+from pyworkon.daemon.providers import circuit_breaker
 from pyworkon.daemon.server import Daemon
 
 
@@ -320,6 +321,51 @@ async def test_kill_session_preserves_git_watcher_for_remaining_project(
     daemon._git_watcher.unwatch.assert_not_called()
 
 
+async def test_kill_session_preserves_other_projects_pr_data(daemon: Daemon) -> None:
+    """Server-side PR data isolation.
+
+    Killing one project's session must not clear PR data for unrelated,
+    still-open projects (reported bug: closing one project blanks out PR
+    checks for all others).
+    """
+    pr = PRInfo(number=1, title="t", status=PRStatus.SUCCESS)
+    daemon._open_projects["github/owner/repo-a|tmux"] = OpenProject(
+        project_id="github/owner/repo-a",
+        pane_id=None,
+        session="session-a",
+        branch="feature-a",
+        pr_data=pr,
+        pr_fetched_at=1000.0,
+    )
+    daemon._open_projects["github/owner/repo-b|tmux"] = OpenProject(
+        project_id="github/owner/repo-b",
+        pane_id=None,
+        session="session-b",
+        branch="feature-b",
+    )
+
+    with (
+        patch.object(
+            Daemon, "_is_pyworkon_session", new_callable=AsyncMock, return_value=True
+        ),
+        patch(
+            "pyworkon.daemon.tmux_mgr.tmux_manager.kill_session", new_callable=AsyncMock
+        ),
+    ):
+        cmd = KillSessionCommand(session="session-b")
+        await _collect_responses(daemon, cmd)
+
+    op_a = daemon._open_projects["github/owner/repo-a|tmux"]
+    assert op_a.pr_data is pr
+    assert op_a.pr_fetched_at == pytest.approx(1000.0)
+
+    project_a = Project(id="github/owner/repo-a")
+    daemon._project_mgr.get = MagicMock(return_value=project_a)
+    state = daemon._build_sidebar_state()
+    assert len(state.sessions) == 1
+    assert state.sessions[0].pr is pr
+
+
 async def test_kill_session_removes_plain_session(daemon: Daemon) -> None:
     daemon._plain_sessions = ["scratch", "my-session", "notes"]
 
@@ -408,6 +454,25 @@ async def test_enter_project_success(daemon: Daemon) -> None:
 
     assert responses == [(ResponseType.OK, None)]
     mock_enter.assert_awaited_once_with(project)
+
+
+def test_build_sidebar_state_includes_open_providers(daemon: Daemon) -> None:
+    """Persistent indicator support.
+
+    The dashboard needs to show a persistent indicator when a provider's
+    circuit breaker is paused, instead of relying only on the one-time toast
+    notification that's easy to miss.
+    """
+    circuit_breaker._breakers.clear()
+    try:
+        circuit_breaker.get_breaker("github").open()
+        circuit_breaker.get_breaker("gitlab-cee")
+
+        state = daemon._build_sidebar_state()
+
+        assert state.open_providers == ["github"]
+    finally:
+        circuit_breaker._breakers.clear()
 
 
 def test_build_sidebar_state_includes_review_prs(daemon: Daemon) -> None:

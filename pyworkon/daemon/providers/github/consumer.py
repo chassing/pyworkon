@@ -27,7 +27,10 @@ def configure(base_url: str, username: str, password: str) -> None:
                 "Accept": "application/vnd.github.v3+json",
                 "Authorization": f"Basic {credentials}",
             },
-            timeout=60.0,
+            # Kept short: the circuit breaker (fail_max=3) needs 3 hung
+            # requests to trip, so a long timeout multiplies how long PR
+            # data stays blank for every open project on a network hiccup.
+            timeout=10.0,
         )
     )
 

@@ -145,6 +145,8 @@ ignore = [
     "too-many-arguments",                    # too many arguments — test factory functions
     "unused-variable",                       # unused variable — unpacked tuple results
     "import-private-name",                   # private name import — testing internal filter functions
+    "hardcoded-password-func-arg",           # hardcoded password arg — fake credentials in provider tests
+    "hardcoded-password-string",             # hardcoded password string — fake credentials in provider tests
 ]
 "pyworkon/daemon/providers/gitlab/consumer.py" = ["unused-async"]
 "pyworkon/interfaces/shell/commands/*.py" = ["start-process-with-partial-path"]

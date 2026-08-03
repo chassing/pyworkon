@@ -16,7 +16,10 @@ def configure(base_url: str, token: str) -> None:
         config=clientele_api.BaseConfig(
             base_url=base_url,
             headers={"Authorization": f"Bearer {token}"},
-            timeout=60.0,
+            # Kept short: the circuit breaker (fail_max=3) needs 3 hung
+            # requests to trip, so a long timeout multiplies how long PR
+            # data stays blank for every open project on a network hiccup.
+            timeout=10.0,
         )
     )
 
