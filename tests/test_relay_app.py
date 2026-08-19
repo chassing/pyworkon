@@ -92,3 +92,24 @@ def test_ws_receives_cached_snapshot_immediately_on_connect(
     with client.websocket_connect(f"/ws?token={TOKEN}") as ws:
         received = ws.receive_json()
         assert received["stale_after_seconds"] == 15
+
+
+def test_manifest_embeds_token_in_start_url(client: TestClient) -> None:
+    response = client.get("/manifest.webmanifest")
+
+    assert response.status_code == 200
+    assert response.json()["start_url"] == f"/?token={TOKEN}"
+
+
+def test_service_worker_served_at_root_scope(client: TestClient) -> None:
+    response = client.get("/sw.js")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/javascript"
+
+
+def test_pwa_icons_served_unauthenticated(client: TestClient) -> None:
+    for name in ("icon-192.png", "icon-512.png", "apple-touch-icon.png"):
+        response = client.get(f"/pwa/{name}")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"

@@ -7,7 +7,7 @@ import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from pyworkon.interfaces.relay.config import RelaySettings
@@ -17,6 +17,8 @@ from pyworkon.interfaces.relay.state import RelayCache
 
 STATIC_DIR = Path(__file__).parent / "static"
 FONTS_DIR = STATIC_DIR / "fonts"
+PWA_DIR = STATIC_DIR / "pwa"
+SERVICE_WORKER_PATH = PWA_DIR / "sw.js"
 UNAUTHORIZED_WS_CODE = 4401
 _ICONS_PLACEHOLDER = "/*__PYWORKON_ICONS__*/"
 
@@ -61,6 +63,36 @@ def _dashboard_page(request: Request) -> HTMLResponse:
     return HTMLResponse(_DASHBOARD_HTML)
 
 
+def _manifest(request: Request) -> JSONResponse:
+    """PWA manifest.
+
+    Embeds the token in `start_url` so "Add to Home Screen" reopens straight
+    into the dashboard instead of the 401 gate.
+    """
+    settings: RelaySettings = request.app.state.settings
+    return JSONResponse({
+        "name": "pyworkon Relay Dashboard",
+        "short_name": "pyworkon",
+        "icons": [
+            {"src": "/pwa/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/pwa/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        ],
+        "theme_color": "#14161a",
+        "background_color": "#14161a",
+        "display": "standalone",
+        "start_url": f"/?token={settings.token}",
+    })
+
+
+def _service_worker() -> FileResponse:
+    """Served at the root path (not /pwa/sw.js) so its scope covers the whole site."""
+    return FileResponse(
+        SERVICE_WORKER_PATH,
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 async def _ws_endpoint(websocket: WebSocket) -> None:
     settings: RelaySettings = websocket.app.state.settings
     if not _token_matches(websocket.query_params.get("token"), settings.token):
@@ -87,8 +119,12 @@ def create_app(settings: RelaySettings | None = None) -> FastAPI:
     app.get("/healthz")(_healthz)
     app.post("/ingest")(_ingest)
     app.get("/")(_dashboard_page)
+    app.get("/manifest.webmanifest")(_manifest)
+    app.get("/sw.js")(_service_worker)
     app.websocket("/ws")(_ws_endpoint)
-    # Icon webfont only — no session/PR data, so it's not token-gated like the
-    # dashboard page. `dashboard.html` itself lives outside this directory.
+    # Icon webfont + PWA icons only — no session/PR data, so these aren't
+    # token-gated like the dashboard page. `dashboard.html` itself lives
+    # outside both of these directories.
     app.mount("/fonts", StaticFiles(directory=FONTS_DIR), name="fonts")
+    app.mount("/pwa", StaticFiles(directory=PWA_DIR), name="pwa")
     return app

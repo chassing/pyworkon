@@ -20,6 +20,15 @@ COPY README.md ./
 COPY pyworkon ./pyworkon
 RUN uv sync --frozen --no-dev --extra relay --no-editable
 
+# Dedicated non-root user as a safe default for plain Docker/k8s runs that
+# don't override the UID themselves (e.g. no `securityContext.runAsUser`).
+# Orthogonal to the arbitrary-non-root-UID support above: an OpenShift
+# `restricted` SCC ignores this and assigns its own UID anyway — both work
+# because nothing in this image ever imports pyworkon.config.
+RUN groupadd --gid 1000 pyworkon \
+    && useradd --uid 1000 --gid pyworkon --no-create-home --shell /usr/sbin/nologin pyworkon
+USER pyworkon
+
 EXPOSE 8080
 ENV RELAY_HOST=0.0.0.0 RELAY_PORT=8080
 
