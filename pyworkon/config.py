@@ -48,12 +48,15 @@ class Config(BaseSettings):
     debug: bool = False
     history_file: Path = user_cache_dir / "history"
     sidebar_refresh_interval: int = 5
+    relay_url: HttpUrl | None = None
+    relay_token: str | None = None
 
     model_config = SettingsConfigDict(
         yaml_file=user_config_file,
         yaml_file_encoding="utf-8",
         extra="ignore",
         env_prefix="pyworkon_",
+        case_sensitive=False,
     )
 
     @classmethod
@@ -65,7 +68,7 @@ class Config(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (YamlConfigSettingsSource(settings_cls),)
+        return (YamlConfigSettingsSource(settings_cls), env_settings)
 
     def save(self) -> None:
         user_config_file.write_text(

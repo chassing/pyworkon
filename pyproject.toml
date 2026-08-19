@@ -15,6 +15,7 @@ dependencies = [
     "clientele>=1.8.1",
     "diskcache>=5.6.3",
     "fuzzyfinder>=2.1.0",
+    "httpx2>=2.9.1",
     "iterfzf>=1.9.0.67.0",
     "natsort>=8.4.0",
     "prompt-toolkit>=3.0.47",
@@ -33,12 +34,18 @@ homepage = "https://github.com/chassing/pyworkon"
 respository = "https://github.com/chassing/pyworkon"
 issues = "https://github.com/chassing/pyworkon/issues"
 
+[project.optional-dependencies]
+relay = ["fastapi>=0.115", "uvicorn[standard]>=0.30"]
+
 [project.scripts]
 pyworkon = 'pyworkon.__main__:run'
+pyworkon-relay = 'pyworkon.interfaces.relay.__main__:run'
 
 [dependency-groups]
 dev = [
     # development dependencies
+    "fastapi",
+    "httpx2-pytest",
     "mypy",
     "pytest-asyncio",
     "pytest-cov",
@@ -46,6 +53,7 @@ dev = [
     "ruff",
     "types-pyyaml",
     "types-requests",
+    "uvicorn[standard]",
 ]
 
 [tool.pytest.ini_options]

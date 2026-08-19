@@ -24,12 +24,23 @@ pyworkon/
 │   ├── project_mgr.py     # ProjectManager + Project model, diskcache
 │   ├── git_watcher.py     # GitWatcher — per-project file watchers (watchfiles)
 │   ├── tmux_mgr.py        # TmuxManager — tmux subprocess calls (async)
+│   ├── relay_publisher.py # RelayPublisher — optional outbound push to the relay (see "Relay")
 │   └── providers/         # GitHub/GitLab API via clientele
 │       ├── github/        # GitHubApi (clientele standalone functions)
 │       └── gitlab/        # GitLabApi (clientele standalone functions)
 ├── interfaces/
 │   ├── shell/             # Click CLI (pyworkon command)
 │   │   └── commands/      # Subcommands: workon, dashboard, popup, daemon, clone, provider, agent, shell
+│   ├── relay/             # FastAPI mobile web dashboard (see "Relay" section below)
+│   │   ├── app.py         # create_app() — /healthz, /ingest, /, /ws routes
+│   │   ├── config.py      # RelaySettings — real env vars (RELAY_TOKEN/HOST/PORT)
+│   │   ├── schema.py      # RelayStatePayload/RelayBroadcastPayload wire DTOs
+│   │   ├── state.py       # RelayCache — latest-payload cache + WS fanout
+│   │   ├── icons.py       # DASHBOARD_ICONS — reuses interfaces/tui/icons.py
+│   │   ├── __main__.py    # `pyworkon-relay` script entrypoint (uvicorn.run)
+│   │   └── static/
+│   │       ├── dashboard.html   # single-file vanilla JS/CSS dashboard, no build step
+│   │       └── fonts/           # self-hosted Nerd Font Symbols-Only subset (woff2)
 │   └── tui/               # Textual TUI apps and widgets
 │       ├── base.py        # BaseApp — shared daemon subscription, item management, navigation
 │       ├── dashboard.py   # DashboardApp — full-detail monitoring, sessions only
@@ -177,6 +188,21 @@ Sessions created by pyworkon (via `tmuxp load`) get `PYWORKON_PROJECT_ID` as a t
 
 `_push_event` uses `writer.write()` (buffer-only, no `drain()`) so it can be called from sync contexts like the circuit breaker callback (`_broadcast`). This means it doesn't await — data goes into the kernel buffer but delivery is not guaranteed before the next `await`.
 
+## Relay (mobile web dashboard)
+
+A read-only mobile web dashboard, fed by the daemon pushing state outbound to a small relay service (deployed separately, e.g. in a k8s cluster) rather than the phone connecting inbound to the laptop:
+
+```text
+laptop daemon --(outbound HTTPS POST, Authorization: Bearer <token>)--> relay --(WebSocket push, ?token=)--> phone browser
+```
+
+- **Daemon side** (`daemon/relay_publisher.py`): `RelayPublisher` is constructed in `Daemon.__init__` only when `config.relay_url` is set (`Config.relay_url: HttpUrl | None`, `Config.relay_token: str | None`) — fully inert otherwise. `Daemon._push_event()` calls `RelayPublisher.submit()` for every `"state"` event (not `"notification"`), which replaces any not-yet-sent payload in an `asyncio.Queue(maxsize=1)` (only the latest state matters — no backlog). A background task (`RelayPublisher.run()`) drains the queue and does a best-effort `httpx2.AsyncClient` POST to `{relay_url}/ingest`; failures/recoveries are logged only on the transition (mirrors `daemon/providers/circuit_breaker.py`'s log-spam-avoidance style), never per attempt. `to_relay_payload()` sanitizes `SidebarStatePayload` into `RelayStatePayload` — critically, it strips `Project.provider` (a `config.Provider`, which carries a `password` credential field) down to just `provider_type`, since this payload leaves the laptop.
+- **Relay side** (`interfaces/relay/`): a standalone FastAPI app (`pyworkon-relay` script entrypoint), deployed independently from the daemon (see `deploy/Dockerfile`). **Must never import `pyworkon.config`, `daemon.protocol`, or `daemon.project_mgr`** — `pyworkon.config` runs `pwd.getpwnam()`/`mkdir()` at import time, which crashes under an arbitrary non-root UID (e.g. OpenShift's `restricted` SCC), which the relay container is expected to run under. `interfaces/relay/schema.py` only imports `daemon.models` (a dependency-free leaf module) for this reason — verified by `tests/test_relay_icons.py::test_importing_relay_icons_does_not_pull_in_pyworkon_config`, which must keep passing. `RelaySettings` (`interfaces/relay/config.py`) reads real env vars (`RELAY_TOKEN`/`RELAY_HOST`/`RELAY_PORT`) since the container has no `~/.config/pyworkon/config.yaml`.
+- **Auth**: both the daemon's `POST /ingest` and the browser-facing `GET /` + `WS /ws` require the shared token (`secrets.compare_digest`). The daemon sends it as `Authorization: Bearer`; browsers can't set custom headers for a plain navigation or the native `WebSocket` handshake, so those two use a `?token=` query param instead.
+- **Dashboard** (`interfaces/relay/static/dashboard.html`): single file, no build step, vanilla JS WebSocket client. Icons come from `interfaces/relay/icons.py`, which builds a `DASHBOARD_ICONS` dict directly from `interfaces/tui/icons.py` (stripping Rich color markup — the web page colors via CSS classes instead) and is injected into the served HTML at import time by replacing a `/*__PYWORKON_ICONS__*/` placeholder with JSON. **Never hardcode icon glyphs in `dashboard.html` — add a key to `interfaces/relay/icons.py` instead.** The PUA glyphs are served via a self-hosted webfont (`static/fonts/pyworkon-icons.woff2`) since phones essentially never have a Nerd Font installed; it's subsetted from the **Mono** variant of Nerd Fonts' "Symbols Nerd Font" release specifically because the proportional variant has wildly inconsistent per-glyph advance widths (regenerate via the command in `static/fonts/NERD_FONTS_LICENSE.txt` if a new icon is added). "Working"/pending states animate through the same Braille-dot frames Rich's `Spinner("dots", ...)` uses in the TUI, driven by one shared `setInterval` keyed off `data-spin="true"` elements.
+- **Staleness**: the relay stamps `pushed_at` itself (not trusting the daemon's clock) when caching an ingest; the browser compares `Date.now()` against it every second and shows a banner past `stale_after_seconds` (`sidebar_refresh_interval * RELAY_STALE_MULTIPLIER`), mirroring the TUI's `#provider-banner` outage-banner pattern in `interfaces/tui/base.py` instead of the page just failing to load.
+- **Deployment**: `deploy/Dockerfile` builds a relay-only image with `uv sync --frozen --no-dev --extra relay` (the `relay` extra — `fastapi`/`uvicorn` — is optional so a plain CLI install doesn't pull in a web server). No k8s manifests are checked in; wire `RELAY_TOKEN`/`RELAY_HOST`/`RELAY_PORT` into your own `Deployment`/`Secret`.
+
 ## CLI
 
 - Uses **Click** (not typer) — the CLI is Click-based
@@ -213,6 +239,10 @@ ICON_GITHUB = ""  # (nf-fa-github)
 
 Agent status is set via CLI hooks as plain strings (`idle`, `working`, `waiting`). The TUI maps these to colored Nerd Font icons via `_AGENT_STATUS_ICONS` in `widgets/agent_list.py`. Unknown status values are rendered as-is.
 
+### Reuse in the relay web dashboard
+
+`interfaces/relay/icons.py` builds its icon set from these same constants rather than duplicating glyphs — see the "Relay" section above. Add new dashboard icons there, not as hardcoded glyphs in `dashboard.html`.
+
 ## Testing
 
 ```bash
@@ -232,6 +262,7 @@ make ci                                    # lint + typecheck + tests
 - Async tests work automatically (`asyncio_mode = "auto"`)
 - Textual widget tests use `app.run_test()` pattern from `textual.testing`
 - Shared fixtures in `tests/conftest.py`: `make_session_info()`, `make_pr_info()`, `tmp_git_repo`, `project`
+- Relay tests (`tests/test_relay_*.py`): mock the daemon's outbound `httpx2` calls with the `httpx_mock` fixture from `httpx2-pytest` (import name `pytest_httpx2`), not `respx` (which targets real `httpx`, not `httpx2`). `fastapi.testclient.TestClient` works out of the box — `starlette.testclient` itself runs on `httpx2` now, no real `httpx` dependency needed anywhere in this project.
 
 ## Key Patterns
 

@@ -9,7 +9,7 @@ import os
 import subprocess
 import sys
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable
 from typing import ClassVar, Literal
 
 from pydantic import ValidationError
@@ -59,6 +59,7 @@ from pyworkon.daemon.providers.circuit_breaker import (
     set_notification_callback,
 )
 from pyworkon.daemon.providers.github import GitHubApi
+from pyworkon.daemon.relay_publisher import RELAY_STALE_MULTIPLIER, RelayPublisher
 from pyworkon.daemon.tmux_mgr import tmux_manager
 from pyworkon.utils import run_cmd
 
@@ -89,6 +90,16 @@ class Daemon:
         self._running = True
         self._subscribers: dict[asyncio.StreamWriter, set[str]] = {}
         self._git_watcher = self._create_git_watcher()
+        self._relay_publisher: RelayPublisher | None = (
+            RelayPublisher(
+                base_url=str(config.relay_url),
+                token=config.relay_token or "",
+                stale_after_seconds=config.sidebar_refresh_interval
+                * RELAY_STALE_MULTIPLIER,
+            )
+            if config.relay_url
+            else None
+        )
 
     async def start(self) -> None:
         """Start the daemon server."""
@@ -108,14 +119,30 @@ class Daemon:
 
         try:
             async with server:
-                poll_task = asyncio.create_task(self._polling_loop())
-                await asyncio.gather(server.serve_forever(), poll_task)
+                await self._run_tasks(server)
         except SystemExit:
             log.info("Shutdown requested.")
         finally:
-            poll_task.cancel()
             await self._git_watcher.stop()
             self._cleanup()
+
+    async def _run_tasks(self, server: asyncio.Server) -> None:
+        """Run the polling loop (and relay publisher, if configured) alongside the socket server."""
+        poll_task = asyncio.create_task(self._polling_loop())
+        tasks: list[Awaitable[None]] = [server.serve_forever(), poll_task]
+        relay_task: asyncio.Task[None] | None = None
+        if self._relay_publisher:
+            log.debug("Starting relay publisher task...")
+            relay_task = asyncio.create_task(self._relay_publisher.run())
+            tasks.append(relay_task)
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            poll_task.cancel()
+            if relay_task:
+                relay_task.cancel()
+            if self._relay_publisher:
+                await self._relay_publisher.aclose()
 
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -632,6 +659,8 @@ class Daemon:
         writer: asyncio.StreamWriter | None = None,
     ) -> None:
         """Push an event to a specific writer or all subscribers of that event category."""
+        if isinstance(data, SidebarStatePayload) and self._relay_publisher:
+            self._relay_publisher.submit(data)
         if not writer and not self._subscribers:
             return
         payload = (

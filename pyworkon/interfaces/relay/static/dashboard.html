@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>pyworkon</title>
+<style>
+  @font-face {
+    font-family: "pyworkon-icons";
+    src: url("/fonts/pyworkon-icons.woff2") format("woff2");
+    font-display: swap;
+  }
+  :root {
+    color-scheme: dark;
+    --bg: #14161a;
+    --card: #1d2026;
+    --border: #2a2e36;
+    --text: #d8dbe2;
+    --dim: #96a0b3;
+    --green: #4caf7d;
+    --red: #e0616f;
+    --yellow: #d9b35c;
+    --purple: #b18cf2;
+    --accent: #e0af68;
+    --cyan: #56c2e6;
+    --magenta: #ff5fd7;
+    --warn-bg: #4a3a12;
+    --warn-text: #f0c975;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding-bottom: 2rem;
+  }
+  /* Fixed-width icon column so text after an icon always starts at the same
+     offset, regardless of which glyph is shown (mirrors the TUI's `width: 2`
+     detail-icon columns). */
+  .icon {
+    display: inline-flex;
+    justify-content: center;
+    width: 1.3em;
+    flex: none;
+  }
+  .nf {
+    font-family: "pyworkon-icons", sans-serif;
+    font-weight: normal;
+    font-style: normal;
+    line-height: 1;
+  }
+  /* Braille spinner frames render visually smaller than the other icon
+     glyphs at the same font-size — scale up so they read as the same size. */
+  [data-spin="true"] {
+    font-size: 1.35em;
+  }
+  #banner {
+    display: none;
+    background: var(--warn-bg);
+    color: var(--warn-text);
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+  }
+  #banner.visible { display: block; }
+  #empty {
+    padding: 2rem 1rem;
+    color: var(--dim);
+    text-align: center;
+    display: none;
+  }
+  #empty.visible { display: block; }
+  #sessions {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+  }
+  .card > * + * { margin-top: 0.5rem; }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+  }
+  .row-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    overflow: hidden;
+    min-width: 0;
+    flex: 1;
+  }
+  .header .name { font-weight: 600; }
+  .provider-icon { color: var(--dim); }
+  .dim { color: var(--dim); }
+  .branch-icon { color: var(--cyan); }
+  .branch-name { color: var(--dim); }
+  .dirty-icon { color: var(--yellow); }
+  .branch-block { padding-top: 0.35rem; border-top: 1px solid var(--border); }
+  .pr-block { padding: 0.35rem 0 0 0.1rem; border-top: 1px solid var(--border); }
+  .pr-icon { color: var(--accent); }
+  .pr-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; color: var(--dim); }
+  .pr-title.draft { opacity: 0.6; }
+  .link-accent { color: var(--accent); text-decoration: underline; }
+  .ci-check { font-size: 0.85rem; padding-left: 2.6rem; }
+  .ci-check-success { color: var(--green); }
+  .ci-check-failure { color: var(--red); text-decoration: underline; }
+  .ci-check-pending { color: var(--yellow); }
+  .state-open { color: var(--green); }
+  .state-closed { color: var(--red); }
+  .state-merged { color: var(--purple); }
+  .state-failure { color: var(--red); }
+  .state-pending { color: var(--yellow); }
+  .state-draft { color: var(--dim); }
+  .review-approved { color: var(--green); }
+  .review-changes { color: var(--red); }
+  .review-pending { color: var(--yellow); }
+  .reviews-block { padding-top: 0.35rem; border-top: 1px solid var(--border); }
+  .review-header-icon { color: var(--yellow); }
+  .review-title { font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agents-block { padding-top: 0.35rem; border-top: 1px solid var(--border); }
+  .agent-icon { color: var(--magenta); }
+  .agent-name { color: var(--dim); }
+  .agent-working { color: var(--green); }
+  .agent-idle { color: var(--dim); }
+  .agent-waiting { color: var(--yellow); }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<div id="banner"></div>
+<div id="empty">No data yet — waiting for the daemon to push state.</div>
+<div id="sessions"></div>
+
+<script>
+// Injected server-side from pyworkon/interfaces/tui/icons.py -- see
+// pyworkon/relay/icons.py and app.py's `_render_dashboard_html()`. Do not
+// hardcode icon glyphs here; add a new key to relay/icons.py instead.
+const ICONS = /*__PYWORKON_ICONS__*/;
+
+// Keys whose glyph comes from the self-hosted Nerd Font subset (fonts/pyworkon-icons.woff2)
+// rather than being plain, universally-renderable Unicode.
+const NF_KEYS = new Set([
+  "branch", "pr", "agent", "github", "gitlab", "agentIdle", "agentWaiting",
+  "reviewRequest", "dirty", "ciPending",
+]);
+
+function iconClass(key, extra) {
+  const parts = ["icon"];
+  if (NF_KEYS.has(key)) parts.push("nf");
+  if (extra) parts.push(extra);
+  return parts.join(" ");
+}
+
+// A spacer matching the width of a leading icon, so a second/third row of
+// text (e.g. the PR link under the PR title) lines up under the *text*
+// column above it rather than under the icon column.
+const ICON_SPACER = `<span class="icon"></span>`;
+
+function escapeHtml(value) {
+  const div = document.createElement("div");
+  div.textContent = value ?? "";
+  return div.innerHTML;
+}
+
+const REVIEW_ICON_INFO = {
+  approved: {key: "reviewApproved", cls: "review-approved"},
+  changes_requested: {key: "reviewChangesRequested", cls: "review-changes"},
+  pending: {key: "reviewPending", cls: "review-pending"},
+};
+const CI_ICON_INFO = {
+  success: {key: "ciSuccess", cls: "ci-check-success"},
+  failure: {key: "ciFailure", cls: "ci-check-failure"},
+  pending: {key: "ciPending", cls: "ci-check-pending"},
+};
+
+// Mirrors PRDetail.update()'s precedence in interfaces/tui/widgets/pr_detail.py:
+// CI failure > pending (non-draft) > draft > plain open/closed/merged state.
+function prStateIcon(pr) {
+  const hasFailure = (pr.ci_checks || []).some((c) => c.status === "failure");
+  if (hasFailure) return {key: "ciFailure", cls: "state-failure", spin: false};
+  if (!pr.is_draft && pr.status === "pending") return {key: "ciPending", cls: "state-pending", spin: true};
+  if (pr.is_draft) return {key: "stateDraft", cls: "state-draft", spin: false};
+  const byState = {
+    open: {key: "stateOpen", cls: "state-open"},
+    closed: {key: "stateClosed", cls: "state-closed"},
+    merged: {key: "stateMerged", cls: "state-merged"},
+  };
+  return {...(byState[pr.state] || byState.open), spin: false};
+}
+
+function ownerRepoFromProjectId(projectId) {
+  // project_id is "{provider}/{owner}/{repo}" -- strip the provider segment,
+  // matching Project.owner_repo in daemon/project_mgr.py.
+  const parts = projectId.split("/");
+  return parts.length > 1 ? parts.slice(1).join("/") : projectId;
+}
+
+function renderPr(pr, ownerRepo) {
+  if (!pr) return "";
+  const titleClass = pr.is_draft ? "pr-title draft" : "pr-title";
+  const title = (pr.is_draft ? "[Draft] " : "") + escapeHtml(pr.title);
+  const review = pr.is_draft ? null : REVIEW_ICON_INFO[pr.review_status];
+  const reviewIcon = review ? ICONS[review.key] : "";
+  const state = prStateIcon(pr);
+  const linkText = `${ownerRepo}#${pr.number}`;
+  const link = pr.url
+    ? `<a href="${escapeHtml(pr.url)}" target="_blank">${linkText}</a>`
+    : linkText;
+  const checks = (pr.ci_checks || []).map((c) => {
+    const info = CI_ICON_INFO[c.status];
+    const icon = info ? ICONS[info.key] : "";
+    const name = c.url
+      ? `<a href="${escapeHtml(c.url)}" target="_blank">${escapeHtml(c.name)}</a>`
+      : escapeHtml(c.name);
+    const nameCls = info ? info.cls : "dim";
+    const spinAttr = info && c.status === "pending" ? ' data-spin="true"' : "";
+    return `<div class="row ci-check"><span class="${nameCls}">${name}</span><span class="${iconClass(info && info.key, info && info.cls)}"${spinAttr}>${icon}</span></div>`;
+  }).join("");
+  const stateSpin = state.spin ? ' data-spin="true"' : "";
+  return `
+    <div class="pr-block">
+      <div class="row">
+        <span class="row-left"><span class="${iconClass("pr", "pr-icon")}">${ICONS.pr}</span><span class="${titleClass}">${title}</span></span>
+        <span class="${iconClass(review && review.key, review && review.cls)}">${reviewIcon}</span>
+      </div>
+      <div class="row">
+        <span class="row-left">${ICON_SPACER}<span class="link-accent">${link}</span></span>
+        <span class="${iconClass(state.key, state.cls)}"${stateSpin}>${ICONS[state.key]}</span>
+      </div>
+      ${checks}
+    </div>
+  `;
+}
+
+function renderReviewRequests(reviewPrs) {
+  if (!reviewPrs || reviewPrs.length === 0) return "";
+  const items = reviewPrs.map((pr) => `
+    <div class="row">
+      <span class="row-left">${ICON_SPACER}<a class="review-title link-accent" href="${escapeHtml(pr.url)}" target="_blank">${escapeHtml(pr.title)} (#${pr.number})</a></span>
+      <span class="dim">${escapeHtml(pr.author)}</span>
+    </div>
+  `).join("");
+  return `
+    <div class="reviews-block">
+      <div class="row dim"><span class="row-left"><span class="${iconClass("reviewRequest", "review-header-icon")}">${ICONS.reviewRequest}</span><span>Reviews requested (${reviewPrs.length})</span></span></div>
+      ${items}
+    </div>
+  `;
+}
+
+function renderAgents(agents) {
+  if (!agents || agents.length === 0) return "";
+  const rows = agents.map((a) => {
+    // "working" has no TUI glyph equivalent (Rich renders it as an animated
+    // spinner, not a static codepoint) -- match it with the same Braille-dot
+    // spin animation instead of a static dot.
+    const iconInfo = {
+      working: {key: null, cls: "agent-working", spin: true},
+      idle: {key: "agentIdle", cls: "agent-idle", spin: false},
+      waiting: {key: "agentWaiting", cls: "agent-waiting", spin: false},
+    }[a.status] || {key: null, cls: "", spin: false, literal: a.status};
+    const icon = iconInfo.key ? ICONS[iconInfo.key] : (iconInfo.literal ?? SPIN_FRAMES[0]);
+    const spinAttr = iconInfo.spin ? ' data-spin="true"' : "";
+    return `<div class="row"><span class="row-left"><span class="${iconClass("agent", "agent-icon")}">${ICONS.agent}</span><span class="agent-name">${escapeHtml(a.name)}</span></span><span class="${iconClass(iconInfo.key, iconInfo.cls)}"${spinAttr}>${icon}</span></div>`;
+  }).join("");
+  return `<div class="agents-block">${rows}</div>`;
+}
+
+function renderSession(session, reviewPrs) {
+  const providerIcon = ICONS[session.provider_type] || "";
+  const branchRow = session.branch
+    ? `
+      <div class="row branch-block">
+        <span class="row-left"><span class="${iconClass("branch", "branch-icon")}">${ICONS.branch}</span><span class="branch-name">${escapeHtml(session.branch)}</span></span>
+        <span class="${iconClass("dirty", "dirty-icon")}">${session.is_dirty ? ICONS.dirty : ""}</span>
+      </div>
+    `
+    : "";
+  return `
+    <div class="card">
+      <div class="row header">
+        <span class="name">${escapeHtml(session.project_name)}</span>
+        <span class="${iconClass(session.provider_type, "provider-icon")}">${providerIcon}</span>
+      </div>
+      ${branchRow}
+      ${renderPr(session.pr, ownerRepoFromProjectId(session.project_id))}
+      ${renderReviewRequests(reviewPrs)}
+      ${renderAgents(session.agents)}
+    </div>
+  `;
+}
+
+let lastPayload = null;
+
+function render(payload) {
+  lastPayload = payload;
+  const container = document.getElementById("sessions");
+  const empty = document.getElementById("empty");
+  const sessions = payload.sessions || [];
+  empty.classList.toggle("visible", sessions.length === 0);
+  container.innerHTML = sessions
+    .map((s) => renderSession(s, payload.review_prs?.[s.project_id]))
+    .join("");
+  updateBanner();
+}
+
+function updateBanner() {
+  const banner = document.getElementById("banner");
+  if (!lastPayload) {
+    banner.classList.remove("visible");
+    return;
+  }
+  const age = Date.now() / 1000 - lastPayload.pushed_at;
+  if (age > lastPayload.stale_after_seconds) {
+    banner.textContent = `Last update: ${Math.floor(age)}s ago — daemon may be offline`;
+    banner.classList.add("visible");
+  } else {
+    banner.classList.remove("visible");
+  }
+}
+
+setInterval(updateBanner, 1000);
+
+// Same Braille-dot frame set Rich's Spinner("dots", ...) uses, so working
+// agents / pending CI / pending PR checks animate the same way the Textual
+// dashboard does.
+const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+let spinFrame = 0;
+
+function tickSpinners() {
+  spinFrame = (spinFrame + 1) % SPIN_FRAMES.length;
+  document.querySelectorAll('[data-spin="true"]').forEach((el) => {
+    el.textContent = SPIN_FRAMES[spinFrame];
+  });
+}
+
+setInterval(tickSpinners, 80);
+
+const token = new URLSearchParams(location.search).get("token") || "";
+let backoff = 1000;
+const MAX_BACKOFF = 30000;
+
+function connect() {
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${scheme}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+  // A dead/refused connection fires BOTH onerror and onclose for the same
+  // socket -- guard so a single failure schedules exactly one reconnect,
+  // not two (which would otherwise compound into a growing pile of
+  // concurrent sockets every time the relay restarts).
+  let reconnectScheduled = false;
+  const scheduleReconnect = () => {
+    if (reconnectScheduled) return;
+    reconnectScheduled = true;
+    setTimeout(connect, backoff);
+    backoff = Math.min(backoff * 2, MAX_BACKOFF);
+  };
+  ws.onopen = () => { backoff = 1000; };
+  ws.onmessage = (event) => render(JSON.parse(event.data));
+  ws.onclose = scheduleReconnect;
+  ws.onerror = scheduleReconnect;
+}
+
+connect();
+</script>
+</body>
+</html>
