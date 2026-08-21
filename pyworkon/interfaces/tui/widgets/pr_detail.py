@@ -118,12 +118,17 @@ class PRDetail(Widget):
             )
             self._pr_url = pr.url
             self.link_text = f"{owner_repo}#{pr.number}"
-            has_failure = any(c.status == PRStatus.FAILURE for c in pr.ci_checks)
+            is_terminal_state = pr.state in {PRState.MERGED, PRState.CLOSED}
+            has_failure = not is_terminal_state and any(
+                c.status == PRStatus.FAILURE for c in pr.ci_checks
+            )
             self.ci_failure = has_failure
             self._is_pending_state = (
                 not has_failure and not pr.is_draft and pr.status == PRStatus.PENDING
             )
-            if has_failure:
+            if is_terminal_state:
+                self.state_text = _PR_STATE_ICONS.get(pr.state, "")
+            elif has_failure:
                 self.state_text = icons.PR_CI_FAILURE
             elif self._is_pending_state:
                 self.state_text = icons.PR_CI_PENDING

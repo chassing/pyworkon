@@ -8,7 +8,7 @@ import pytest
 from textual.app import App, ComposeResult
 from textual.widgets import Label
 
-from pyworkon.daemon.models import AgentInfo, CICheck, PRStatus
+from pyworkon.daemon.models import AgentInfo, CICheck, PRState, PRStatus
 from pyworkon.interfaces.tui import icons
 from pyworkon.interfaces.tui.widgets.agent_list import AgentList
 from pyworkon.interfaces.tui.widgets.branch_row import BranchRow
@@ -169,6 +169,23 @@ async def test_pr_detail_ci_checks_hidden_when_disabled() -> None:
         await app._animator.wait_for_idle()
         check_rows = app.query(".--ci-check-row")
         assert len(check_rows) == 0
+
+
+async def test_pr_detail_merged_state_shown_despite_ci_failure() -> None:
+    """A merged PR whose head branch was deleted often has a 'cancelled' check run.
+
+    That maps to PRStatus.FAILURE — the merged icon must still win.
+    """
+    checks = [
+        CICheck(name="ci", status=PRStatus.FAILURE, url="https://ci/run"),
+    ]
+    pr = make_pr_info(state=PRState.MERGED, status=PRStatus.FAILURE, ci_checks=checks)
+    widget = PRDetail(show_ci_checks=True)
+    app = WidgetTestApp(widget)
+    async with app.run_test():
+        widget.update(pr, "acme/repo")
+        await app._animator.wait_for_idle()
+        assert widget.state_text == icons.PR_STATE_MERGED
 
 
 async def test_pr_detail_spinner_tick_does_not_trigger_layout() -> None:
