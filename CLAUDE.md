@@ -215,12 +215,12 @@ laptop daemon --(outbound HTTPS POST, Authorization: Bearer <token>)--> relay --
 
 `_resolve_agent_name()` in `interfaces/shell/commands/agent.py` derives a human-readable agent name instead of a bare PID:
 
-1. `_find_claude_pid()` — Claude Code runs hooks via `sh -c "..."`, so the hook's direct parent (`os.getppid()`) can be a transient shell rather than the stable `claude` process. Walks up the process tree (via `ps`) to find the real `claude` ancestor, bounded to a few hops, falling back to the direct parent PID.
-2. `_process_cwd()` — resolves the `claude` process's cwd (`/proc/<pid>/cwd` on Linux, `lsof -a -d cwd -p <pid>` on macOS).
+1. `_find_agent_process()` — Claude Code and Codex hooks can run via a transient shell, so the hook's direct parent (`os.getppid()`) may not be the stable agent process. Walks up the process tree (via `ps`) to find a `claude` or `codex` ancestor, bounded to a few hops, falling back to the direct parent PID.
+2. For Claude Code, `_process_cwd()` resolves the `claude` process's cwd (`/proc/<pid>/cwd` on Linux, `lsof -a -d cwd -p <pid>` on macOS).
 3. `_find_active_transcript()` — Claude Code transcripts live at `~/.claude/projects/<cwd-with-slashes-as-dashes>/<session-id>.jsonl`. A running session can silently move to a **new session ID** (e.g. after compaction) without the process's command line changing, so parsing `--resume <uuid>` from argv is unreliable — instead, pick the most recently *modified* `.jsonl` in that project directory, which reflects the session the process is actually writing to right now.
 4. `_extract_latest_transcript_field()` — Claude Code writes live `{"type": "agent-name", "agentName": "..."}` entries to the transcript (the same short slug shown by dashboard/FleetView-style UIs — it can change mid-session as delegated sub-agents run) and a stable `{"type": "ai-title", "aiTitle": "..."}` entry. Use the **latest** `agent-name` entry, falling back to the latest `ai-title` entry.
 
-Falls back to `claude-<pid>` whenever any step fails (cwd unresolvable, no transcript, no `agent-name`/`ai-title` entries) — this fallback is intentional, not a bug. Do NOT synthesize a title from the first user message — Claude Code already provides both fields above, use them instead of re-deriving.
+Falls back to `<agent>-<pid>` whenever no Claude transcript name is available. Codex currently uses this fallback name. Do NOT synthesize a title from the first user message — Claude Code already provides both fields above, use them instead of re-deriving.
 
 ## Nerd Font Icons
 

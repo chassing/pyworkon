@@ -18,7 +18,7 @@ def _completed(stdout: str) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
 
 
-def test_find_claude_pid_walks_up_to_claude_ancestor(
+def test_find_agent_process_walks_up_to_claude_ancestor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A shell-wrapper hop (sh) sits between the hook process and `claude`."""
@@ -34,10 +34,10 @@ def test_find_claude_pid_walks_up_to_claude_ancestor(
 
     monkeypatch.setattr(agent_cli.subprocess, "run", fake_run)
 
-    assert agent_cli._find_claude_pid() == 39666
+    assert agent_cli._find_agent_process() == (39666, "claude")
 
 
-def test_find_claude_pid_falls_back_when_no_claude_ancestor(
+def test_find_agent_process_falls_back_when_no_agent_ancestor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """If no ancestor is named `claude` within the hop limit, use the direct parent."""
@@ -49,16 +49,16 @@ def test_find_claude_pid_falls_back_when_no_claude_ancestor(
 
     monkeypatch.setattr(agent_cli.subprocess, "run", fake_run)
 
-    assert agent_cli._find_claude_pid() == 100
+    assert agent_cli._find_agent_process() == (100, None)
 
 
-def test_find_claude_pid_falls_back_on_unreadable_ps_output(
+def test_find_agent_process_falls_back_on_unreadable_ps_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(agent_cli.os, "getppid", lambda: 100)
     monkeypatch.setattr(agent_cli.subprocess, "run", lambda *_a, **_k: _completed(""))
 
-    assert agent_cli._find_claude_pid() == 100
+    assert agent_cli._find_agent_process() == (100, None)
 
 
 def test_process_cwd_uses_proc_when_available(

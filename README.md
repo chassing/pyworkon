@@ -210,7 +210,7 @@ You can configure multiple providers of the same type (e.g., one for GitHub.com 
 
 - **`agent --status <status>`** — Set agent status: `idle`, `working`, `waiting` (visible in sidebar/popup/dashboard, mapped to Nerd Font icons)
 - **`agent --clear`** — Clear agent status
-- Auto-detects Claude Code sessions by matching the current working directory
+- Auto-detects Claude Code and Codex CLI sessions from the process tree
 
 **Claude Code hooks** (in `~/.claude/settings.json`):
 
@@ -223,6 +223,20 @@ You can configure multiple providers of the same type (e.g., one for GitHub.com 
     "Elicitation": [{"hooks": [{"command": "pyworkon agent --status waiting", "type": "command"}]}],
     "PermissionRequest": [{"hooks": [{"command": "pyworkon agent --status waiting", "type": "command"}]}],
     "SessionEnd": [{"hooks": [{"command": "pyworkon agent --clear", "type": "command"}]}]
+  }
+}
+```
+
+**Codex CLI hooks** (in `~/.codex/hooks.json`):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "pyworkon agent --status idle"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "pyworkon agent --status working"}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "pyworkon agent --status idle"}]}],
+    "PermissionRequest": [{"hooks": [{"type": "command", "command": "pyworkon agent --status waiting"}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "pyworkon agent --clear", "timeout": 3}]}]
   }
 }
 ```

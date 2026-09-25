@@ -16,14 +16,15 @@ from pyworkon.interfaces.shell import cli
 
 _MAX_PROCESS_TREE_HOPS = 5
 _PS_PPID_COMM_FIELD_COUNT = 2
+_AGENT_PROCESS_NAMES = {"claude", "codex"}
 
 
-def _find_claude_pid() -> int:
-    """Walk up the process tree to find the real `claude` process.
+def _find_process(process_names: set[str]) -> tuple[int, str | None]:
+    """Walk up the process tree to find an ancestor with a matching name.
 
-    Claude Code runs hook commands via `sh -c "..."`, so the hook's direct
-    parent can be a transient shell rather than the stable `claude` process.
-    Falls back to the direct parent PID if no `claude` ancestor is found.
+    Agent hooks can run via a transient shell, so the direct parent may not be
+    the stable agent process. Fall back to the direct parent PID if none is
+    found within a few hops.
     """
     start_pid = os.getppid()
     pid = start_pid
@@ -36,12 +37,18 @@ def _find_claude_pid() -> int:
         )
         parts = result.stdout.split(maxsplit=1)
         if len(parts) != _PS_PPID_COMM_FIELD_COUNT:
-            return start_pid
+            return start_pid, None
         ppid_str, comm = parts
-        if comm.strip().rsplit("/", 1)[-1] == "claude":
-            return pid
+        process_name = comm.strip().rsplit("/", 1)[-1].casefold()
+        if process_name in process_names:
+            return pid, process_name
         pid = int(ppid_str)
-    return start_pid
+    return start_pid, None
+
+
+def _find_agent_process() -> tuple[int, str | None]:
+    """Find the Claude Code or Codex process that launched this hook."""
+    return _find_process(_AGENT_PROCESS_NAMES)
 
 
 def _process_cwd(pid: int) -> Path | None:
@@ -97,9 +104,9 @@ def _extract_latest_transcript_field(
     return None
 
 
-def _resolve_agent_name(pid: int) -> str:
-    """Derive agent name from the session's live `agent-name`/`ai-title`, or its PID."""
-    if (
+def _resolve_agent_name(pid: int, *, agent_type: str = "claude") -> str:
+    """Resolve Claude's transcript name or use the agent type and PID."""
+    if agent_type == "claude" and (
         (cwd := _process_cwd(pid))
         and (transcript := _find_active_transcript(cwd))
         and (
@@ -116,7 +123,7 @@ def _resolve_agent_name(pid: int) -> str:
         )
     ):
         return name
-    return f"claude-{pid}"
+    return f"{agent_type}-{pid}"
 
 
 def _get_tmux_session() -> str | None:
@@ -140,9 +147,7 @@ def _get_tmux_session() -> str | None:
 
 
 @cli.command()
-@click.option(
-    "--name", default=None, help="Agent name (auto-detected from Claude Code session)"
-)
+@click.option("--name", default=None, help="Agent name (auto-detected when available)")
 @click.option("--status", default=None, help="Agent status emoji")
 @click.option("--clear", is_flag=True, help="Clear agent status")
 def agent(name: str | None, status: str | None, *, clear: bool) -> None:
@@ -152,7 +157,8 @@ def agent(name: str | None, status: str | None, *, clear: bool) -> None:
         click.echo("Not inside tmux", err=True)
         sys.exit(1)
 
-    pid = _find_claude_pid()
+    pid, agent_type = _find_agent_process()
+    agent_type = agent_type or "claude"
     client = require_daemon()
     try:
         if clear:
@@ -161,7 +167,7 @@ def agent(name: str | None, status: str | None, *, clear: bool) -> None:
         if not status:
             click.echo("--status required (or use --clear)", err=True)
             sys.exit(1)
-        resolved_name = name or _resolve_agent_name(pid)
+        resolved_name = name or _resolve_agent_name(pid, agent_type=agent_type)
         client.set_agent(session=session, pid=pid, name=resolved_name, status=status)
     finally:
         client.close()
