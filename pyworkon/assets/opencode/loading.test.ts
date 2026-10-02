@@ -30,8 +30,8 @@ test("installed runtime loads and observes the compiled host's Solid signals wit
         const cleanup = await loaded.module.default.setup({
           data: { session: {
             get: () => ({ title: title() }), root: id => id, family: id => [id], status,
-            permission: { list: () => [], sync: async () => {} },
-            form: { list: forms, sync: async () => {} },
+            permission: { list: () => [] },
+            form: { list: forms },
           } },
           ui: { router: { current: () => ({ type: "session", sessionID: "root" }) },
             toast: { show: error => { throw new Error(error.message) } } },

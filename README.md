@@ -275,6 +275,7 @@ The selected root session's title appears as the agent name (falling back to
 or questions in that family show `waiting`; otherwise the status is `idle`.
 Unrelated sessions and background tabs are not included. One entry is tracked per
 OpenCode terminal PID, so switching sessions or changing titles cannot create duplicates.
+The plugin reads OpenCode's reactive cache; OpenCode itself loads permissions and questions.
 Returning to the home screen or exiting normally clears the entry. Forced termination
 (e.g. `SIGKILL`) cannot run cleanup; use `pyworkon agent --pid <pid> --clear` in the
 same tmux session if needed. Outside tmux the plugin is inactive.

@@ -17,11 +17,9 @@ export interface SessionSource {
   status(sessionID: string): "idle" | "running"
   readonly permission: {
     list(sessionID: string): readonly unknown[] | undefined
-    sync(sessionID: string): Promise<void>
   }
   readonly form: {
     list(sessionID: string): readonly unknown[] | undefined
-    sync(sessionID: string): Promise<void>
   }
 }
 
@@ -30,22 +28,11 @@ export function watchAgent(
   selectedSession: () => string | null,
   pid: number,
   reporter: AgentReporter,
-  onError: (error: unknown) => void,
   solid: SolidRuntime,
 ): () => void {
   return solid.createRoot((dispose) => {
     solid.createEffect(() => {
       void reporter.update(readAgent(source, selectedSession(), pid))
-    })
-    solid.createEffect(() => {
-      const selected = selectedSession()
-      if (!selected) return
-      const root = source.root(selected)
-      if (!source.get(root)) return
-      const family = [...new Set([root, ...source.family(root)])].filter((id) => source.get(id))
-      void Promise.all(family.flatMap((sessionID) => [
-        source.permission.sync(sessionID), source.form.sync(sessionID),
-      ])).catch(onError)
     })
     return dispose
   })

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { setImmediate } from "node:timers/promises"
+import { OpenCode, type PermissionRequest, type SessionInfo } from "@opencode/client"
+import { createData } from "@opencode/client/solid"
 import { createEffect, createRoot, createSignal } from "solid-js"
 import { AgentReporter, agentArguments, readAgent, watchAgent, type AgentState, type SessionSource } from "./status"
 
@@ -21,8 +23,8 @@ function sessions() {
     root: (id) => id === "child" ? "root" : id,
     family: (id) => id === "root" ? ["root", "child"] : [id],
     status: (id) => entries.get(id)?.running ? "running" : "idle",
-    permission: { list: (id) => entries.get(id)?.permissions, sync: async () => {} },
-    form: { list: (id) => entries.get(id)?.forms, sync: async () => {} },
+    permission: { list: (id) => entries.get(id)?.permissions },
+    form: { list: (id) => entries.get(id)?.forms },
   }
   const session = (id: string) => {
     const entry = entries.get(id)
@@ -136,61 +138,105 @@ describe("daemon reporting", () => {
 })
 
 describe("reactive CLI bridge", () => {
-  test.each(["root", "child"])("skips missing %s sessions and resumes synchronization when cached", async (missing) => {
-    const { source: base } = sessions()
-    const [available, setAvailable] = createSignal(false)
-    const synced: string[] = []
+  test.each(["new", "existing"])("observes %s sessions without issuing its own hydration requests", async (kind) => {
+    const info = {
+      id: "new-session", projectID: "project", title: "Session title",
+      location: { directory: "/project" }, cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: 1, updated: 1 },
+    } satisfies SessionInfo
+    const permission: PermissionRequest = {
+      id: "permission", sessionID: info.id, action: "shell", resources: ["git status"],
+    }
+    const gate = Promise.withResolvers<void>()
+    let persisted = kind === "existing"
+    let pending = true
+    const requests: string[] = []
+    const fetchMock = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(input instanceof Request ? input.url : String(input)).pathname
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET")
+      requests.push(`${method} ${path}`)
+      if (method === "POST" && path === "/api/session") {
+        await gate.promise
+        persisted = true
+        return Response.json({ data: info })
+      }
+      if (!persisted) return Response.json({
+        _tag: "SessionNotFoundError", sessionID: info.id, message: `Session not found: ${info.id}`,
+      }, { status: 404 })
+      if (path.endsWith("/permission")) return Response.json({ data: pending ? [permission] : [] })
+      if (path.endsWith("/form")) return Response.json({ data: [] })
+      throw new Error(`Unexpected request: ${method} ${path}`)
+    }, { preconnect: () => {} })
+    const api = OpenCode.make({ baseUrl: "http://mock.invalid", fetch: fetchMock })
+    const host = createRoot((dispose) => ({
+      dispose,
+      data: createData({
+        api: () => api, directory: "/project",
+        event: { on: () => () => {}, listen: () => () => {} },
+      }),
+    }))
+    const created = kind === "new" ? host.data.session.create({
+      id: info.id, title: info.title, location: info.location,
+    }) : undefined
+    if (!created) host.data.session.remember(info)
     const sent: (AgentState | null)[] = []
     const errors: unknown[] = []
-    const get = (id: string) => id === missing && !available() ? undefined : base.get(id)
-    const sync = async (kind: string, id: string) => {
-      synced.push(`${kind}:${id}`)
-      if (!get(id)) throw new Error(`Session not found: ${id}`)
-    }
-    const source: SessionSource = {
-      ...base,
-      get,
-      permission: { ...base.permission, sync: (id) => sync("permission", id) },
-      form: { ...base.form, sync: (id) => sync("form", id) },
-    }
     const reporter = new AgentReporter(async (state) => { sent.push(state) }, (error) => { errors.push(error) })
-    const dispose = watchAgent(source, () => "root", 123, reporter, (error) => { errors.push(error) }, { createEffect, createRoot })
+    const dispose = watchAgent(host.data.session, () => info.id, 123, reporter, { createEffect, createRoot })
     try {
       await setImmediate()
-      expect(synced).toEqual(missing === "root" ? [] : ["permission:root", "form:root"])
+      expect(host.data.session.get(info.id)?.title).toBe(info.title)
+      expect(persisted).toBe(kind === "existing")
       expect(errors).toEqual([])
+      expect(requests).toEqual(created ? ["POST /api/session"] : [])
+      expect(sent.at(-1)).toEqual({ name: info.title, status: "idle" })
 
-      synced.length = 0
-      setAvailable(true)
+      gate.resolve()
+      await created?.request
+      await Promise.all([
+        host.data.session.permission.sync(info.id), host.data.session.form.sync(info.id),
+      ])
       await setImmediate()
-      expect(synced).toEqual(["permission:root", "form:root", "permission:child", "form:child"])
-      expect(sent.at(-1)).toEqual({ name: "Implement feature", status: "idle" })
-
-      synced.length = 0
-      setAvailable(false)
+      expect(sent.at(-1)?.status).toBe("waiting")
+      host.data.session.setStatus(info.id, "running")
+      pending = false
+      host.data.session.permission.invalidate(info.id)
+      await host.data.session.permission.sync(info.id)
       await setImmediate()
-      expect(synced).toEqual(missing === "root" ? [] : ["permission:root", "form:root"])
-      if (missing === "root") expect(sent.at(-1)).toBeNull()
+      expect(sent.at(-1)?.status).toBe("working")
+      host.data.session.setStatus(info.id, "idle")
+      await setImmediate()
+      expect(sent.at(-1)?.status).toBe("idle")
       expect(errors).toEqual([])
     } finally {
+      gate.resolve()
+      await created?.request
       dispose()
+      host.dispose()
       await reporter.close()
     }
   })
 
-  test("reports synchronization failures for existing sessions", async () => {
+  test("clears a missing root session and resumes reporting when cached", async () => {
     const { source: base } = sessions()
-    const failure = new Error("server unavailable")
+    const [available, setAvailable] = createSignal(false)
+    const sent: (AgentState | null)[] = []
     const source: SessionSource = {
       ...base,
-      permission: { ...base.permission, sync: async () => { throw failure } },
+      get: (id) => id === "root" && !available() ? undefined : base.get(id),
     }
-    const errors: unknown[] = []
-    const reporter = new AgentReporter(async () => {}, (error) => { errors.push(error) })
-    const dispose = watchAgent(source, () => "root", 123, reporter, (error) => { errors.push(error) }, { createEffect, createRoot })
+    const reporter = new AgentReporter(async (state) => { sent.push(state) }, () => {})
+    const dispose = watchAgent(source, () => "root", 123, reporter, { createEffect, createRoot })
     try {
       await setImmediate()
-      expect(errors).toEqual([failure])
+      expect(sent.at(-1)).toBeNull()
+      setAvailable(true)
+      await setImmediate()
+      expect(sent.at(-1)).toEqual({ name: "Implement feature", status: "idle" })
+      setAvailable(false)
+      await setImmediate()
+      expect(sent.at(-1)).toBeNull()
     } finally {
       dispose()
       await reporter.close()
@@ -205,21 +251,18 @@ describe("reactive CLI bridge", () => {
     const [forms, setForms] = createSignal<string[]>([])
     const sent: (AgentState | null)[] = []
     const errors: unknown[] = []
-    const synced: string[] = []
     const source: SessionSource = {
       ...base,
       get: (id) => id === "root" ? { title: title() } : base.get(id),
       status: (id) => id === "root" ? status() : base.status(id),
       form: {
         list: (id) => id === "child" ? forms() : [],
-        sync: async (id) => { synced.push(id) },
       },
     }
     const reporter = new AgentReporter(async (state) => { sent.push(state) }, (error) => { errors.push(error) })
-    const dispose = watchAgent(source, selected, 123, reporter, (error) => { errors.push(error) }, { createEffect, createRoot })
+    const dispose = watchAgent(source, selected, 123, reporter, { createEffect, createRoot })
     await setImmediate()
     expect(sent.at(-1)).toEqual({ name: "Initial title", status: "idle" })
-    expect(synced).toEqual(["root", "child"])
 
     setStatus("running")
     await setImmediate()
@@ -251,22 +294,21 @@ describe("reactive CLI bridge", () => {
     await reporter.close()
   })
 
-  test("hydrates existing permission requests when attaching to a running session", async () => {
+  test("observes existing permission requests hydrated by the host after attaching", async () => {
     const { source: base } = sessions()
     const [requests, setRequests] = createSignal<string[]>([])
     const source: SessionSource = {
       ...base,
       permission: {
         list: () => requests(),
-        sync: async () => {
-          await setImmediate()
-          setRequests(["existing request"])
-        },
       },
     }
     const sent: (AgentState | null)[] = []
     const reporter = new AgentReporter(async (state) => { sent.push(state) }, () => {})
-    const dispose = watchAgent(source, () => "root", 123, reporter, () => {}, { createEffect, createRoot })
+    const dispose = watchAgent(source, () => "root", 123, reporter, { createEffect, createRoot })
+    await setImmediate()
+    expect(sent.at(-1)?.status).toBe("idle")
+    setRequests(["existing request"])
     await setImmediate()
     expect(sent.at(-1)?.status).toBe("waiting")
     dispose()

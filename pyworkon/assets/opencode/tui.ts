@@ -26,7 +26,7 @@ export default Plugin.define({
     const dispose = watchAgent(context.data.session, () => {
       const route = context.ui.router.current()
       return route.type === "session" ? route.sessionID : null
-    }, pid, reporter, reportError, { createEffect, createRoot })
+    }, pid, reporter, { createEffect, createRoot })
 
     // Node's exit event cannot await plugin cleanup or asynchronous subprocesses.
     const onExit = () => {
