@@ -3,6 +3,7 @@ from .app import app
 from .clone import clone
 from .daemon import daemon
 from .dashboard import dashboard
+from .opencode import opencode
 from .popup import popup
 from .provider import provider
 from .shell import shell
@@ -14,6 +15,7 @@ __all__ = [
     "clone",
     "daemon",
     "dashboard",
+    "opencode",
     "popup",
     "provider",
     "shell",

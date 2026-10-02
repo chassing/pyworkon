@@ -30,7 +30,7 @@ pyworkon/
 │       └── gitlab/        # GitLabApi (clientele standalone functions)
 ├── interfaces/
 │   ├── shell/             # Click CLI (pyworkon command)
-│   │   └── commands/      # Subcommands: workon, dashboard, popup, daemon, clone, provider, agent, shell
+│   │   └── commands/      # Subcommands: workon, dashboard, popup, daemon, clone, provider, agent, opencode, shell
 │   ├── relay/             # FastAPI mobile web dashboard (see "Relay" section below)
 │   │   ├── app.py         # create_app() — /healthz, /ingest, /, /ws routes
 │   │   ├── config.py      # RelaySettings — real env vars (RELAY_TOKEN/HOST/PORT)
@@ -215,12 +215,24 @@ laptop daemon --(outbound HTTPS POST, Authorization: Bearer <token>)--> relay --
 
 `_resolve_agent_name()` in `interfaces/shell/commands/agent.py` derives a human-readable agent name instead of a bare PID:
 
-1. `_find_agent_process()` — Claude Code and Codex hooks can run via a transient shell, so the hook's direct parent (`os.getppid()`) may not be the stable agent process. Walks up the process tree (via `ps`) to find a `claude` or `codex` ancestor, bounded to a few hops, falling back to the direct parent PID.
+1. `_find_agent_process()` — Claude Code, Codex, and OpenCode hooks can run via a transient shell, so the hook's direct parent (`os.getppid()`) may not be the stable agent process. Walks up the process tree (via `ps`) to find a `claude`, `codex`, or `opencode` ancestor, bounded to a few hops, falling back to the direct parent PID. `agent --pid` overrides this identity for integrations; tmux lookups target `TMUX_PANE` when present rather than the ambient active session.
 2. For Claude Code, `_process_cwd()` resolves the `claude` process's cwd (`/proc/<pid>/cwd` on Linux, `lsof -a -d cwd -p <pid>` on macOS).
 3. `_find_active_transcript()` — Claude Code transcripts live at `~/.claude/projects/<cwd-with-slashes-as-dashes>/<session-id>.jsonl`. A running session can silently move to a **new session ID** (e.g. after compaction) without the process's command line changing, so parsing `--resume <uuid>` from argv is unreliable — instead, pick the most recently *modified* `.jsonl` in that project directory, which reflects the session the process is actually writing to right now.
 4. `_extract_latest_transcript_field()` — Claude Code writes live `{"type": "agent-name", "agentName": "..."}` entries to the transcript (the same short slug shown by dashboard/FleetView-style UIs — it can change mid-session as delegated sub-agents run) and a stable `{"type": "ai-title", "aiTitle": "..."}` entry. Use the **latest** `agent-name` entry, falling back to the latest `ai-title` entry.
 
-Falls back to `<agent>-<pid>` whenever no Claude transcript name is available. Codex currently uses this fallback name. Do NOT synthesize a title from the first user message — Claude Code already provides both fields above, use them instead of re-deriving.
+Falls back to `<agent>-<pid>` whenever no Claude transcript name is available. Codex and standalone OpenCode CLI calls use this fallback name. Do NOT synthesize a title from the first user message — Claude Code already provides both fields above, use them instead of re-deriving.
+
+### OpenCode V2 Integration
+
+`pyworkon/assets/opencode/` contains the CLI-only TypeScript plugin. The wheel bundles its runtime files (`tui.ts`, `status.ts`), excluding development dependencies, tests, and tooling metadata. `pyworkon opencode install` (`interfaces/shell/commands/opencode.py`) reads these package resources and copies the runtime files to `~/.config/opencode/plugins/pyworkon/`, respecting `XDG_CONFIG_HOME`. OpenCode discovers this directory automatically; no development checkout or configuration edits are needed. Rerun the installer after upgrading pyworkon to refresh the copied plugin.
+
+The plugin must not run in the shared background server: only the CLI has a reliable `TMUX`/`TMUX_PANE` and terminal PID. It invokes `pyworkon agent --pid <terminal-pid> --name <session-title> --status <status>` with literal subprocess arguments (never a shell), targeting the existing daemon protocol without changes to the TUI or relay.
+
+`status.ts` derives status from the selected root session and its family: pending permissions/forms take precedence (`waiting`), then execution (`working`), otherwise `idle`. Solid reactive effects watch route, title, and cached state changes; initial permission/form sync handles attaching to existing sessions. Sync waits for a cached root session and skips missing family members, resuming reactively when they become available. Unrelated sessions/background tabs are excluded. `AgentReporter` serializes and deduplicates writes, reports failures once per outage, and clears only after in-flight writes finish during cleanup. `tui.ts` also performs bounded best-effort synchronous cleanup on process exit, since the exit event cannot await promises. Forced kills cannot run cleanup.
+
+Runtime Solid imports must stay in `tui.ts`, where OpenCode resolves them to its shared runtime. Pass `createEffect` and `createRoot` into `watchAgent`; `status.ts` uses only type imports from `solid-js`. Importing Solid at runtime from the helper fails in the compiled OpenCode executable even when ordinary Bun tests pass. `loading.test.ts` tests the installed files against a compiled host without local `node_modules`, including host-signal reactivity and cleanup (ad-hoc signing the temporary host on macOS).
+
+Run `make opencode-check` for frozen Bun dependency installation, strict TypeScript checking (including dependencies), and Bun tests. `make ci` includes these checks; Bun is a development requirement, not a Python runtime dependency.
 
 ## Nerd Font Icons
 

@@ -5,8 +5,12 @@ from __future__ import annotations
 import importlib
 import subprocess
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+from click.testing import CliRunner
+
+from pyworkon.daemon.client import DaemonClient
 
 # `pyworkon.interfaces.shell.commands.__init__` does `from .agent import agent`,
 # which shadows the `agent` submodule attribute on the package with the Click
@@ -18,23 +22,25 @@ def _completed(stdout: str) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
 
 
-def test_find_agent_process_walks_up_to_claude_ancestor(
+@pytest.mark.parametrize("agent_type", ["claude", "codex", "opencode"])
+def test_find_agent_process_walks_up_to_agent_ancestor(
     monkeypatch: pytest.MonkeyPatch,
+    agent_type: str,
 ) -> None:
-    """A shell-wrapper hop (sh) sits between the hook process and `claude`."""
+    """A shell-wrapper hop sits between the hook and the stable agent process."""
     monkeypatch.setattr(agent_cli.os, "getppid", lambda: 41118)
     ps_output_by_pid = {
         41118: "39666 sh\n",
-        39666: "39612 claude\n",
+        39666: f"39612 /opt/bin/{agent_type}\n",
     }
 
     def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         pid = int(cmd[cmd.index("-p") + 1])
-        return _completed(ps_output_by_pid[pid])
+        return _completed(ps_output_by_pid.get(pid, ""))
 
     monkeypatch.setattr(agent_cli.subprocess, "run", fake_run)
 
-    assert agent_cli._find_agent_process() == (39666, "claude")
+    assert agent_cli._find_agent_process() == (39666, agent_type)
 
 
 def test_find_agent_process_falls_back_when_no_agent_ancestor(
@@ -269,6 +275,78 @@ def test_get_tmux_session_returns_session_when_inside_tmux(
     )
 
     assert agent_cli._get_tmux_session() == "pyworkon"
+
+
+def test_get_tmux_session_targets_originating_pane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TMUX", "tmux-server-socket,1234,0")
+    monkeypatch.setenv("TMUX_PANE", "%42")
+    run = Mock(return_value=_completed("origin-project\n"))
+    monkeypatch.setattr(agent_cli.subprocess, "run", run)
+
+    assert agent_cli._get_tmux_session() == "origin-project"
+    run.assert_called_once_with(
+        ["tmux", "display-message", "-p", "-t", "%42", "#{session_name}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.fixture
+def agent_client(monkeypatch: pytest.MonkeyPatch) -> Mock:
+    client = Mock(spec=DaemonClient)
+    monkeypatch.setattr(agent_cli, "require_daemon", lambda: client)
+    monkeypatch.setattr(agent_cli, "_get_tmux_session", lambda: "project")
+    monkeypatch.setattr(agent_cli, "_find_agent_process", lambda: (123, "opencode"))
+    return client
+
+
+@pytest.mark.parametrize("clear", [False, True])
+def test_agent_explicit_pid_survives_transient_hook_processes(
+    agent_client: Mock,
+    *,
+    clear: bool,
+) -> None:
+    args = ["--pid", "456"]
+    args.extend(
+        ["--clear"] if clear else ["--name", "My session", "--status", "working"]
+    )
+
+    result = CliRunner().invoke(agent_cli.agent, args)
+
+    assert result.exit_code == 0, result.output
+    if clear:
+        agent_client.clear_agent.assert_called_once_with("project", pid=456)
+    else:
+        agent_client.set_agent.assert_called_once_with(
+            session="project",
+            pid=456,
+            name="My session",
+            status="working",
+        )
+    agent_client.close.assert_called_once_with()
+
+
+def test_agent_auto_detects_opencode(agent_client: Mock) -> None:
+    result = CliRunner().invoke(agent_cli.agent, ["--status", "idle"])
+
+    assert result.exit_code == 0, result.output
+    agent_client.set_agent.assert_called_once_with(
+        session="project",
+        pid=123,
+        name="opencode-123",
+        status="idle",
+    )
+
+
+@pytest.mark.parametrize("pid", ["0", "-1", "not-a-pid"])
+def test_agent_rejects_invalid_explicit_pid(agent_client: Mock, pid: str) -> None:
+    result = CliRunner().invoke(agent_cli.agent, ["--pid", pid, "--status", "idle"])
+
+    assert result.exit_code == 2
+    agent_client.set_agent.assert_not_called()
 
 
 def test_resolve_agent_name_falls_back_to_pid_when_no_field_found(

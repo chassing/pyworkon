@@ -1,4 +1,4 @@
-.PHONY: test lint format typecheck ci daemon-pause daemon-resume
+.PHONY: test lint format typecheck ci opencode-check daemon-pause daemon-resume
 
 test:
 	uv run pytest
@@ -12,7 +12,12 @@ format:
 typecheck:
 	uv run mypy pyworkon/
 
-ci: lint typecheck test
+ci: lint typecheck test opencode-check
+
+opencode-check:
+	cd pyworkon/assets/opencode && bun install --frozen-lockfile
+	cd pyworkon/assets/opencode && bun run typecheck
+	cd pyworkon/assets/opencode && bun run test
 
 # Must match LAUNCH_AGENT_LABEL / PLIST_PATH in
 # pyworkon/interfaces/shell/commands/daemon.py.

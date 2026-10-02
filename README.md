@@ -210,7 +210,8 @@ You can configure multiple providers of the same type (e.g., one for GitHub.com 
 
 - **`agent --status <status>`** — Set agent status: `idle`, `working`, `waiting` (visible in sidebar/popup/dashboard, mapped to Nerd Font icons)
 - **`agent --clear`** — Clear agent status
-- Auto-detects Claude Code and Codex CLI sessions from the process tree
+- Auto-detects Claude Code, Codex CLI, and OpenCode sessions from the process tree
+- **`agent --pid <pid>`** — Override the detected process ID for plugin integrations
 
 **Claude Code hooks** (in `~/.claude/settings.json`):
 
@@ -240,6 +241,45 @@ You can configure multiple providers of the same type (e.g., one for GitHub.com 
   }
 }
 ```
+
+**OpenCode V2 CLI plugin:**
+
+Install pyworkon and then install its bundled plugin:
+
+```bash
+uv tool install pyworkon
+pyworkon opencode install
+```
+
+The plugin ships in the PyPI package. The installer copies it to
+`~/.config/opencode/plugins/pyworkon/` (or
+`$XDG_CONFIG_HOME/opencode/plugins/pyworkon/`), where OpenCode discovers it
+automatically. No checkout path or manual configuration is needed.
+The plugin uses OpenCode's shared Solid runtime; no JavaScript dependency installation
+is needed.
+
+After upgrading pyworkon, rerun the installer to refresh the plugin:
+
+```bash
+uv tool upgrade pyworkon
+pyworkon opencode install
+```
+
+Restart the OpenCode terminal after installing or refreshing the plugin. `pyworkon` must be on
+its `PATH`, with the pyworkon daemon running and the project open in a tmux session.
+The plugin is CLI-only, so it also works when OpenCode uses a shared or remote server;
+do not configure it as a server plugin in `opencode.json`.
+
+The selected root session's title appears as the agent name (falling back to
+`opencode-<pid>`). Running sessions or children show `working`; pending permissions
+or questions in that family show `waiting`; otherwise the status is `idle`.
+Unrelated sessions and background tabs are not included. One entry is tracked per
+OpenCode terminal PID, so switching sessions or changing titles cannot create duplicates.
+Returning to the home screen or exiting normally clears the entry. Forced termination
+(e.g. `SIGKILL`) cannot run cleanup; use `pyworkon agent --pid <pid> --clear` in the
+same tmux session if needed. Outside tmux the plugin is inactive.
+
+Plugin development checks (requires Bun): `make opencode-check`.
 
 ## ⚙️ Configuration
 

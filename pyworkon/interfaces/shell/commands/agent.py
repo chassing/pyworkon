@@ -16,7 +16,7 @@ from pyworkon.interfaces.shell import cli
 
 _MAX_PROCESS_TREE_HOPS = 5
 _PS_PPID_COMM_FIELD_COUNT = 2
-_AGENT_PROCESS_NAMES = {"claude", "codex"}
+_AGENT_PROCESS_NAMES = {"claude", "codex", "opencode"}
 
 
 def _find_process(process_names: set[str]) -> tuple[int, str | None]:
@@ -47,7 +47,7 @@ def _find_process(process_names: set[str]) -> tuple[int, str | None]:
 
 
 def _find_agent_process() -> tuple[int, str | None]:
-    """Find the Claude Code or Codex process that launched this hook."""
+    """Find the Claude Code, Codex, or OpenCode process that launched this hook."""
     return _find_process(_AGENT_PROCESS_NAMES)
 
 
@@ -137,8 +137,11 @@ def _get_tmux_session() -> str | None:
     """
     if not os.environ.get("TMUX"):
         return None
+    command = ["tmux", "display-message", "-p"]
+    if pane := os.environ.get("TMUX_PANE"):
+        command.extend(["-t", pane])
     result = subprocess.run(
-        ["tmux", "display-message", "-p", "#{session_name}"],
+        [*command, "#{session_name}"],
         capture_output=True,
         text=True,
         check=False,
@@ -148,16 +151,25 @@ def _get_tmux_session() -> str | None:
 
 @cli.command()
 @click.option("--name", default=None, help="Agent name (auto-detected when available)")
-@click.option("--status", default=None, help="Agent status emoji")
+@click.option("--status", default=None, help="Agent status: idle, working, waiting")
+@click.option(
+    "--pid",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Stable agent process ID (auto-detected by default)",
+)
 @click.option("--clear", is_flag=True, help="Clear agent status")
-def agent(name: str | None, status: str | None, *, clear: bool) -> None:
+def agent(
+    name: str | None, status: str | None, pid: int | None, *, clear: bool
+) -> None:
     """Set or clear agent status in the daemon."""
     session = _get_tmux_session()
     if not session:
         click.echo("Not inside tmux", err=True)
         sys.exit(1)
 
-    pid, agent_type = _find_agent_process()
+    detected_pid, agent_type = _find_agent_process()
+    pid = pid or detected_pid
     agent_type = agent_type or "claude"
     client = require_daemon()
     try:

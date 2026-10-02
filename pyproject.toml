@@ -66,6 +66,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pyworkon"]
+exclude = [
+    "pyworkon/assets/opencode/*.test.ts",
+    "pyworkon/assets/opencode/package.json",
+    "pyworkon/assets/opencode/bun.lock",
+    "pyworkon/assets/opencode/tsconfig.json",
+    "**/node_modules/**",
+]
 
 [tool.mypy]
 files = ["pyworkon"]
