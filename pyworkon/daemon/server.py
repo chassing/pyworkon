@@ -632,8 +632,16 @@ class Daemon:
                 return result
             prs_by_repo = await api.get_review_requested_prs()
         for owner_repo, prs in prs_by_repo.items():
-            project_id = f"{provider.name}/{owner_repo}"
-            result[project_id] = prs
+            ignored_authors = {
+                author.casefold()
+                for rule in provider.ignored_review_requests
+                if rule.repository.casefold() == owner_repo.casefold()
+                for author in rule.authors
+            }
+            if visible_prs := [
+                pr for pr in prs if pr.author.casefold() not in ignored_authors
+            ]:
+                result[f"{provider.name}/{owner_repo}"] = visible_prs
         return result
 
     async def _maybe_sync_providers(self) -> None:

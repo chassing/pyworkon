@@ -186,6 +186,22 @@ pyworkon app uninstall
 
 **Requirements:** [Ghostty.app](https://ghostty.org/) must be installed in `/Applications`. Your existing Ghostty theme, font, and keybindings are inherited automatically.
 
+The standalone launcher uses macOS LaunchServices to start its own native terminal
+bundle, with a dedicated app identity and the bundled Pyworkon icon. This lets
+window managers such as Rectangle manage the Dashboard without changing your
+regular Ghostty icon. No `macos-icon` override is used, because Ghostty shares
+custom-icon preferences between instances.
+
+Installation copies Ghostty into the Dashboard bundle (about 62 MB with Ghostty
+1.3.1), preserves its resources and executable entitlements, disables its shared
+Dock-icon plugin, and ad-hoc signs and verifies only that copy. The original
+`/Applications/Ghostty.app` is not modified. The new bundle is fully built before
+replacing an existing installation; build or signing failures leave the old app
+intact.
+
+The copied runtime has auto-updates disabled. Close the Dashboard and rerun
+`pyworkon app install` after upgrading pyworkon or Ghostty to refresh it.
+
 ### 🔌 Providers
 
 Providers connect pyworkon to your Git hosting platforms. They fetch your repository list and provide PR/MR + CI status information.
@@ -330,6 +346,36 @@ providers:
     username: your_username
     password: glpat-your_token
 ```
+
+### Ignore Review Requests by PR Author
+
+Add `ignored_review_requests` to a GitHub provider to hide review requests for
+PRs authored by specific users in specific repositories:
+
+```yaml
+providers:
+  - name: github
+    type: github
+    api_url: https://api.github.com
+    username: your_username
+    password: ghp_your_token
+    ignored_review_requests:
+      - repository: app-sre/qontract-reconcile
+        authors:
+          - "renovate[bot]"
+          - some-user
+```
+
+Repository names use `owner/repo`. Repository and author matching is
+case-insensitive; bot logins such as `renovate[bot]` are matched literally.
+Rules apply only to that provider and repository. If multiple rules target the
+same repository, their author lists are combined. Omitting the option or using
+an empty list leaves review requests unchanged.
+
+Filtering applies to review-request lists in the TUI and relay, including local
+forks of the configured repository. Branch PR details remain visible. This filters
+by PR author, not the person who clicked “Request review,” and does not modify
+anything on GitHub. Restart the daemon after changing the configuration.
 
 ### 🏗️ Per-Project tmux Layout
 

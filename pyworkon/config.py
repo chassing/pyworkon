@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import getpass
 import json
 import pwd
@@ -29,12 +31,20 @@ class ProviderType(StrEnum):
     gitlab = "gitlab"
 
 
+class IgnoredReviewRequests(BaseModel, frozen=True):
+    """PR authors whose review requests are hidden for one repository."""
+
+    repository: str
+    authors: list[str]
+
+
 class Provider(BaseModel):
     name: str
     type: ProviderType = ProviderType.github
     api_url: HttpUrl
     username: str
     password: str
+    ignored_review_requests: list[IgnoredReviewRequests] = []
 
 
 # ruff: file-ignore[unused-class-method-argument]

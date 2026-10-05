@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from pyworkon.config import Provider, config
 from pyworkon.daemon.models import AgentInfo, OpenProject, PRInfo, PRStatus, ReviewPR
 from pyworkon.daemon.project_mgr import Project
 from pyworkon.daemon.protocol import (
@@ -20,6 +21,7 @@ from pyworkon.daemon.protocol import (
     SwitchSessionCommand,
 )
 from pyworkon.daemon.providers import circuit_breaker
+from pyworkon.daemon.providers.github import GitHubApi
 from pyworkon.daemon.server import Daemon
 
 
@@ -489,6 +491,95 @@ def test_build_sidebar_state_includes_review_prs(daemon: Daemon) -> None:
     }
     state = daemon._build_sidebar_state()
     assert state.review_prs == daemon._review_prs
+
+
+@pytest.fixture
+def review_provider() -> Provider:
+    return Provider.model_validate({
+        "name": "github",
+        "api_url": "https://api.github.com",
+        "username": "test-user",
+        "password": "test-value",
+        "ignored_review_requests": [
+            {"repository": "OWNER/Repo", "authors": ["renovate[bot]"]},
+            {"repository": "owner/repo", "authors": ["alice"]},
+        ],
+    })
+
+
+@pytest.mark.parametrize(
+    ("repository", "author", "expected_visible"),
+    [
+        ("owner/repo", "renovate[bot]", False),
+        ("Owner/REPO", "RENOVATE[BOT]", False),
+        ("owner/repo", "Alice", False),
+        ("owner/repo", "bob", True),
+        ("owner/other", "renovate[bot]", True),
+        ("other/repo", "alice", True),
+    ],
+)
+async def test_fetch_review_prs_filters_repository_authors(
+    review_provider: Provider,
+    repository: str,
+    author: str,
+    expected_visible: bool,
+) -> None:
+    pr = ReviewPR(number=1, title="Review me", url="https://x/1", author=author)
+    api = MagicMock(spec=GitHubApi)
+    api.get_review_requested_prs = AsyncMock(return_value={repository: [pr]})
+    with patch("pyworkon.daemon.server.get_provider") as mock_provider:
+        mock_provider.return_value.__aenter__.return_value = api
+        result = await Daemon._fetch_review_prs_for_provider(review_provider)
+    assert result == ({f"github/{repository}": [pr]} if expected_visible else {})
+
+
+async def test_review_request_filters_are_provider_scoped(
+    review_provider: Provider,
+) -> None:
+    other_provider = Provider(
+        name="github-work",
+        api_url="https://api.github.com",
+        username="test-user",
+        password="test-value",
+    )
+    pr = ReviewPR(number=1, title="Review me", url="https://x/1", author="alice")
+    api = MagicMock(spec=GitHubApi)
+    api.get_review_requested_prs = AsyncMock(return_value={"owner/repo": [pr]})
+    with patch("pyworkon.daemon.server.get_provider") as mock_provider:
+        mock_provider.return_value.__aenter__.return_value = api
+        ignored = await Daemon._fetch_review_prs_for_provider(review_provider)
+        visible = await Daemon._fetch_review_prs_for_provider(other_provider)
+    assert ignored == {}
+    assert visible == {"github-work/owner/repo": [pr]}
+
+
+async def test_poll_review_prs_filters_before_mapping_to_forks(
+    daemon: Daemon, review_provider: Provider
+) -> None:
+    ignored = ReviewPR(number=1, title="Ignored", url="https://x/1", author="alice")
+    visible = ReviewPR(number=2, title="Visible", url="https://x/2", author="bob")
+    api = MagicMock(spec=GitHubApi)
+    api.get_review_requested_prs = AsyncMock(
+        return_value={"owner/repo": [ignored, visible]}
+    )
+    daemon._review_prs_fetched_at = float("-inf")
+    daemon._project_mgr.list = MagicMock(return_value=[Project(id="github/fork/repo")])
+    with (
+        patch.object(config, "providers", [review_provider]),
+        patch("pyworkon.daemon.server.get_provider") as mock_provider,
+        patch.object(
+            Project,
+            "get_upstream_owner_repo",
+            new_callable=AsyncMock,
+            return_value="owner/repo",
+        ),
+    ):
+        mock_provider.return_value.__aenter__.return_value = api
+        await daemon._poll_review_prs()
+    assert daemon._build_sidebar_state().review_prs == {
+        "github/owner/repo": [visible],
+        "github/fork/repo": [visible],
+    }
 
 
 async def test_map_review_prs_to_forks(daemon: Daemon) -> None:

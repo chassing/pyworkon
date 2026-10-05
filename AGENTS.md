@@ -76,6 +76,8 @@ pyworkon/
 
 Providers use `clientele`'s **standalone function pattern** (not class methods). Each provider exposes an async context manager via `get_provider()`.
 
+GitHub providers support `ignored_review_requests`, a list of typed `IgnoredReviewRequests` rules with `repository` (`owner/repo`) and `authors`. The daemon filters review requests by PR author in `_fetch_review_prs_for_provider()` before caching and upstream-to-fork mapping, so TUI and relay receive the same filtered state. Repository/author matching is case-insensitive, matching rules combine their author lists, and branch PR details are unaffected. Configuration changes require a daemon restart.
+
 ## Textual TUI — CRITICAL Rules
 
 ### Widget Architecture
@@ -208,6 +210,7 @@ laptop daemon --(outbound HTTPS POST, Authorization: Bearer <token>)--> relay --
 
 - Uses **Click** (not typer) — the CLI is Click-based
 - Subcommands auto-discovered from `interfaces/shell/commands/`
+- `app.py` installs the standalone macOS Dashboard wrapper with a nested `Contents/Resources/Pyworkon Terminal.app` runtime copied from `/Applications/Ghostty.app` using `ditto --noqtn`. The wrapper opens the nested native bundle through `/usr/bin/open -na ... --args --config-file=...`, preserving a valid application PID for accessibility/window managers such as Rectangle. The runtime uses `dev.pyworkon.dashboard.terminal` and the bundled `PyworkonDashboard.icns`; its `CFBundleIconName` and `NSDockTilePlugIn` overrides are removed. Do not use Ghostty's `macos-icon` custom settings: its Dock plugin shares icon preferences across instances. Only the copy is ad-hoc signed (preserving entitlements) and verified. Installation builds in a temporary sibling directory before replacing the old app, with rollback on publication failure. The Dashboard config disables runtime auto-updates. Close the Dashboard and rerun `pyworkon app install` after pyworkon/Ghostty upgrades; the original Ghostty app is never modified.
 - `PyworkonContext` passed via Click's `obj`
 - **`interfaces/shell/commands/__init__.py` shadows submodule names**: it does `from .agent import agent` (etc.), so `pyworkon.interfaces.shell.commands.agent` resolves to the Click *command* object, not the submodule, once the package is imported. Tests that need the submodule itself (e.g. `tests/test_agent_cli.py`) must use `importlib.import_module("pyworkon.interfaces.shell.commands.agent")` instead of `from ... import agent` / `import ...agent as x`.
 
