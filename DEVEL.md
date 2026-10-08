@@ -34,6 +34,7 @@ uv run pytest -k "test_branch"             # filter by name
 - `tests/test_project.py` — Project git methods (uses temp git repos)
 - `tests/test_git_watcher.py` — GitWatcher lifecycle (async)
 - `tests/test_daemon.py` — Daemon state management (mocked)
+- `tests/test_agentic_cli.py` — OpenCode plugin and bundled-skill installation (directory and ZIP resources)
 - `tests/test_widgets.py` — Textual widget rendering
 - `tests/test_apps.py` — DashboardApp/PopupApp composition
 
@@ -53,6 +54,11 @@ pyworkon/
 ├── tmux_mgr.py                     # Tmux subprocess integration (sessions, panes, agents)
 ├── defaults/
 │   └── tmuxp.yml                   # Default tmuxp layout (main + AI windows)
+├── assets/
+│   ├── opencode/                   # Bundled OpenCode CLI plugin and development tooling
+│   └── skills/
+│       └── pyworkon-workspace/
+│           └── SKILL.md            # Portable workspace/project lookup instructions
 ├── interfaces/
 │   ├── __init__.py                 # CLI initialization
 │   ├── shell/
@@ -68,7 +74,8 @@ pyworkon/
 │   │       ├── shell.py            # Interactive shell with fuzzy completion
 │   │       ├── dashboard.py        # Dashboard TUI command
 │   │       ├── popup.py            # Popup TUI command
-│   │       └── agent.py            # Set/clear AI agent status
+│   │       ├── agent.py            # Set/clear AI agent status
+│   │       └── agentic.py          # Agent integration and bundled-skill installers
 │   └── tui/                        # Textual TUI apps and widgets
 │       ├── base.py                 # BaseApp — shared daemon subscription, navigation
 │       ├── dashboard.py            # DashboardApp — full-detail monitoring
@@ -108,6 +115,20 @@ pyworkon/
 ```
 
 **Entry point:** `pyworkon.__main__:run` → `interfaces/__init__.py:init_cli()` → `interfaces/shell/__init__.py:cli()` (Click group)
+
+### Bundled Agent Skills
+
+Add each skill as a directory under `pyworkon/assets/skills/<skill-name>/` with
+a `SKILL.md` containing `name` and `description` frontmatter. Supporting files
+and subdirectories belong inside that directory. The wheel includes these
+resources automatically, and `pyworkon agentic skills-install` discovers every
+skill directory with a `SKILL.md`; there is no hardcoded skill list.
+
+The installer recursively copies package resources, including ZIP-backed
+resources, to `~/.agents/skills` and an already-existing `~/.claude/skills`.
+It refreshes bundled files without removing unrelated files or skills and
+refuses to overwrite symlinks inside a skill. The OpenCode plugin remains
+available through `pyworkon agentic opencode install`.
 
 ## Architecture
 

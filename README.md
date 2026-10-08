@@ -264,7 +264,7 @@ Install pyworkon and then install its bundled plugin:
 
 ```bash
 uv tool install pyworkon
-pyworkon opencode install
+pyworkon agentic opencode install
 ```
 
 The plugin ships in the PyPI package. The installer copies it to
@@ -278,7 +278,7 @@ After upgrading pyworkon, rerun the installer to refresh the plugin:
 
 ```bash
 uv tool upgrade pyworkon
-pyworkon opencode install
+pyworkon agentic opencode install
 ```
 
 Restart the OpenCode terminal after installing or refreshing the plugin. `pyworkon` must be on
@@ -297,6 +297,33 @@ Returning to the home screen or exiting normally clears the entry. Forced termin
 same tmux session if needed. Outside tmux the plugin is inactive.
 
 Plugin development checks (requires Bun): `make opencode-check`.
+
+### Agent Skills
+
+Install all skills bundled with pyworkon:
+
+```bash
+pyworkon agentic skills-install
+```
+
+The installer creates `~/.agents/skills` if needed and also installs into
+`~/.claude/skills` **only if that directory already exists**. Each bundled skill
+directory, including its supporting files and subdirectories, is copied from
+the installed package. No checkout or daemon is required. Rerun the command
+after upgrading pyworkon to refresh bundled files; unrelated skills and extra
+files are preserved. Symlinks to individual skills or their contents are not
+overwritten. The destination roots may be shared through a symlink, for example from
+`~/.claude/skills` to `~/.agents/skills`.
+
+The bundled **`pyworkon-workspace`** skill teaches agents the
+`~/workspace/<provider-name>/<owner-or-namespace>/<repo>` layout, configured
+workspace overrides, project IDs, and targeted repository lookup rather than
+broad filesystem searches. It also explains provider names, fork remotes, and
+the relevant pyworkon commands. OpenCode discovers both global skill directories
+automatically; no OpenCode configuration changes are needed.
+
+The OpenCode plugin installer now lives under `pyworkon agentic opencode install`;
+the former `pyworkon opencode install` command has been replaced.
 
 ## ⚙️ Configuration
 

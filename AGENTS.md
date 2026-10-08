@@ -16,6 +16,9 @@ uv run pytest                              # tests
 ```text
 pyworkon/
 ├── config.py              # pydantic-settings Config, YAML-based (~/.config/pyworkon/config.yaml)
+├── assets/
+│   ├── opencode/          # Bundled OpenCode CLI plugin
+│   └── skills/            # Portable agent skills, one directory with SKILL.md per skill
 ├── daemon/                # Background daemon (fully async, Unix socket)
 │   ├── server.py          # asyncio server, event-based push, tmux/PR polling
 │   ├── client.py          # Sync socket client (DaemonClient)
@@ -30,7 +33,7 @@ pyworkon/
 │       └── gitlab/        # GitLabApi (clientele standalone functions)
 ├── interfaces/
 │   ├── shell/             # Click CLI (pyworkon command)
-│   │   └── commands/      # Subcommands: workon, dashboard, popup, daemon, clone, provider, agent, opencode, shell
+│   │   └── commands/      # Subcommands: workon, dashboard, popup, daemon, clone, provider, agent, agentic, shell
 │   ├── relay/             # FastAPI mobile web dashboard (see "Relay" section below)
 │   │   ├── app.py         # create_app() — /healthz, /ingest, /, /ws routes
 │   │   ├── config.py      # RelaySettings — real env vars (RELAY_TOKEN/HOST/PORT)
@@ -228,7 +231,7 @@ Falls back to `<agent>-<pid>` whenever no Claude transcript name is available. C
 
 ### OpenCode V2 Integration
 
-`pyworkon/assets/opencode/` contains the CLI-only TypeScript plugin. The wheel bundles its runtime files (`tui.ts`, `status.ts`), excluding development dependencies, tests, and tooling metadata. `pyworkon opencode install` (`interfaces/shell/commands/opencode.py`) reads these package resources and copies the runtime files to `~/.config/opencode/plugins/pyworkon/`, respecting `XDG_CONFIG_HOME`. OpenCode discovers this directory automatically; no development checkout or configuration edits are needed. Rerun the installer after upgrading pyworkon to refresh the copied plugin.
+`pyworkon/assets/opencode/` contains the CLI-only TypeScript plugin. The wheel bundles its runtime files (`tui.ts`, `status.ts`), excluding development dependencies, tests, and tooling metadata. `pyworkon agentic opencode install` (`interfaces/shell/commands/agentic.py`) reads these package resources and copies the runtime files to `~/.config/opencode/plugins/pyworkon/`, respecting `XDG_CONFIG_HOME`. The former top-level `opencode` group has been replaced by the `agentic` group. OpenCode discovers the plugin directory automatically; no development checkout or configuration edits are needed. Rerun the installer after upgrading pyworkon to refresh the copied plugin.
 
 The plugin must not run in the shared background server: only the CLI has a reliable `TMUX`/`TMUX_PANE` and terminal PID. It invokes `pyworkon agent --pid <terminal-pid> --name <session-title> --status <status>` with literal subprocess arguments (never a shell), targeting the existing daemon protocol without changes to the TUI or relay.
 
@@ -237,6 +240,10 @@ The plugin must not run in the shared background server: only the CLI has a reli
 Runtime Solid imports must stay in `tui.ts`, where OpenCode resolves them to its shared runtime. Pass `createEffect` and `createRoot` into `watchAgent`; `status.ts` uses only type imports from `solid-js`. Importing Solid at runtime from the helper fails in the compiled OpenCode executable even when ordinary Bun tests pass. `loading.test.ts` tests the installed files against a compiled host without local `node_modules`, including host-signal reactivity and cleanup (ad-hoc signing the temporary host on macOS).
 
 Run `make opencode-check` for frozen Bun dependency installation, strict TypeScript checking (including dependencies), and Bun tests. `make ci` includes these checks; Bun is a development requirement, not a Python runtime dependency.
+
+### Bundled Agent Skills
+
+`pyworkon/assets/skills/<skill-name>/SKILL.md` contains portable skills included in the wheel. The bundled `pyworkon-workspace` skill explains the provider/owner/repo workspace layout and targeted repository lookup. `pyworkon agentic skills-install` discovers all direct skill directories with a `SKILL.md` and recursively copies their complete contents using `importlib.resources` (including ZIP-backed resources). It always installs into `~/.agents/skills`, creating it if needed, and additionally installs into `~/.claude/skills` only when that directory already exists. Reruns refresh bundled files without deleting unrelated skills or extra files. Symlinks to individual skills or their contents are rejected rather than overwritten; the destination roots (`~/.agents/skills` and `~/.claude/skills`) may be symlinks. Neither installer requires the daemon. Tests live in `tests/test_agentic_cli.py`.
 
 ## Nerd Font Icons
 
