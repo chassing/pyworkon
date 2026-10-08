@@ -1,11 +1,18 @@
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import os
+import shlex
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from pyworkon.daemon.project_mgr import Project
+from pyworkon.config import config
 from pyworkon.utils import run_cmd
+
+if TYPE_CHECKING:
+    from pyworkon.daemon.project_mgr import Project
 
 _DEFAULT_TMUXP_CONFIG = Path(__file__).parent.parent / "defaults" / "tmuxp.yml"
 
@@ -68,7 +75,15 @@ class TmuxManager:
             session_name,
             str(config_path),
             cwd=project.project_home,
-            env={**os.environ, **project.env_vars},
+            # tmuxp expands variables before the pane shell parses the command.
+            env={
+                **os.environ,
+                **project.env_vars,
+                "PYWORKON_TMUX_AI_AGENT_COMMAND": shlex.quote(config.ai_agent_command),
+                "PYWORKON_TMUX_AI_AGENT_TITLE": shlex.quote(
+                    Path(shlex.split(config.ai_agent_command)[0]).name
+                ),
+            },
         )
 
     async def list_sessions_with_project_id(self) -> list[tuple[str, str | None]]:

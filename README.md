@@ -314,6 +314,7 @@ prompt_sign: "🖖🏻"
 workspace_dir: ~/workspace
 workon_command: /bin/zsh           # default: user's login shell
 workon_pre_command: ""             # runs before workon_command
+ai_agent_command: opencode         # command for the default AI pane, including arguments
 sidebar_refresh_interval: 5        # seconds (daemon poll interval for tmux/PR data)
 debug: false
 
@@ -380,6 +381,20 @@ anything on GitHub. Restart the daemon after changing the configuration.
 ### 🏗️ Per-Project tmux Layout
 
 Place a `.tmuxp.yml` in your project root to override the default tmux layout. The default layout creates two windows: "main 👨🏼‍💻" and "AI 🤖".
+
+Set `ai_agent_command` in your pyworkon configuration to choose what the default
+AI pane runs. It defaults to `opencode` and accepts options and arguments using
+normal shell quoting, for example:
+
+```yaml
+ai_agent_command: 'claude --model sonnet --resume "my session"'
+```
+
+The full command is passed to `workon --command` as one argument; the terminal
+title uses the executable's basename (`claude` in this example). Empty commands
+and unbalanced quotes are rejected. Restart the daemon after changing this
+setting; it applies to newly created sessions, not existing ones. Project-local
+`.tmuxp.yml` layouts continue to override the default layout.
 
 ## 🔤 Icon Reference
 

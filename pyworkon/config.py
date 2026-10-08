@@ -3,12 +3,13 @@ from __future__ import annotations
 import getpass
 import json
 import pwd
+import shlex
 from enum import StrEnum
 from pathlib import Path
 
 import yaml
 from appdirs import AppDirs
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -54,6 +55,7 @@ class Config(BaseSettings):
     workspace_dir: Path = Path.home() / "workspace"
     workon_command: str = pwd.getpwnam(getpass.getuser()).pw_shell
     workon_pre_command: str = ""
+    ai_agent_command: str = "opencode"
     providers: list[Provider] = []
     debug: bool = False
     history_file: Path = user_cache_dir / "history"
@@ -68,6 +70,14 @@ class Config(BaseSettings):
         env_prefix="pyworkon_",
         case_sensitive=False,
     )
+
+    @field_validator("ai_agent_command")
+    @classmethod
+    def validate_ai_agent_command(cls, value: str) -> str:
+        """Require an executable and balanced shell quoting."""
+        if (parts := shlex.split(value)) and parts[0]:
+            return value
+        raise ValueError("AI agent command must contain an executable")
 
     @classmethod
     def settings_customise_sources(
