@@ -192,6 +192,9 @@ window managers such as Rectangle manage the Dashboard without changing your
 regular Ghostty icon. No `macos-icon` override is used, because Ghostty shares
 custom-icon preferences between instances.
 
+You can pin the running Dashboard app to the Dock. The copied terminal loads its
+own dashboard configuration even when opened directly from that pinned icon.
+
 Installation copies Ghostty into the Dashboard bundle (about 62 MB with Ghostty
 1.3.1), preserves its resources and executable entitlements, disables its shared
 Dock-icon plugin, and ad-hoc signs and verifies only that copy. The original

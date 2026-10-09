@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import contextlib
 import importlib.resources
+import os
 import plistlib
+import shlex
 import shutil
 import stat
 import subprocess
@@ -60,11 +62,12 @@ LAUNCHER_SCRIPT = """\
 #!/usr/bin/env bash
 set -euo pipefail
 RESOURCES="$(cd "$(dirname "$0")/../Resources" && pwd)"
-exec /usr/bin/open -na "$RESOURCES/Pyworkon Terminal.app" --args --config-file="$RESOURCES/ghostty.conf"
+export XDG_CONFIG_HOME="$RESOURCES/ghostty-config"
+exec /usr/bin/open -na "$RESOURCES/Pyworkon Terminal.app"
 """
 
 GHOSTTY_CONF = """\
-command = {pyworkon_bin} dashboard
+command = {command}
 quit-after-last-window-closed = true
 title = Pyworkon Dashboard
 auto-update = off
@@ -144,9 +147,13 @@ def _build_app(*, app_dir: Path, pyworkon_bin: str) -> None:
     launcher.write_text(LAUNCHER_SCRIPT)
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
+    command = ["/usr/bin/env", "-u", "XDG_CONFIG_HOME"]
+    if (xdg_home := os.environ.get("XDG_CONFIG_HOME")) is not None:
+        command.append(f"XDG_CONFIG_HOME={xdg_home}")
     (resources_dir / "ghostty.conf").write_text(
-        GHOSTTY_CONF.format(pyworkon_bin=pyworkon_bin)
+        GHOSTTY_CONF.format(command=shlex.join([*command, pyworkon_bin, "dashboard"]))
     )
+    _write_runtime_config(resources_dir)
 
     runtime_app = resources_dir / RUNTIME_APP_NAME
     subprocess.run(
@@ -186,6 +193,19 @@ def _build_app(*, app_dir: Path, pyworkon_bin: str) -> None:
     )
 
 
+def _write_runtime_config(resources_dir: Path) -> None:
+    original_xdg_home = os.environ.get("XDG_CONFIG_HOME", "")
+    xdg_dir = Path(original_xdg_home or Path.home() / ".config") / "ghostty"
+    config = resources_dir / "ghostty-config" / "ghostty" / "config.ghostty"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        f"config-file = ?{xdg_dir / 'config'}\n"
+        f"config-file = ?{xdg_dir / 'config.ghostty'}\n"
+        "config-file = ../../ghostty.conf\n",
+        encoding="utf-8",
+    )
+
+
 def _configure_runtime_bundle(runtime_app: Path) -> None:
     info_path = runtime_app / "Contents" / "Info.plist"
     metadata = plistlib.loads(info_path.read_bytes())
@@ -197,6 +217,12 @@ def _configure_runtime_bundle(runtime_app: Path) -> None:
     metadata["CFBundleIconFile"] = "PyworkonDashboard"
     metadata.pop("CFBundleIconName", None)
     metadata.pop("NSDockTilePlugIn", None)
+    environment = metadata.setdefault("LSEnvironment", {})
+    if not isinstance(environment, dict):
+        raise TypeError("Ghostty LSEnvironment must contain a dictionary")
+    environment["XDG_CONFIG_HOME"] = str(
+        APP_DIR / "Contents" / "Resources" / "ghostty-config"
+    )
     info_path.write_bytes(plistlib.dumps(metadata))
 
 

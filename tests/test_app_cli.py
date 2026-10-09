@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import importlib
 import importlib.resources
+import os
 import plistlib
 import shlex
 import shutil
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -49,6 +51,7 @@ def dashboard_app(
             "NSDockTilePlugIn": "DockTilePlugin.plugin",
             "NSHighResolutionCapable": True,
             "NSAppleEventsUsageDescription": "Allow automation",
+            "LSEnvironment": {"GHOSTTY_MAC_LAUNCH_SOURCE": "app"},
         })
     )
     resources = ghostty_app / "Contents" / "Resources"
@@ -84,14 +87,16 @@ def test_app_install_launches_ghostty_through_launch_services(
         "/usr/bin/open",
         "-na",
         "$RESOURCES/Pyworkon Terminal.app",
-        "--args",
-        "--config-file=$RESOURCES/ghostty.conf",
     ]
     assert 'RESOURCES="$(cd "$(dirname "$0")/../Resources" && pwd)"' in script
+    assert 'export XDG_CONFIG_HOME="$RESOURCES/ghostty-config"' in script
     assert launcher.stat().st_mode & 0o111 == 0o111
     resources = dashboard_app / "Contents" / "Resources"
     config_lines = (resources / "ghostty.conf").read_text().splitlines()
-    assert "command = /usr/local/bin/pyworkon dashboard" in config_lines
+    assert shlex.split(config_lines[0].removeprefix("command = "))[-2:] == [
+        "/usr/local/bin/pyworkon",
+        "dashboard",
+    ]
     assert "auto-update = off" in config_lines
     assert not any(line.startswith("macos-icon =") for line in config_lines)
     assert not any(line.startswith("macos-custom-icon =") for line in config_lines)
@@ -153,6 +158,133 @@ def test_app_install_signs_only_the_copied_runtime(
         "--strict",
         commands[1][-1],
     ]
+
+
+@pytest.mark.parametrize("xdg_home", [None, "custom configuration"])
+def test_runtime_launch_without_outer_wrapper_loads_dashboard_configuration(
+    dashboard_app: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    xdg_home: str | None,
+) -> None:
+    original_xdg_home = str(tmp_path / xdg_home) if xdg_home else ""
+    if xdg_home:
+        monkeypatch.setenv("XDG_CONFIG_HOME", original_xdg_home)
+    else:
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    result = CliRunner().invoke(cli, ["app", "install"], obj=PyworkonContext())
+    assert result.exit_code == 0, result.output
+    resources = dashboard_app / "Contents" / "Resources"
+    runtime_contents = resources / "Pyworkon Terminal.app" / "Contents"
+    info = plistlib.loads((runtime_contents / "Info.plist").read_bytes())
+    assert info["CFBundleExecutable"] == "ghostty"
+    assert info["LSEnvironment"]["GHOSTTY_MAC_LAUNCH_SOURCE"] == "app"
+    config_home = Path(info["LSEnvironment"]["XDG_CONFIG_HOME"])
+    assert config_home == resources / "ghostty-config"
+    config_lines = (config_home / "ghostty" / "config.ghostty").read_text().splitlines()
+    xdg_dir = Path(original_xdg_home or Path.home() / ".config") / "ghostty"
+    assert config_lines == [
+        f"config-file = ?{xdg_dir / 'config'}",
+        f"config-file = ?{xdg_dir / 'config.ghostty'}",
+        "config-file = ../../ghostty.conf",
+    ]
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin"
+    or not Path("/Applications/Ghostty.app/Contents/MacOS/ghostty").is_file(),
+    reason="Requires macOS and an installed Ghostty runtime",
+)
+def test_real_runtime_configuration_and_entitlements(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle = tmp_path / "Pyworkon Dashboard.app"
+    monkeypatch.setattr(app_module, "APP_DIR", bundle)
+    app_module._install_app(pyworkon_bin="/usr/local/bin/pyworkon")
+    runtime = bundle / "Contents" / "Resources" / "Pyworkon Terminal.app"
+    info = plistlib.loads((runtime / "Contents" / "Info.plist").read_bytes())
+    result = subprocess.run(
+        [str(runtime / "Contents" / "MacOS" / "ghostty"), "+show-config"],
+        env=os.environ | info["LSEnvironment"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    config_lines = result.stdout.splitlines()
+    command_line = next(line for line in config_lines if line.startswith("command = "))
+    assert shlex.split(command_line.removeprefix("command = "))[-2:] == [
+        "/usr/local/bin/pyworkon",
+        "dashboard",
+    ]
+    assert "title = Pyworkon Dashboard" in config_lines
+    assert "auto-update = off" in config_lines
+    original = subprocess.run(
+        [
+            "/usr/bin/codesign",
+            "--display",
+            "--entitlements",
+            ":-",
+            str(app_module.GHOSTTY_BIN),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    copied = subprocess.run(
+        [
+            "/usr/bin/codesign",
+            "--display",
+            "--entitlements",
+            ":-",
+            str(runtime / "Contents" / "MacOS" / "ghostty"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert plistlib.loads(copied.stdout.encode()) == plistlib.loads(
+        original.stdout.encode()
+    )
+
+
+@pytest.mark.parametrize("xdg_home", [None, "custom configuration"])
+def test_dashboard_command_restores_original_configuration_environment(
+    dashboard_app: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    xdg_home: str | None,
+) -> None:
+    original_xdg_home = str(tmp_path / xdg_home) if xdg_home else ""
+    if xdg_home:
+        monkeypatch.setenv("XDG_CONFIG_HOME", original_xdg_home)
+    else:
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    command = tmp_path / "pyworkon-command"
+    command.write_text(
+        '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%s\\n" "${XDG_CONFIG_HOME-unset}" "$@"\n'
+    )
+    command.chmod(0o755)
+    monkeypatch.setattr(
+        app_module.shutil, "which", MagicMock(return_value=str(command))
+    )
+    result = CliRunner().invoke(cli, ["app", "install"], obj=PyworkonContext())
+    assert result.exit_code == 0, result.output
+    resources = dashboard_app / "Contents" / "Resources"
+    info = plistlib.loads(
+        (resources / "Pyworkon Terminal.app" / "Contents" / "Info.plist").read_bytes()
+    )
+    command_line = (resources / "ghostty.conf").read_text().splitlines()[0]
+    with subprocess.Popen(
+        shlex.split(command_line.removeprefix("command = ")),
+        env=os.environ | info["LSEnvironment"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    ) as process:
+        stdout, stderr = process.communicate(timeout=10)
+    assert process.returncode == 0, stderr
+    assert stdout.splitlines() == [original_xdg_home or "unset", "dashboard"]
 
 
 @pytest.mark.parametrize(
