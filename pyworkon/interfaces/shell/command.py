@@ -1,9 +1,11 @@
-from collections.abc import Callable, Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import click
 
 from .common import in_shell
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
 
 
 class PyworkonMultiCommand(click.Group):

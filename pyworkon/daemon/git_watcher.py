@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 from typing import TYPE_CHECKING
+lazy import asyncio
+lazy import contextlib
 
-from watchfiles import awatch
+lazy from watchfiles import Change, DefaultFilter, awatch
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -29,8 +29,6 @@ def _project_filter(change: object, path: str) -> bool:
         return True
     if "/.git/" in path:
         return False
-    from watchfiles import Change, DefaultFilter
-
     return DefaultFilter()(Change(change), path)  # type: ignore[arg-type]
 
 

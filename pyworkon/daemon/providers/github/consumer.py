@@ -1,5 +1,5 @@
-import base64
 import logging
+lazy import base64
 
 from clientele import api as clientele_api
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from pyworkon.interfaces.tui.base import BaseApp
-from pyworkon.interfaces.tui.models import ReviewPR, SessionInfo
-from pyworkon.interfaces.tui.widgets import SessionCard, SidebarItem
+lazy from pyworkon.interfaces.tui.models import ReviewPR, SessionInfo
+lazy from pyworkon.interfaces.tui.widgets import SessionCard, SidebarItem
 
 if TYPE_CHECKING:
     from pyworkon.daemon.project_mgr import Project

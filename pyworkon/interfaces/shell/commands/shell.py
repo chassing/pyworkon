@@ -1,13 +1,22 @@
 import shlex
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
+lazy from collections.abc import Iterable
 
 import click
 from fuzzyfinder import fuzzyfinder
 from natsort import natsorted, ns
+lazy from prompt_toolkit import prompt
+lazy from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+lazy from prompt_toolkit.completion import Completer, Completion
+lazy from prompt_toolkit.history import FileHistory
 
 from pyworkon.config import config
 from pyworkon.interfaces.shell import cli, pyworkon_context
 from pyworkon.interfaces.shell.command import PyworkonCommand
+
+if TYPE_CHECKING:
+    from prompt_toolkit.completion import CompleteEvent
+    from prompt_toolkit.document import Document
 
 
 # ruff: file-ignore[complex-structure]
@@ -15,12 +24,6 @@ from pyworkon.interfaces.shell.command import PyworkonCommand
 @click.pass_context
 def shell(ctx: click.Context) -> None:
     """Start an interactive pyworkon shell."""
-    from prompt_toolkit import prompt
-    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-    from prompt_toolkit.completion import CompleteEvent, Completer, Completion
-    from prompt_toolkit.document import Document
-    from prompt_toolkit.history import FileHistory
-
     cli.in_shell = True
     history = FileHistory(config.history_file)
 

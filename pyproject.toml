@@ -27,7 +27,7 @@ dependencies = [
     "textual>=1.0",
     "watchfiles>=1.0",
 ]
-requires-python = ">= 3.14"
+requires-python = ">= 3.15"
 
 [project.urls]
 homepage = "https://github.com/chassing/pyworkon"
@@ -98,7 +98,6 @@ ignore_missing_imports = true
 [tool.ruff]
 src = ["pyworkon"]
 line-length = 88
-target-version = 'py312'
 fix = true
 
 [tool.ruff.lint]
@@ -162,6 +161,7 @@ ignore = [
     "import-private-name",                   # private name import — testing internal filter functions
     "hardcoded-password-func-arg",           # hardcoded password arg — fake credentials in provider tests
     "hardcoded-password-string",             # hardcoded password string — fake credentials in provider tests
+    "pytest-fixture-autouse",
 ]
 "pyworkon/daemon/providers/gitlab/consumer.py" = ["unused-async"]
 "pyworkon/interfaces/shell/commands/*.py" = ["start-process-with-partial-path"]
@@ -176,3 +176,11 @@ known-first-party = ["pyworkon"]
 
 [tool.ruff.lint.flake8-type-checking]
 runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+runtime-evaluated-decorators = [
+    "dataclasses.dataclass",
+    "pydantic.dataclasses.dataclass",
+    "pydantic.validate_call",
+    "clientele.api.APIClient.get",
+    "clientele.api.APIClient.post",
+    "clientele.api.APIClient.delete",
+]

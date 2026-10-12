@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-import contextlib
-import importlib.resources
-import os
-import plistlib
-import shlex
-import shutil
-import stat
-import subprocess
-import sys
 from pathlib import Path
-from tempfile import TemporaryDirectory
+lazy import contextlib
+lazy import importlib.resources
+lazy import os
+lazy import plistlib
+lazy import shlex
+lazy import shutil
+lazy import stat
+lazy import subprocess
+lazy import sys
+lazy from tempfile import TemporaryDirectory
 
-import click
-from rich import print as rich_print
+lazy import click
+lazy from rich import print as rich_print
 
 from pyworkon.interfaces.shell import cli
 

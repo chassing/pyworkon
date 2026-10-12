@@ -4,7 +4,7 @@ from rich import print as rich_print
 from pyworkon.daemon.client import require_daemon
 from pyworkon.daemon.protocol import ResponseType
 from pyworkon.interfaces.shell import cli
-from pyworkon.interfaces.shell.command import PyworkonCommand
+lazy from pyworkon.interfaces.shell.command import PyworkonCommand
 
 
 def project_completion(

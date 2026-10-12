@@ -7,14 +7,14 @@ down/misconfigured relay doesn't spam the daemon log every poll cycle.
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 from typing import TYPE_CHECKING
+lazy import asyncio
+lazy import contextlib
 
-import httpx2
+lazy import httpx2
 
-from pyworkon.interfaces.relay.schema import (
+lazy from pyworkon.interfaces.relay.schema import (
     RelayProjectSummary,
     RelaySessionState,
     RelayStatePayload,

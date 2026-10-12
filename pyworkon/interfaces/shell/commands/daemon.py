@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
-import sys
 from pathlib import Path
+lazy import os
+lazy import shutil
+lazy import subprocess
+lazy import sys
 
 import click
-from rich import print as rich_print
+lazy from rich import print as rich_print
 
-from pyworkon.config import user_cache_dir
-from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
-from pyworkon.daemon.server import PID_FILE, SOCKET_PATH
 from pyworkon.interfaces.shell import cli
+lazy from pyworkon.config import user_cache_dir
+lazy from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
+lazy from pyworkon.daemon.server import PID_FILE, SOCKET_PATH, run_daemon
 
 LAUNCH_AGENT_LABEL = "com.pyworkon.daemon"
 LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
@@ -68,8 +68,6 @@ def start(*, debug: bool, foreground: bool) -> None:
     if _is_running():
         rich_print("[yellow]Daemon is already running.[/]")
         return
-
-    from pyworkon.daemon.server import run_daemon
 
     if debug or foreground:
         run_daemon(debug=debug)

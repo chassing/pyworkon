@@ -1,10 +1,10 @@
-from rich import print as rich_print
-from rich.table import Table
+lazy from rich import print as rich_print
+lazy from rich.table import Table
 
-from pyworkon.config import config
-from pyworkon.daemon.client import require_daemon
-from pyworkon.daemon.protocol import ResponseType
 from pyworkon.interfaces.shell import cli
+lazy from pyworkon.config import config
+lazy from pyworkon.daemon.client import require_daemon
+lazy from pyworkon.daemon.protocol import ResponseType
 
 
 @cli.group()

@@ -1,7 +1,7 @@
-import uvicorn
+lazy import uvicorn
 
-from pyworkon.interfaces.relay.app import create_app
-from pyworkon.interfaces.relay.config import RelaySettings
+lazy from pyworkon.interfaces.relay.app import create_app
+lazy from pyworkon.interfaces.relay.config import RelaySettings
 
 
 def run() -> None:

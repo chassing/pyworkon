@@ -3,17 +3,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Self
 
-from pyworkon.daemon.models import (
-    CICheck,
-    PRInfo,
-    PRReviewStatus,
-    PRState,
-    PRStatus,
-    ReviewPR,
-)
-from pyworkon.daemon.providers.models import Project
+from pyworkon.daemon.models import PRReviewStatus, PRStatus
+lazy from pyworkon.daemon.models import CICheck, PRInfo, PRState, ReviewPR
+lazy from pyworkon.daemon.providers.models import Project
 
-from . import consumer
+lazy from . import consumer
 
 if TYPE_CHECKING:
     from .models import PullRequest, Repository, SearchIssueItem
@@ -33,11 +27,6 @@ _STATUS_PRIORITY: dict[PRStatus, int] = {
     PRStatus.SUCCESS: 1,
     PRStatus.PENDING: 2,
     PRStatus.FAILURE: 3,
-}
-
-_REVIEW_STATE_MAP: dict[str, PRReviewStatus] = {
-    "APPROVED": PRReviewStatus.APPROVED,
-    "CHANGES_REQUESTED": PRReviewStatus.CHANGES_REQUESTED,
 }
 
 
@@ -90,7 +79,7 @@ class GitHubApi:
                 head=f"{head_prefix}:{branch}",
                 state="all",
             )
-        except (ConnectionError, TimeoutError, OSError):
+        except ConnectionError, TimeoutError, OSError:
             log.debug("Failed to fetch PR for %s branch=%s", owner_repo, branch)
             return None
         if not pulls:
@@ -122,7 +111,7 @@ class GitHubApi:
         """Fetch check runs and derive overall status + failed checks."""
         try:
             response = await consumer.check_runs(owner=owner, repo=repo, ref=sha)
-        except (ConnectionError, TimeoutError, OSError):
+        except ConnectionError, TimeoutError, OSError:
             log.debug("Failed to fetch checks for %s/%s ref=%s", owner, repo, sha)
             return PRStatus.NONE, []
 
@@ -152,7 +141,7 @@ class GitHubApi:
             reviews = await consumer.pull_reviews(
                 owner=owner, repo=repo, pull_number=pull_number
             )
-        except (ConnectionError, TimeoutError, OSError):
+        except ConnectionError, TimeoutError, OSError:
             log.debug("Failed to fetch reviews for %s/%s#%d", owner, repo, pull_number)
             return PRReviewStatus.NONE
 
@@ -183,7 +172,7 @@ class GitHubApi:
                 q=f"is:open is:pr review-requested:{self._username}",
                 per_page=100,
             )
-        except (ConnectionError, TimeoutError, OSError):
+        except ConnectionError, TimeoutError, OSError:
             log.debug("Failed to fetch review-requested PRs")
             return {}
 

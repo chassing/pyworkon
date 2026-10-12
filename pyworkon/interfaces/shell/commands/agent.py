@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import contextlib
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
+lazy import contextlib
+lazy import json
+lazy import os
+lazy import subprocess
+lazy import sys
+lazy from pathlib import Path
 
 import click
 
-from pyworkon.daemon.client import require_daemon
 from pyworkon.interfaces.shell import cli
+lazy from pyworkon.daemon.client import require_daemon
 
 _MAX_PROCESS_TREE_HOPS = 5
 _PS_PPID_COMM_FIELD_COUNT = 2

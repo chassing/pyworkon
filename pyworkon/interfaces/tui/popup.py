@@ -7,13 +7,15 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from textual.binding import Binding
 
 from pyworkon.interfaces.tui.base import BaseApp
-from pyworkon.interfaces.tui.models import PlainSession, ReviewPR, SessionInfo
-from pyworkon.interfaces.tui.widgets import SessionCard, SidebarItem
+lazy from pyworkon.interfaces.tui.models import PlainSession
+lazy from pyworkon.interfaces.tui.widgets import SessionCard
 
 if TYPE_CHECKING:
     from textual.events import Key
 
     from pyworkon.daemon.project_mgr import Project
+    from pyworkon.interfaces.tui.models import ReviewPR, SessionInfo
+    from pyworkon.interfaces.tui.widgets import SidebarItem
 
 
 class PopupApp(BaseApp):

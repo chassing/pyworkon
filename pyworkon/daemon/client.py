@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import socket
-import sys
 from typing import TYPE_CHECKING, Self
+lazy import socket
+lazy import sys
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from pyworkon.daemon.project_mgr import Project
 
 from pyworkon.config import user_cache_dir
-from pyworkon.daemon.protocol import (
+lazy from pyworkon.daemon.protocol import (
     AgentClearCommand,
     AgentStatusCommand,
     CloneProjectCommand,
@@ -97,13 +97,13 @@ class DaemonClient:
         """Send a command and yield all responses including progress. Auto-reconnects."""
         try:
             yield from self._do_send(cmd)
-        except (BrokenPipeError, ConnectionError, OSError, DaemonNotRunningError):
+        except BrokenPipeError, ConnectionError, OSError, DaemonNotRunningError:
             if not self._reconnect():
                 yield ErrorResponse(msg="Daemon not running")
                 return
             try:
                 yield from self._do_send(cmd)
-            except (BrokenPipeError, ConnectionError, OSError, DaemonNotRunningError):
+            except BrokenPipeError, ConnectionError, OSError, DaemonNotRunningError:
                 yield ErrorResponse(msg="Daemon not running")
 
     def _do_send(self, cmd: CommandUnion) -> Iterator[ResponseUnion]:

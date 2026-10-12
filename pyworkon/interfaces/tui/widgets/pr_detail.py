@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-import contextlib
 from typing import TYPE_CHECKING, Any
+lazy import contextlib
 
-from rich.spinner import Spinner
-from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Label
+lazy from rich.spinner import Spinner
+lazy from textual.containers import Horizontal
+lazy from textual.widgets import Label
 
 from pyworkon.daemon.models import PRReviewStatus, PRState, PRStatus
 from pyworkon.interfaces.tui import icons
-from pyworkon.interfaces.tui.widgets.pr_link import PRLink
+lazy from pyworkon.interfaces.tui.widgets.pr_link import PRLink
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult

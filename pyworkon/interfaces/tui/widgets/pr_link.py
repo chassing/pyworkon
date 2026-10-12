@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import webbrowser
 from typing import Any
+lazy import webbrowser
 
 from textual.widgets import Label
 

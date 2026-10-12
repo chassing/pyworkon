@@ -1,22 +1,22 @@
-import contextlib
 import json
 import logging
 import os
-import subprocess
 from pathlib import Path
-from subprocess import run
-from urllib.parse import urlparse
+lazy import contextlib
+lazy import subprocess
+lazy from subprocess import run
+lazy from urllib.parse import urlparse
 
-import pybreaker
 from diskcache import Cache
 from pydantic import BaseModel
-from rich import print as rich_print
+lazy import pybreaker
+lazy from rich import print as rich_print
 
 from pyworkon.config import Provider, config
-from pyworkon.daemon.models import PRInfo
-from pyworkon.daemon.providers import get_provider
-from pyworkon.daemon.providers.circuit_breaker import get_breaker
-from pyworkon.utils import run_cmd
+lazy from pyworkon.daemon.models import PRInfo
+lazy from pyworkon.daemon.providers import get_provider
+lazy from pyworkon.daemon.providers.circuit_breaker import get_breaker
+lazy from pyworkon.utils import run_cmd
 
 log = logging.getLogger(__name__)
 

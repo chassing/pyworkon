@@ -1,22 +1,25 @@
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 from pyworkon.config import Provider, ProviderType
 from pyworkon.daemon.providers.circuit_breaker import get_breaker
-from pyworkon.daemon.providers.models import ProviderApi
 from pyworkon.exceptions import UnknownProviderTypeError
+lazy from pyworkon.daemon.providers.models import ProviderApi
 
 from .github import GitHubApi
 from .gitlab import GitLabApi
 
-PROVIDER_MAPPING: dict[ProviderType, type[GitHubApi] | type[GitLabApi]] = {
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
+PROVIDER_MAPPING: dict[ProviderType, type[GitHubApi | GitLabApi]] = {
     ProviderType.github: GitHubApi,
     ProviderType.gitlab: GitLabApi,
 }
 
 
 @asynccontextmanager
-async def get_provider(provider: Provider) -> AsyncIterator[ProviderApi]:
+async def get_provider(provider: Provider) -> AsyncGenerator[ProviderApi]:
     """Get a provider API client wrapped in a circuit breaker.
 
     Raises pybreaker.CircuitBreakerError when the provider is unreachable.

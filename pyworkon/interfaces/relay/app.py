@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import json
-import secrets
 from pathlib import Path
+lazy import secrets
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+lazy from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+lazy from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+lazy from fastapi.staticfiles import StaticFiles
 
-from pyworkon.interfaces.relay.config import RelaySettings
 from pyworkon.interfaces.relay.icons import DASHBOARD_ICONS
-from pyworkon.interfaces.relay.schema import RelayStatePayload
-from pyworkon.interfaces.relay.state import RelayCache
+lazy from pyworkon.interfaces.relay.config import RelaySettings
+lazy from pyworkon.interfaces.relay.schema import RelayStatePayload
+lazy from pyworkon.interfaces.relay.state import RelayCache
 
 STATIC_DIR = Path(__file__).parent / "static"
 FONTS_DIR = STATIC_DIR / "fonts"

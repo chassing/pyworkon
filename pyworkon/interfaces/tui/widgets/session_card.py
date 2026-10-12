@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING, Any
 
 from textual.widget import Widget
 
-from pyworkon.interfaces.tui.widgets.agent_list import AgentList
-from pyworkon.interfaces.tui.widgets.branch_row import BranchRow
-from pyworkon.interfaces.tui.widgets.pr_detail import PRDetail
-from pyworkon.interfaces.tui.widgets.review_request_list import ReviewRequestList
-from pyworkon.interfaces.tui.widgets.session_header import SessionHeader
+lazy from pyworkon.interfaces.tui.widgets.agent_list import AgentList
+lazy from pyworkon.interfaces.tui.widgets.branch_row import BranchRow
+lazy from pyworkon.interfaces.tui.widgets.pr_detail import PRDetail
+lazy from pyworkon.interfaces.tui.widgets.review_request_list import ReviewRequestList
+lazy from pyworkon.interfaces.tui.widgets.session_header import SessionHeader
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult

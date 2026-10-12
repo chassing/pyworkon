@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import importlib.resources
-import os
-from pathlib import Path
 from typing import TYPE_CHECKING
+lazy import importlib.resources
+lazy import os
+lazy from pathlib import Path
 
-import click
+lazy import click
 
 from pyworkon.interfaces.shell import cli
 

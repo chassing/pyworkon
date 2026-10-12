@@ -7,10 +7,13 @@ module-level singleton, so tests can spin up isolated app instances.
 from __future__ import annotations
 
 import logging
-import time
 from typing import TYPE_CHECKING
+lazy import time
 
-from pyworkon.interfaces.relay.schema import RelayBroadcastPayload, RelayStatePayload
+lazy from pyworkon.interfaces.relay.schema import (
+    RelayBroadcastPayload,
+    RelayStatePayload,
+)
 
 if TYPE_CHECKING:
     from fastapi import WebSocket

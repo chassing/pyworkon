@@ -2,28 +2,29 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
-import os
-import subprocess
-import sys
-import time
 from collections.abc import AsyncGenerator, Awaitable
 from typing import ClassVar, Literal
+lazy import asyncio
+lazy import contextlib
+lazy import os
+lazy import subprocess
+lazy import sys
+lazy import time
 
-from pydantic import ValidationError
+lazy from pydantic import ValidationError
 
-from pyworkon.config import Provider, ProviderType, config, user_cache_dir
-from pyworkon.daemon.git_watcher import GitWatcher
-from pyworkon.daemon.models import AgentInfo, OpenProject, ReviewPR
-from pyworkon.daemon.project_mgr import ProjectManager
-from pyworkon.daemon.protocol import (
+from pyworkon.config import user_cache_dir
+from pyworkon.daemon.protocol import CommandType, ResponseUnion
+lazy from pyworkon.config import Provider, ProviderType, config
+lazy from pyworkon.daemon.git_watcher import GitWatcher
+lazy from pyworkon.daemon.models import AgentInfo, OpenProject, ReviewPR
+lazy from pyworkon.daemon.project_mgr import ProjectManager
+lazy from pyworkon.daemon.protocol import (
     AgentClearCommand,
     AgentStatusCommand,
     CloneProjectCommand,
     CloseProjectCommand,
-    CommandType,
     CommandUnion,
     EnterProjectCommand,
     ErrorResponse,
@@ -38,7 +39,6 @@ from pyworkon.daemon.protocol import (
     OpenProjectCommand,
     ProjectResponse,
     ProjectsResponse,
-    ResponseUnion,
     SessionState,
     ShutdownCommand,
     SidebarStatePayload,
@@ -53,19 +53,19 @@ from pyworkon.daemon.protocol import (
     ok,
     progress,
 )
-from pyworkon.daemon.providers import get_provider
-from pyworkon.daemon.providers.circuit_breaker import (
+lazy from pyworkon.daemon.providers import get_provider
+lazy from pyworkon.daemon.providers.circuit_breaker import (
     get_open_providers,
     set_notification_callback,
 )
-from pyworkon.daemon.providers.github import GitHubApi
-from pyworkon.daemon.relay_publisher import RELAY_STALE_MULTIPLIER, RelayPublisher
-from pyworkon.daemon.tmux_mgr import tmux_manager
-from pyworkon.utils import run_cmd
+lazy from pyworkon.daemon.providers.github import GitHubApi
+lazy from pyworkon.daemon.relay_publisher import RELAY_STALE_MULTIPLIER, RelayPublisher
+lazy from pyworkon.daemon.tmux_mgr import tmux_manager
+lazy from pyworkon.utils import run_cmd
 
 log = logging.getLogger(__name__)
 
-AsyncResponseIterator = AsyncGenerator[ResponseUnion, None]
+AsyncResponseIterator = AsyncGenerator[ResponseUnion]
 
 SOCKET_PATH = user_cache_dir / "daemon.sock"
 PID_FILE = user_cache_dir / "daemon.pid"
@@ -150,7 +150,7 @@ class Daemon:
         log.debug("Client connected")
         try:
             await self._process_client(reader, writer)
-        except (ConnectionError, asyncio.IncompleteReadError):
+        except ConnectionError, asyncio.IncompleteReadError:
             pass
         except SystemExit:
             raise

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pyworkon.interfaces.tui.models import ReviewPR, SessionInfo
+lazy from pyworkon.interfaces.tui.models import SessionInfo
 
 if TYPE_CHECKING:
     from pyworkon.daemon.project_mgr import Project
     from pyworkon.daemon.protocol import SidebarStatePayload
+    from pyworkon.interfaces.tui.models import ReviewPR
 
 
 def parse_sidebar_state(

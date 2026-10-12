@@ -1,10 +1,11 @@
-import logging
-import sys
+lazy import logging
+lazy import sys
 
-from rich.logging import RichHandler
+lazy from rich.logging import RichHandler
 
-from pyworkon.config import config, user_cache_dir
-from pyworkon.interfaces import init_cli
+from pyworkon.config import user_cache_dir
+lazy from pyworkon.config import config
+lazy from pyworkon.interfaces import init_cli
 
 _LOG_FILE = user_cache_dir / "pyworkon.log"
 

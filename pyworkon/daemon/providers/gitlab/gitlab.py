@@ -1,16 +1,11 @@
 import logging
 from typing import TYPE_CHECKING, Any, Self
 
-from pyworkon.daemon.models import (
-    CICheck,
-    PRInfo,
-    PRReviewStatus,
-    PRState,
-    PRStatus,
-)
-from pyworkon.daemon.providers.models import Project
+from pyworkon.daemon.models import PRStatus
+lazy from pyworkon.daemon.models import CICheck, PRInfo, PRReviewStatus, PRState
+lazy from pyworkon.daemon.providers.models import Project
 
-from . import consumer
+lazy from . import consumer
 
 if TYPE_CHECKING:
     from .models import Repository
@@ -75,7 +70,7 @@ class GitLabApi:
         """Get MR info for a branch (opened, closed, or merged)."""
         try:
             return await self._find_mr(owner_repo, branch)
-        except (ConnectionError, TimeoutError, OSError):
+        except ConnectionError, TimeoutError, OSError:
             log.debug("Failed to fetch MR for %s branch=%s", owner_repo, branch)
         return None
 
@@ -129,7 +124,7 @@ class GitLabApi:
             approval = await consumer.mr_approval_state(
                 project_id=project_path, merge_request_iid=mr_iid
             )
-        except (ConnectionError, TimeoutError, OSError):
+        except ConnectionError, TimeoutError, OSError:
             log.debug("Failed to fetch approvals for %s!%d", project_path, mr_iid)
             return PRReviewStatus.NONE
 

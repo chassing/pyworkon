@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import asyncio
-import contextlib
-import os
-import shlex
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
+lazy import asyncio
+lazy import contextlib
+lazy import os
+lazy import shlex
+lazy import subprocess
 
-from pyworkon.config import config
-from pyworkon.utils import run_cmd
+lazy from pyworkon.config import config
+lazy from pyworkon.utils import run_cmd
 
 if TYPE_CHECKING:
     from pyworkon.daemon.project_mgr import Project

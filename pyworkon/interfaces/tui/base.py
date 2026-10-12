@@ -167,12 +167,12 @@ class BaseApp(App[None]):
         client = DaemonClient()
         try:
             client.connect()
-        except (DaemonNotRunningError, ConnectionError, OSError):
+        except DaemonNotRunningError, ConnectionError, OSError:
             return
         self._notification_client = client
         try:
             self._consume_events(client)
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             pass
         finally:
             self._notification_client = None

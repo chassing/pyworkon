@@ -1,11 +1,14 @@
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import click
-from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
+lazy from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
 
-from pyworkon.config import Config, config
+from pyworkon.config import config
 from pyworkon.interfaces.shell.command import PyworkonMultiCommand
+
+if TYPE_CHECKING:
+    from pyworkon.config import Config
 
 
 class PyworkonMainCommand(PyworkonMultiCommand):

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from textual.containers import Horizontal
 from textual.widget import Widget
-from textual.widgets import Label
+lazy from textual.containers import Horizontal
+lazy from textual.widgets import Label
 
-from pyworkon.interfaces.tui import icons
+lazy from pyworkon.interfaces.tui import icons
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult

@@ -1,21 +1,20 @@
 from __future__ import annotations
 
 import getpass
-import json
 import pwd
-import shlex
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
+lazy import json
+lazy import shlex
 
-import yaml
 from appdirs import AppDirs
 from pydantic import BaseModel, HttpUrl, field_validator
-from pydantic_settings import (
-    BaseSettings,
-    PydanticBaseSettingsSource,
-    SettingsConfigDict,
-    YamlConfigSettingsSource,
-)
+from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
+lazy import yaml
+
+if TYPE_CHECKING:
+    from pydantic_settings import PydanticBaseSettingsSource
 
 appdirs = AppDirs("pyworkon", "ca-net")
 
