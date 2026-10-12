@@ -107,10 +107,10 @@ def test_submit_replaces_stale_queued_payload() -> None:
 
 
 async def test_post_success_after_failure_logs_only_on_transition(
-    httpx_mock: HTTPXMock, caplog: pytest.LogCaptureFixture
+    httpx2_mock: HTTPXMock, caplog: pytest.LogCaptureFixture
 ) -> None:
-    httpx_mock.add_exception(httpx2.ConnectError("boom"))
-    httpx_mock.add_response(status_code=200)
+    httpx2_mock.add_exception(httpx2.ConnectError("boom"))
+    httpx2_mock.add_response(status_code=200)
     publisher = RelayPublisher(
         base_url="http://relay.example.com", token="t", stale_after_seconds=15
     )
@@ -134,10 +134,10 @@ async def test_post_success_after_failure_logs_only_on_transition(
 
 
 async def test_post_does_not_log_on_repeated_failure(
-    httpx_mock: HTTPXMock, caplog: pytest.LogCaptureFixture
+    httpx2_mock: HTTPXMock, caplog: pytest.LogCaptureFixture
 ) -> None:
-    httpx_mock.add_exception(httpx2.ConnectError("boom"))
-    httpx_mock.add_exception(httpx2.ConnectError("boom"))
+    httpx2_mock.add_exception(httpx2.ConnectError("boom"))
+    httpx2_mock.add_exception(httpx2.ConnectError("boom"))
     publisher = RelayPublisher(
         base_url="http://relay.example.com", token="t", stale_after_seconds=15
     )
@@ -155,8 +155,8 @@ async def test_post_does_not_log_on_repeated_failure(
     await publisher.aclose()
 
 
-async def test_run_drains_queue_and_posts(httpx_mock: HTTPXMock) -> None:
-    httpx_mock.add_response(status_code=200)
+async def test_run_drains_queue_and_posts(httpx2_mock: HTTPXMock) -> None:
+    httpx2_mock.add_response(status_code=200)
     publisher = RelayPublisher(
         base_url="http://relay.example.com", token="t", stale_after_seconds=15
     )
@@ -165,14 +165,14 @@ async def test_run_drains_queue_and_posts(httpx_mock: HTTPXMock) -> None:
 
     run_task = asyncio.create_task(publisher.run())
     for _ in range(100):
-        if httpx_mock.get_requests():
+        if httpx2_mock.get_requests():
             break
         await asyncio.sleep(0.01)
     run_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await run_task
 
-    request = httpx_mock.get_request()
+    request = httpx2_mock.get_request()
     assert request is not None
     assert request.url.path == "/ingest"
     assert request.headers["authorization"] == "Bearer t"
