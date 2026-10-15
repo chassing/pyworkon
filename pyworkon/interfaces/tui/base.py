@@ -363,14 +363,6 @@ class BaseApp(App[None]):
             self._kill_session(item.session_name)
         elif isinstance(item, PlainSession):
             self._kill_session(item.name)
-        else:
-            return
-        self._all_items = [i for i in self._all_items if i is not item]
-        self._filtered_items = [i for i in self._filtered_items if i is not item]
-        self._selected_index = min(
-            self._selected_index, max(0, len(self._filtered_items) - 1)
-        )
-        self._render_items()
 
     def action_escape_key(self) -> None:
         if self._filter_text:

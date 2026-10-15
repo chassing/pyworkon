@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Iterator
+from typing import Self
 from unittest.mock import patch
 
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Label
 
 from pyworkon.daemon.client import DaemonNotRunningError
+from pyworkon.daemon.models import CICheck, PRStatus
 from pyworkon.daemon.project_mgr import Project
 from pyworkon.daemon.protocol import (
     EventResponse,
@@ -204,6 +207,128 @@ async def test_kill_session_does_not_blank_other_sessions_pr() -> None:
             card = app.query_one(SessionCard)
             pr_detail = card.query_one(PRDetail)
             assert pr_detail.title_text == "Fix auth middleware"
+
+
+def _session_state_with_ci_checks(session_name: str) -> SidebarStatePayload:
+    pr = make_pr_info(
+        title="Fix auth middleware",
+        ci_checks=[
+            CICheck(name="lint", status=PRStatus.SUCCESS, url="https://ci/lint"),
+            CICheck(name="test", status=PRStatus.FAILURE, url="https://ci/test"),
+        ],
+    )
+    return SidebarStatePayload(
+        sessions=[
+            SessionState(
+                session_name=session_name,
+                project=Project(id="github/o/repo-a"),
+                branch="feature-a",
+                pr=pr,
+            )
+        ],
+        plain_sessions=[],
+        projects=[],
+        review_prs={},
+    )
+
+
+def _two_session_state() -> SidebarStatePayload:
+    state_a = _session_state_with_ci_checks("session-a")
+    state_b = _make_state("session-b")
+    return SidebarStatePayload(
+        sessions=[*state_a.sessions, *state_b.sessions],
+        plain_sessions=[],
+        projects=[],
+        review_prs={},
+    )
+
+
+class _KillRaceDaemonClient:
+    """Shared fake client: the subscribe worker and the kill RPC share state.
+
+    Mirrors the real daemon's timing (`server.py`'s `_cmd_kill_session`
+    pushes the "state" event *before* replying `ok()` to the RPC), so the
+    background subscribe worker's post-kill state event and the main
+    thread's own post-kill handling genuinely race, the same as against a
+    real daemon over two separate sockets.
+    """
+
+    def __init__(self) -> None:
+        self._post_kill_pushed = threading.Event()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        pass
+
+    def connect(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+    def subscribe(
+        self, events: list[str], *, full: bool = True
+    ) -> Iterator[ResponseUnion]:
+        yield EventResponse(event="state", data=_two_session_state())
+        found = self._post_kill_pushed.wait(timeout=2)
+        assert found, "kill_session() was never called"
+        yield EventResponse(
+            event="state", data=_session_state_with_ci_checks("session-a")
+        )
+
+    def kill_session(self, session_name: str) -> None:
+        self._post_kill_pushed.set()
+
+
+async def test_kill_session_real_daemon_race_preserves_ci_checks() -> None:
+    """End-to-end race: real `_listen_daemon` worker thread vs. the kill action.
+
+    Unlike the synthetic test above (which drives `_apply_new_items`
+    directly on the main thread), this exercises the actual background
+    subscription worker so the daemon's confirmatory post-kill push races
+    `action_kill_session`'s own local rebuild exactly as it does against a
+    real daemon over two sockets.
+    """
+    shared_client = _KillRaceDaemonClient()
+    app = DashboardApp()
+    with patch("pyworkon.interfaces.tui.base.DaemonClient", lambda: shared_client):
+        async with app.run_test() as pilot:
+            for _ in range(200):
+                if len(app._all_items) == 2:
+                    break
+                await asyncio.sleep(0.01)
+            assert len(app._all_items) == 2
+
+            # Let the initial render settle before the sanity check below —
+            # this loop is not what's under test.
+            for _ in range(50):
+                await pilot.pause()
+                await asyncio.sleep(0.01)
+
+            session_a_index = next(
+                i
+                for i, item in enumerate(app._filtered_items)
+                if getattr(item, "session_name", None) == "session-a"
+            )
+            session_b_index = next(
+                i
+                for i, item in enumerate(app._filtered_items)
+                if getattr(item, "session_name", None) == "session-b"
+            )
+            card = app.query(SessionCard)[session_a_index]
+            pr_detail = card.query_one(PRDetail)
+            assert len(pr_detail.query(".--ci-check-row")) == 2
+
+            app._selected_index = session_b_index
+            await app.action_kill_session()
+            await pilot.pause()
+
+            card = app.query_one(SessionCard)
+            pr_detail = card.query_one(PRDetail)
+            assert pr_detail.title_text == "Fix auth middleware"
+            assert len(pr_detail.query(".--ci-check-row")) == 2
 
 
 async def test_listen_daemon_reconnects_after_daemon_restart() -> None:
