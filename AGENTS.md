@@ -239,7 +239,7 @@ The plugin must not run in the shared background server: only the CLI has a reli
 
 Runtime Solid imports must stay in `tui.ts`, where OpenCode resolves them to its shared runtime. Pass `createEffect` and `createRoot` into `watchAgent`; `status.ts` uses only type imports from `solid-js`. Importing Solid at runtime from the helper fails in the compiled OpenCode executable even when ordinary Bun tests pass. `loading.test.ts` tests the installed files against a compiled host without local `node_modules`, including host-signal reactivity and cleanup (ad-hoc signing the temporary host on macOS).
 
-Run `make opencode-check` for frozen Bun dependency installation, strict TypeScript checking (including dependencies), and Bun tests. `make ci` includes these checks; Bun is a development requirement, not a Python runtime dependency.
+Run `make opencode-check` for frozen Bun dependency installation, strict TypeScript checking (including dependencies), and Bun tests. This is separate from `make test` (which covers lint/format-check/typecheck/pytest for the Python side only); Bun is a development requirement, not a Python runtime dependency.
 
 ### Bundled Agent Skills
 
@@ -273,12 +273,12 @@ Agent status is set via CLI hooks as plain strings (`idle`, `working`, `waiting`
 uv run pytest                              # run all tests
 uv run pytest --cov=pyworkon               # with coverage
 uv run pytest tests/test_widgets.py -v     # single file
-make test                                  # via Makefile
-make ci                                    # lint + typecheck + tests
+make test                                  # lint + format-check + typecheck + full pytest suite
 ```
 
 **Rules:**
 
+- ALWAYS run `make test` (lint + format-check + typecheck + the full pytest suite) before committing any change — not just the tests for the files touched. No exceptions.
 - ALWAYS use pytest functions, never class-based tests
 - Use `@pytest.fixture` for reusable test data and dependencies
 - Use `@pytest.mark.parametrize` for testing with different inputs

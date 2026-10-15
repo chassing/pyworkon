@@ -16,7 +16,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --python ${{ matrix.python-version }}
-      - run: uv run ruff check
-      - run: uv run ruff format --check
-      - run: uv run mypy pyworkon/
-      - run: uv run pytest --cov=pyworkon --cov-report=term-missing
+      - run: make test
