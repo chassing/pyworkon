@@ -16,10 +16,10 @@ def configure(base_url: str, token: str) -> None:
         config=clientele_api.BaseConfig(
             base_url=base_url,
             headers={"Authorization": f"Bearer {token}"},
-            # Kept short: the circuit breaker (fail_max=3) needs 3 hung
-            # requests to trip, so a long timeout multiplies how long PR
-            # data stays blank for every open project on a network hiccup.
-            timeout=10.0,
+            # Self-hosted instances with many membership projects can
+            # legitimately take longer than a few seconds to page through
+            # list_projects, even with the lightweight simple=true payload.
+            timeout=60.0,
         )
     )
 
@@ -32,6 +32,7 @@ async def list_projects(
     page: int = 1,
     per_page: int = 100,
     order_by: str = "updated_at",
+    simple: bool = True,
 ) -> list[Repository]:
     """Get all user projects."""
     return result
