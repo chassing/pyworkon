@@ -1,7 +1,7 @@
 # Relay-only image (pyworkon/interfaces/relay/). Never imports pyworkon.config (which does
 # pwd.getpwnam()/mkdir() at import time), so this is safe to run as an
 # arbitrary non-root UID, e.g. under an OpenShift `restricted` SCC.
-FROM python:3.14-slim
+FROM python:3.15-slim
 COPY --from=ghcr.io/astral-sh/uv:0.12.5@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
