@@ -45,12 +45,6 @@ if TYPE_CHECKING:
 
 STATIC_DIR = Path(__file__).parent / "static"
 _RECONNECT_DELAY_SECS = 1.0
-# Swallows a screen-change notification caused by our own Dock-autohide
-# toggle (see `_watch_screen_changes()`) -- long enough to comfortably cover
-# a `recompute_and_apply_layout()` cycle's own `osascript` calls and
-# `evaluate_js()` round trips, short enough that a genuinely new external
-# event (monitor connect/disconnect) shortly after is never mistaken for one.
-_SCREEN_CHANGE_DEBOUNCE_SECONDS = 1.5
 _ICONS_PLACEHOLDER = "/*__PYWORKON_ICONS__*/"
 _FONT_PLACEHOLDER = "__PYWORKON_FONT_BASE64__"
 _IS_POPUP_PLACEHOLDER = "__PYWORKON_IS_POPUP__"
@@ -282,28 +276,44 @@ def _watch_screen_changes(bridge: StripBridge) -> None:
     fires for** -- `recompute_and_apply_layout()` can toggle the real Dock
     auto-hide setting up to twice per call (restore the user's original
     value, then re-apply the override for "full_width"), and each real
-    toggle changes `visibleFrame`, posting *another* notification. Without
-    debouncing, a single external event (e.g. a laptop with no external
-    monitor, permanently landing on "full_width" on every recompute) can
-    snowball into a runaway, self-sustaining stream of recomputes -- a
-    bounded simulation showed six still pending after five cycles, with no
-    sign of settling. `_on_screen_change` runs synchronously on the main
-    thread (see above), so this plain closure variable needs no extra
-    locking of its own.
+    toggle changes `visibleFrame`, posting *another* notification. An earlier
+    version suppressed any notification arriving within a fixed time window
+    of the last one -- that's wrong in both directions: a slow recompute
+    (e.g. a sluggish `osascript` call) can let its own self-generated
+    notification land *outside* the window, restarting the whole cycle; and a
+    genuinely new external event landing *inside* the window (two real
+    changes in quick succession, e.g. swapping which external monitor is
+    plugged in) was silently dropped with no trailing recompute, leaving the
+    strip's geometry stale until some unrelated third event happened to come
+    along. A `busy`/`pending` pair fixes both, independent of timing: while a
+    recompute is in flight, *any* further notification (self-generated or
+    real) only sets `pending` instead of starting a second thread; once the
+    in-flight recompute returns, it immediately loops and runs exactly one
+    more time if `pending` was set, then stops -- coalescing however many
+    notifications arrived during the run into a single trailing recompute
+    that reflects the latest state, rather than dropping them. `_on_screen_
+    change` runs synchronously on the main thread (see above) but `_run_
+    recompute` doesn't, so the shared state is a dict guarded by `lock`.
     """
-    last_handled = 0.0
+    lock = threading.Lock()
+    state = {"busy": False, "pending": False}
+
+    def _run_recompute() -> None:
+        while True:
+            bridge.recompute_and_apply_layout(full_width_height=STRIP_HEIGHT)
+            with lock:
+                if not state["pending"]:
+                    state["busy"] = False
+                    return
+                state["pending"] = False
 
     def _on_screen_change(_notification: object) -> None:
-        nonlocal last_handled
-        now = time.monotonic()
-        if now - last_handled < _SCREEN_CHANGE_DEBOUNCE_SECONDS:
-            return
-        last_handled = now
-        threading.Thread(
-            target=bridge.recompute_and_apply_layout,
-            kwargs={"full_width_height": STRIP_HEIGHT},
-            daemon=True,
-        ).start()
+        with lock:
+            if state["busy"]:
+                state["pending"] = True
+                return
+            state["busy"] = True
+        threading.Thread(target=_run_recompute, kwargs={}, daemon=True).start()
 
     AppKit.NSNotificationCenter.defaultCenter().addObserverForName_object_queue_usingBlock_(
         "NSApplicationDidChangeScreenParametersNotification",

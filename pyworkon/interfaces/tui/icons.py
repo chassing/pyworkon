@@ -24,7 +24,7 @@ ICON_GITLAB = ""  # (nf-fa-gitlab)
 # Agent status icons (single-width Nerd Font)
 AGENT_IDLE = ""  #  (nf-fa-moon_o)
 AGENT_WORKING_SPINNER = "dots"
-AGENT_WAITING = ""  #  (nf-fa-clock_o)
+AGENT_WAITING = ""  #  (nf-fa-question_circle_o)
 
 # Branch status icons (with Rich markup)
 BRANCH_DIRTY = "[yellow][/]"  #  (nf-fa-pencil)

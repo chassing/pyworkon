@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 from unittest.mock import MagicMock
+
+import pytest
 
 from pyworkon.interfaces.relay.icons import DASHBOARD_ICONS
 from pyworkon.interfaces.strip import app as app_module
 from pyworkon.interfaces.strip.app import _build_windows, _render_strip_html
 from pyworkon.interfaces.strip.dock_geometry import StripLayout
 from pyworkon.interfaces.strip.native import POPUP_MAX_WIDTH, POPUP_MIN_WIDTH
-
-if TYPE_CHECKING:
-    import pytest
 
 
 @dataclass
@@ -192,7 +191,28 @@ def _get_on_screen_change(fake_appkit: MagicMock) -> object:
     return block
 
 
-def test_watch_screen_changes_debounces_rapid_self_triggered_notifications(
+def _bind_watch_screen_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[object, MagicMock]:
+    # macOS-only -- absent on Linux CI, where `pywebview` installs without its
+    # Cocoa backend deps. `app.py` imports `AppKit` lazily, so merely importing
+    # this module doesn't fail -- but `monkeypatch.setattr(app_module,
+    # "AppKit", fake_appkit)` below does a `getattr` first (to record the
+    # value to restore later), which *forces* that lazy import to resolve.
+    # Skip up front instead of failing with `ModuleNotFoundError`, matching
+    # `tests/test_strip_dock_geometry.py`'s module-level guard -- scoped to
+    # just this test since every other test in this file is AppKit-free.
+    pytest.importorskip("AppKit")
+    _FakeThread.instances = []
+    fake_appkit = MagicMock()
+    monkeypatch.setattr(app_module, "AppKit", fake_appkit)
+    monkeypatch.setattr(app_module, "threading", MagicMock(Thread=_FakeThread))
+    bridge = MagicMock()
+    app_module._watch_screen_changes(bridge)
+    return _get_on_screen_change(fake_appkit), bridge
+
+
+def test_watch_screen_changes_suppresses_notifications_while_a_recompute_is_in_flight(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A recompute's own Dock-autohide toggle must not restart the cycle.
@@ -201,32 +221,63 @@ def test_watch_screen_changes_debounces_rapid_self_triggered_notifications(
     itself fires `NSApplicationDidChangeScreenParametersNotification` --
     `bridge.py`'s `recompute_and_apply_layout()` toggles the Dock up to twice
     per call (restore, then re-apply for "full_width"), and without
-    debouncing, a bounded simulation showed this snowballs into a runaway,
+    suppression, a bounded simulation showed this snowballs into a runaway,
     self-sustaining stream of recomputes (six still pending after five
-    cycles) from a single external event.
+    cycles) from a single external event. No clock mocking here, unlike an
+    earlier time-window-based version of this suppression -- a slow
+    recompute must stay suppressed for as long as it's actually running, not
+    just for a fixed duration that a sluggish `osascript` call could outlast.
     """
-    _FakeThread.instances = []
-    fake_appkit = MagicMock()
-    monkeypatch.setattr(app_module, "AppKit", fake_appkit)
-    monkeypatch.setattr(app_module, "threading", MagicMock(Thread=_FakeThread))
-    clock = {"now": 1000.0}
-    monkeypatch.setattr(app_module.time, "monotonic", lambda: clock["now"])
-    bridge = MagicMock()
-
-    app_module._watch_screen_changes(bridge)
-    on_screen_change = _get_on_screen_change(fake_appkit)
+    on_screen_change, bridge = _bind_watch_screen_changes(monkeypatch)
 
     on_screen_change(None)
     assert len(_FakeThread.instances) == 1
 
-    # A self-generated notification (from this cycle's own Dock toggle)
-    # arrives almost immediately afterward -- must not schedule another.
-    clock["now"] += 0.05
+    # Arrives while the first recompute is still "in flight" (its thread was
+    # scheduled but hasn't been run yet) -- must not schedule a second one,
+    # regardless of how much time this takes.
     on_screen_change(None)
     assert len(_FakeThread.instances) == 1
+    assert bridge.recompute_and_apply_layout.call_count == 0
 
-    # A genuinely new external event, well after the debounce window, must
-    # still be handled.
-    clock["now"] += app_module._SCREEN_CHANGE_DEBOUNCE_SECONDS + 0.1
+
+def test_watch_screen_changes_coalesces_a_pending_notification_into_one_trailing_recompute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A notification that arrives mid-recompute must not be dropped.
+
+    Regression test: a time-window-based version of this suppression simply
+    discarded any notification arriving within the window, with no trailing
+    recompute afterward -- a genuinely new external event in quick succession
+    (e.g. swapping which external monitor is plugged in) left the strip on
+    stale geometry indefinitely, since nothing scheduled a follow-up. Whether
+    the coalesced notification was self-generated or a real second change,
+    exactly one trailing recompute must run once the in-flight one finishes.
+    """
+    on_screen_change, bridge = _bind_watch_screen_changes(monkeypatch)
+
     on_screen_change(None)
+    on_screen_change(None)  # coalesced instead of dropped -- see above
+    assert len(_FakeThread.instances) == 1
+
+    # Simulate the background thread actually running its target.
+    instance = _FakeThread.instances[0]
+    instance.target(**instance.kwargs)
+
+    assert bridge.recompute_and_apply_layout.call_count == 2
+
+
+def test_watch_screen_changes_handles_a_fresh_notification_after_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Once a recompute cycle fully settles, a later notification starts a new one."""
+    on_screen_change, bridge = _bind_watch_screen_changes(monkeypatch)
+
+    on_screen_change(None)
+    instance = _FakeThread.instances[0]
+    instance.target(**instance.kwargs)  # settles: nothing was pending
+    assert bridge.recompute_and_apply_layout.call_count == 1
+
+    on_screen_change(None)
+
     assert len(_FakeThread.instances) == 2

@@ -1,15 +1,21 @@
 pyworkon-icons.woff2 is a subset of "Symbols Nerd Font" (SymbolsNerdFont-Regular.ttf)
 from the Nerd Fonts project (https://github.com/ryanoasis/nerd-fonts), containing only
 the glyphs used by the pyworkon relay dashboard (nf-pl-branch, nf-dev-git_pull_request,
-nf-fa-github, nf-fa-gitlab, nf-fa-moon_o, nf-fa-clock_o, nf-fa-pencil, nf-fa-eye,
-nf-fa-cog) — the same codepoints as pyworkon/interfaces/tui/icons.py.
+nf-fa-github, nf-fa-gitlab, nf-fa-moon_o, nf-fa-question_circle_o, nf-fa-pencil,
+nf-fa-eye, nf-fa-cog) — the same codepoints as pyworkon/interfaces/tui/icons.py.
 
 Regenerate with (requires `fonttools[woff]` + `brotli`):
   pyftsubset SymbolsNerdFont-Regular.ttf \
-    --unicodes=E0A0,E726,F09B,F296,F186,F017,F040,F06E,F013 \
+    --unicodes=E0A0,E726,F09B,F296,F186,F29C,F040,F06E,F013 \
     --output-file=pyworkon-icons.woff2 --flavor=woff2 \
     --no-layout-closure --glyph-names --symbol-cmap --legacy-cmap \
     --notdef-glyph --notdef-outline --recommended-glyphs
+
+Note: the Private Use Area icon glyphs (shape + advance width) are identical
+across every Nerd Fonts-patched font family, not just "Symbols Nerd Font" --
+any locally installed "*NerdFontMono-Regular.ttf" (the fixed-width-icon
+variant, not the proportional "NerdFont" one) works equally well as the
+subsetting source if the Symbols-only release isn't on hand.
 
 ---
 

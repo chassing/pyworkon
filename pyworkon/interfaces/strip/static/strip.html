@@ -9,15 +9,19 @@
     font-display: swap;
   }
   :root {
-    --strip-radius: 14px;
-    --bg: rgba(20, 22, 26, 0.6);
-    --card: #1d2026;
-    --border: #2a2e36;
-    --text: #d8dbe2;
-    --dim: #96a0b3;
-    --green: #4caf7d;
-    --red: #e0616f;
-    --yellow: #d9b35c;
+    --strip-radius: 16px;
+    --bg: #1b1f22eb;
+    --card: #20252afc;
+    --border: #ffffff1d;
+    --line: #ffffff12;
+    --chip-bg: #ffffff03;
+    --chip-border: #ffffff09;
+    --strip-border: #ffffff17;
+    --text: #e9ebef;
+    --dim: #929ba9;
+    --green: #8cc9a5;
+    --red: #f09a9e;
+    --yellow: #e9bd75;
     --purple: #b18cf2;
     --accent: #e0af68;
     --cyan: #56c2e6;
@@ -31,7 +35,7 @@
     width: 100%;
     background: transparent;
     overflow: hidden;
-    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     color: var(--text);
     user-select: none;
   }
@@ -79,8 +83,16 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
-    height: 100%;
+    /* A few px of transparent breathing room below the bar itself -- the
+       real macOS Dock's icons float a visible gap above the screen's bottom
+       edge even when not auto-hidden, but our visible chip bar (unlike the
+       Dock's bare icons) has its own solid background/border filling its
+       whole native window, so without this it reads as flush against the
+       screen edge while the Dock next to it visibly isn't. Purely cosmetic:
+       the native window itself (and therefore click/hover rects) is
+       unaffected, since this only shrinks the *visible* box within it. */
+    bottom: 2px;
+    height: calc(100% - 2px);
     display: flex;
     flex-direction: row;
     /* A chip's own natural (un-stretched) height is usually well under the
@@ -97,10 +109,12 @@
        sits flush against the chip regardless of how the chip is aligned
        within the (possibly taller) strip. */
     align-items: center;
-    gap: 8px;
-    padding: 0 10px;
+    gap: 7px;
+    padding: 0 12px;
     background: var(--bg);
+    border: 1px solid var(--strip-border);
     border-radius: var(--strip-radius);
+    box-shadow: 0 12px 40px #0005, inset 0 1px #ffffff03;
     overflow-x: auto;
     overflow-y: hidden;
     white-space: nowrap;
@@ -110,37 +124,54 @@
     padding: 0 4px;
   }
   .chip {
+    position: relative;
     display: inline-flex;
     flex-direction: row;
-    align-items: stretch;
+    align-items: center;
     gap: 8px;
-    padding: 12px 10px 12px 12px;
-    border-radius: 8px;
-    background: rgba(29, 32, 38, 0.9);
-    border-left: 3px solid var(--green);
+    padding: 8px 12px;
+    /* Fixed regardless of content -- a plain-session chip only ever has one
+       line of text (no branch row), which would otherwise render visibly
+       shorter than every other chip. Tuned to match a two-line chip's
+       natural height (name + branch, with the gap between them). */
+    min-height: 56px;
+    border-radius: 9px;
+    background: var(--chip-bg);
+    border: 1px solid var(--chip-border);
     cursor: pointer;
     min-width: 110px;
     max-width: 260px;
     flex: none;
   }
-  .chip:hover { background: rgba(42, 46, 54, 0.95); }
-  .chip.--attention { border-left-color: var(--red); background: rgba(176, 32, 44, 0.5); }
-  .chip.--attention:hover { background: rgba(196, 40, 54, 0.6); }
-  .chip.--pending { border-left-color: var(--yellow); background: rgba(120, 95, 20, 0.28); }
-  .chip.--pending:hover { background: rgba(135, 107, 24, 0.38); }
-  .chip.--plain { border-left-color: var(--dim); opacity: 0.75; }
-
-  /* An AI agent waiting on input is the one "attention" case that gets a
-     blink on top of the red background -- a PR failure alone doesn't blink,
-     since it's not time-sensitive the way a blocked agent is. Pulses the
-     background color itself (not the chip's overall opacity), so text/icons
-     stay fully legible throughout. */
+  .chip:hover { background: #ffffff09; border-color: #b7c6db45; }
+  .chip.--pending { background: #d6ac6410; border-color: #e9bd7525; }
+  .chip.--attention { background: #d17c8110; border-color: #f09a9e35; }
+  /* A blocked agent is the one "attention" case that gets a blink on top of
+     the shared tint -- a PR failure alone doesn't blink, since it's not
+     time-sensitive the way a blocked agent is. Pulses background/border color
+     (not the chip's overall opacity), so text/icons stay fully legible. */
   @keyframes chip-agent-waiting-blink {
-    0%, 100% { background-color: rgba(176, 32, 44, 0.5); }
-    50% { background-color: rgba(206, 44, 58, 0.72); }
+    0%, 100% { background-color: #d17c8118; border-color: #f09a9e65; }
+    50% { background-color: #d17c8145; border-color: #f09a9e95; }
   }
   .chip.--agent-waiting {
+    box-shadow: inset 0 1px #ffffff05;
     animation: chip-agent-waiting-blink 3s ease-in-out infinite;
+  }
+  .chip.--plain { opacity: 0.85; }
+
+  /* One small dot in the chip's corner marks the one state that's actually
+     time-sensitive (an agent blocked on input) -- distinct from the shared
+     "attention" background tint a PR failure alone also gets. */
+  .attention-dot {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 8px #f09a9e30;
   }
   .chip-main {
     display: flex;
@@ -152,15 +183,17 @@
   }
   .chip-name {
     font-weight: 600;
-    font-size: 14.5px;
+    font-size: 15px;
+    letter-spacing: -0.1px;
     color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .chip.--plain .chip-name { color: #a5adb7; }
   .chip-sub {
-    font-size: 12px;
-    color: var(--dim);
+    font-size: 13px;
+    color: #919ba6;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -175,6 +208,7 @@
     flex: none;
   }
   .badge.--draft { background: rgba(255, 255, 255, 0.08); color: var(--dim); }
+  .badge.--merged { background: #b18cf222; color: var(--purple); }
 
   /* Chip status icon: ONE combined indicator per chip for both AI agent
      status and PR/MR CI check status -- a dedicated column spanning the
@@ -185,13 +219,13 @@
     align-items: center;
     justify-content: center;
     flex: none;
-    width: 24px;
-    font-size: 20px;
+    width: 26px;
+    font-size: 24px;
   }
-  .chip-status.status-busy { color: var(--green); }
-  .chip-status.status-waiting { color: var(--yellow); }
+  .chip-status.status-busy { color: var(--yellow); }
+  .chip-status.status-waiting { color: var(--red); }
   .chip-status.status-failed { color: var(--red); }
-  .chip-status.status-idle { color: var(--dim); }
+  .chip-status.status-idle { color: #788492; font-size: 16px; }
 
   /* --- Hover popup (full detail) --- */
   #popup {
@@ -204,9 +238,9 @@
     overflow-y: auto;
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: var(--strip-radius);
-    padding: 0.9rem 1rem;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+    border-radius: 13px;
+    padding: 17px 19px 13px;
+    box-shadow: 0 18px 50px #0006, 0 2px 8px #0004;
     z-index: 1000;
     user-select: text;
   }
@@ -228,19 +262,29 @@
     flex: 1;
   }
   .header .name {
-    font-weight: 600;
+    font-weight: 620;
+    font-size: 16px;
+    letter-spacing: -0.2px;
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .header-icons { display: flex; align-items: center; gap: 6px; flex: none; }
-  .provider-icon { color: var(--dim); }
-  .repo-link { color: var(--dim); }
+  .header-icons { display: flex; align-items: center; gap: 10px; flex: none; color: #818c9a; }
+  .provider-icon { color: #818c9a; }
+  .repo-link { color: #818c9a; }
   .repo-link:hover { color: var(--accent); }
   .dim { color: var(--dim); }
-  .branch-icon { color: var(--cyan); }
+  .branch-icon { color: #859aab; }
+  .section-label {
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 650;
+    color: #83909e;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
   /* `min-width: 0` overrides the flex item default of `min-width: auto`,
      which otherwise means "never shrink below this content's unwrapped
      width" -- for a long, hyphen-heavy identifier (a branch/check name with
@@ -250,27 +294,60 @@
      line the way shorter text naturally does. `overflow-wrap: anywhere` is
      a defensive fallback for the rare case where even a single "word" (no
      hyphen/space break opportunity at all) is still too long on its own. */
-  .branch-name { color: var(--dim); min-width: 0; overflow-wrap: anywhere; }
+  .branch-name { color: #b7c1ce; min-width: 0; overflow-wrap: anywhere; line-height: 1.65; }
   .dirty-icon { color: var(--yellow); }
-  .branch-block { padding-top: 0.3rem; border-top: 1px solid var(--border); }
-  .pr-block { padding: 0.3rem 0 0 0.1rem; border-top: 1px solid var(--border); }
-  .pr-icon { color: var(--accent); }
-  .pr-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; color: var(--dim); }
+  /* No divider above Branch -- it directly follows the header. PR/Checks
+     below it each get their own `.section` divider instead. */
+  .branch-block { padding-top: 0; border-top: none; }
+  .branch-block .section-label { margin-bottom: 6px; }
+  /* Shared section-divider look for Pull Request / Checks -- deliberately
+     sets only `border-top`/`padding-top`, never `margin-top`: the inter-block
+     gap itself comes from `#popup > * + * { margin-top: 0.5rem; }` above,
+     whose `#popup`-rooted selector outranks a plain `.section` margin-top
+     would, which would otherwise silently lose that fight. */
+  .section { border-top: 1px solid var(--line); padding-top: 14px; }
+  .section-heading { display: flex; justify-content: space-between; align-items: center; }
+  .pr-link { color: #b0c5e8; font-size: 14px; }
+  .pr-link .icon { font-size: 13px; }
+  .pr-title { overflow-wrap: anywhere; min-width: 0; color: #e1e5eb; font-size: 16px; line-height: 1.6; margin: 8px 0 9px; }
   .pr-title.draft { opacity: 0.6; }
-  /* Covers every clickable link in the popup (PR link, review-request links,
-     and *any* CI check with a url -- not just failed ones, which previously
-     were the only `.ci-check-*` class with `cursor: pointer` of its own). */
+  .review { font-size: 13px; color: #9ca8b5; display: flex; align-items: center; gap: 6px; }
+  .separator { margin: 0 3px; color: #66717e; }
+  /* Covers every clickable link in the popup: PR link, review-request links,
+     and any CI check row with a url, regardless of its status. */
   [data-url] { cursor: pointer; }
   .link-accent { color: var(--accent); text-decoration: underline; }
-  .ci-check { font-size: 0.85rem; padding-left: 2.6rem; }
-  /* Same flex `min-width: auto` overflow issue as `.branch-name` above --
-     without this, a long check name (e.g. "Red Hat Konflux / automated
-     -actions-main-enterprise-contract / automated-actions-cli-main")
-     overflows straight past the popup's edge instead of wrapping. */
-  .ci-check-name { min-width: 0; overflow-wrap: anywhere; }
-  .ci-check-success { color: var(--green); }
-  .ci-check-failure { color: var(--red); text-decoration: underline; }
-  .ci-check-pending { color: var(--yellow); }
+  /* Small context text to the right of a section label -- the CI provider
+     name next to "Checks" ("Red Hat Konflux"), the agent count next to "AI". */
+  .section-context { font-size: 13px; color: #7e8b98; }
+  .check-overview { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; color: #788694; }
+  .check-count-failure { color: var(--red); }
+  .check-count-pending { color: var(--yellow); }
+  .check-count-passed { color: var(--green); background: #8cc9a511; padding: 2px 7px; border-radius: 5px; }
+  .check-sep { color: #66717e; }
+  .check-rows { margin-top: 6px; }
+  .check-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 5px 0; border-top: 1px solid #ffffff06; font-size: 13px; }
+  .check-row:first-child { border-top: 0; }
+  .check-icon { color: var(--red); flex: none; }
+  .check-icon.icon { font-size: 0.85em; }
+  .check-name { flex: 1; min-width: 0; color: #b6c1cc; line-height: 1.45; overflow-wrap: anywhere; }
+  .check-state { font-size: 12px; color: #bc8b93; white-space: nowrap; flex: none; }
+  .check-state.pending { color: #b8a27b; }
+  .check-external { color: #687583; flex: none; font-size: 0.85em; }
+  details { margin-top: 9px; }
+  summary { display: flex; align-items: center; gap: 7px; cursor: pointer; list-style: none; font-size: 13px; color: #8f9ca9; padding: 4px 0; }
+  summary::-webkit-details-marker { display: none; }
+  /* A divider between the shown failed/pending rows and the collapsed
+     successful-checks list -- omitted when the success list follows the
+     summary directly with no rows above it (nothing to divide). */
+  .check-rows + .check-list { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .chevron { color: #6e7b89; font-size: 14px; margin-left: auto; transition: transform 0.15s ease; }
+  details[open] .chevron { transform: rotate(90deg); }
+  /* No `max-height`/`overflow-y` of its own -- `#popup` is already the one
+     scroll container for the whole card. A second nested scrollbar here
+     produced two visible scrollbars at once when expanded. */
+  .check-list { padding: 6px 0 0 20px; color: #9faab7; font-size: 13px; }
+  .check-list div { padding: 3px 0; overflow-wrap: anywhere; }
   .state-open { color: var(--green); }
   .state-closed { color: var(--red); }
   .state-merged { color: var(--purple); }
@@ -282,13 +359,36 @@
   .review-pending { color: var(--yellow); }
   .reviews-block { padding-top: 0.3rem; border-top: 1px solid var(--border); }
   .review-header-icon { color: var(--yellow); }
-  .review-title { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .agents-block { padding-top: 0.3rem; border-top: 1px solid var(--border); }
+  .review-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .agent-icon { color: var(--magenta); }
   .agent-name { color: var(--dim); }
-  .agent-working { color: var(--green); }
-  .agent-idle { color: var(--dim); }
-  .agent-waiting { color: var(--yellow); }
+  .agent-row-working { color: var(--yellow); }
+  .agent-row-idle { color: #788492; }
+  .agent-row-waiting { color: var(--red); }
+  /* Only the row that actually needs the user's attention gets a tint --
+     working/idle rows stay quiet, the same "reserve color for what matters"
+     rule the chips themselves follow. Negative horizontal margin keeps the
+     row's own text flush with its siblings despite the added padding. */
+  .agent-row--waiting {
+    background: #d17c8110;
+    border-radius: 6px;
+    margin: 0 -6px;
+    padding: 0.15rem 6px;
+  }
+  .agent-row-status { display: flex; align-items: center; gap: 5px; font-size: 13px; white-space: nowrap; }
+  /* The Nerd Font glyphs (question-circle, moon) read noticeably smaller
+     than their bounding box suggests at plain text size -- bumped up on
+     their own, independent of the status text next to them. */
+  .agent-row-status-icon { font-size: 18px; }
+  .popup-footer {
+    padding-top: 11px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #7e8b98;
+    font-size: 12px;
+  }
 
   /* --- Popup window mode: the hover-detail popup is a separate, fixed-size
      native window (see native.py's `prepare_popup_window()`), not part of
@@ -397,7 +497,7 @@ const POPUP_MAX_WIDTH = Number("__PYWORKON_POPUP_MAX_WIDTH__");
 // `width: max-content`'s own reported `scrollWidth` doesn't reliably
 // round-trip: re-applying that *exact* integer as a plain pixel `width` can
 // still wrap a deeply-nested line (confirmed empirically in isolation --
-// `#popup > .pr-block > .row.ci-check > .ci-check-name` wrapped at
+// `#popup > .checks-block > .check-rows > .check-row > .check-name` wrapped at
 // `scrollWidth`'s own reported value, and needed +4px, not +0, to stop;
 // WebKit's intrinsic-sizing pass and its real layout pass disagree by a
 // couple of sub-pixel-rounding steps once nested this many flex levels deep).
@@ -525,7 +625,8 @@ function renderChipStatus(session) {
 
 function renderChip(session) {
   const status = chipAttentionLevel(session);
-  const waitingClass = chipIsAgentWaiting(session) ? " --agent-waiting" : "";
+  const waiting = chipIsAgentWaiting(session);
+  const waitingClass = waiting ? " --agent-waiting" : "";
   return `
     <div class="chip --${status}${waitingClass}" data-session="${escapeHtml(session.session_name)}">
       <div class="chip-main">
@@ -536,6 +637,7 @@ function renderChip(session) {
         </div>
       </div>
       ${renderChipStatus(session)}
+      ${waiting ? `<span class="attention-dot"></span>` : ""}
     </div>
   `;
 }
@@ -555,9 +657,12 @@ function renderPlainChip(name) {
 function renderBranch(session) {
   if (!session.branch) return "";
   return `
-    <div class="row branch-block">
-      <span class="row-left"><span class="${iconClass("branch", "branch-icon")}">${ICONS.branch}</span><span class="branch-name">${escapeHtml(session.branch)}</span></span>
-      <span class="${iconClass("dirty", "dirty-icon")}">${session.is_dirty ? ICONS.dirty : ""}</span>
+    <div class="branch-block">
+      <div class="section-label">Branch</div>
+      <div class="row">
+        <span class="row-left"><span class="${iconClass("branch", "branch-icon")}">${ICONS.branch}</span><span class="branch-name">${escapeHtml(session.branch)}</span></span>
+        <span class="${iconClass("dirty", "dirty-icon")}">${session.is_dirty ? ICONS.dirty : ""}</span>
+      </div>
     </div>
   `;
 }
@@ -567,57 +672,153 @@ const REVIEW_ICON_INFO = {
   changes_requested: {key: "reviewChangesRequested", cls: "review-changes"},
   pending: {key: "reviewPending", cls: "review-pending"},
 };
-const CI_ICON_INFO = {
-  success: {key: "ciSuccess", cls: "ci-check-success"},
-  failure: {key: "ciFailure", cls: "ci-check-failure"},
-  pending: {key: "ciPending", cls: "ci-check-pending"},
+const REVIEW_TEXT = {
+  approved: "Approved",
+  changes_requested: "Changes requested",
+  pending: "Review pending",
+};
+const STATE_TEXT = {
+  open: "Open pull request",
+  closed: "Closed pull request",
 };
 
-function prStateIcon(pr) {
-  if (hasFailedCheck(pr)) return {key: "ciFailure", cls: "state-failure", spin: false};
-  if (!pr.is_draft && pr.status === "pending") return {key: "ciPending", cls: "state-pending", spin: true};
-  if (pr.is_draft) return {key: "stateDraft", cls: "state-draft", spin: false};
-  const byState = {
-    open: {key: "stateOpen", cls: "state-open"},
-    closed: {key: "stateClosed", cls: "state-closed"},
-    merged: {key: "stateMerged", cls: "state-merged"},
-  };
-  return {...(byState[pr.state] || byState.open), spin: false};
+function renderReviewLine(pr) {
+  if (pr.is_draft) {
+    return `<div class="review"><span class="${iconClass("stateDraft", "state-draft")}">${ICONS.stateDraft || ""}</span>Draft pull request</div>`;
+  }
+  const review = REVIEW_ICON_INFO[pr.review_status];
+  const reviewText = REVIEW_TEXT[pr.review_status];
+  const reviewPart = review && reviewText
+    ? `<span class="${iconClass(review.key, review.cls)}">${ICONS[review.key]}</span>${reviewText}`
+    : "";
+  // Merged is useful information worth a glance, not a footnote -- a small
+  // badge instead of folding it into the same muted sentence as open/closed.
+  const statePart =
+    pr.state === "merged"
+      ? `<span class="badge --merged">Merged</span>`
+      : STATE_TEXT[pr.state] || STATE_TEXT.open;
+  const sep = reviewPart ? `<span class="separator">·</span>` : "";
+  return `<div class="review">${reviewPart}${sep}${statePart}</div>`;
+}
+
+function renderPrLink(pr, ownerRepo) {
+  const linkText = `${ownerRepo}#${pr.number}`;
+  const arrow = `<span class="${iconClass("externalLink")}">${ICONS.externalLink}</span>`;
+  return pr.url
+    ? `<span class="pr-link" data-url="${escapeHtml(pr.url)}">${linkText} ${arrow}</span>`
+    : `<span class="pr-link">${linkText}</span>`;
 }
 
 function renderPr(pr, ownerRepo) {
   if (!pr) return "";
   const titleClass = pr.is_draft ? "pr-title draft" : "pr-title";
   const title = (pr.is_draft ? "[Draft] " : "") + escapeHtml(pr.title);
-  const review = pr.is_draft ? null : REVIEW_ICON_INFO[pr.review_status];
-  const reviewIcon = review ? ICONS[review.key] : "";
-  const state = prStateIcon(pr);
-  const linkText = `${ownerRepo}#${pr.number}`;
-  const link = pr.url
-    ? `<span class="link-accent" data-url="${escapeHtml(pr.url)}">${linkText}</span>`
-    : linkText;
-  const checks = (pr.ci_checks || []).map((c) => {
-    const info = CI_ICON_INFO[c.status];
-    const icon = info ? ICONS[info.key] : "";
-    const name = c.url
-      ? `<span data-url="${escapeHtml(c.url)}">${escapeHtml(c.name)}</span>`
-      : escapeHtml(c.name);
-    const nameCls = info ? info.cls : "dim";
-    const spinAttr = info && c.status === "pending" ? ' data-spin="true"' : "";
-    return `<div class="row ci-check"><span class="ci-check-name ${nameCls}">${name}</span><span class="${iconClass(info && info.key, info && info.cls)}"${spinAttr}>${icon}</span></div>`;
-  }).join("");
-  const stateSpin = state.spin ? ' data-spin="true"' : "";
   return `
-    <div class="pr-block">
-      <div class="row">
-        <span class="row-left"><span class="${iconClass("pr", "pr-icon")}">${ICONS.pr}</span><span class="${titleClass}">${title}</span></span>
-        <span class="${iconClass(review && review.key, review && review.cls)}">${reviewIcon}</span>
+    <div class="section pr-block">
+      <div class="section-heading">
+        <div class="section-label">Pull request</div>
+        ${renderPrLink(pr, ownerRepo)}
       </div>
-      <div class="row">
-        <span class="row-left">${ICON_SPACER}<span class="link-accent">${link}</span></span>
-        <span class="${iconClass(state.key, state.cls)}"${stateSpin}>${ICONS[state.key]}</span>
-      </div>
-      ${checks}
+      <div class="${titleClass}">${title}</div>
+      ${renderReviewLine(pr)}
+    </div>
+  `;
+}
+
+// ---- CI checks: failed/pending shown immediately, successful checks
+// collapsed behind a <details> summary so a long all-green list never
+// crowds out the one or two checks that actually need attention. ----
+
+function groupChecks(checks) {
+  const groups = {failure: [], pending: [], success: []};
+  (checks || []).forEach((c) => {
+    (c.status === "failure" ? groups.failure : c.status === "pending" ? groups.pending : groups.success).push(c);
+  });
+  return groups;
+}
+
+// When every check name shares a literal "<prefix> / <suffix>" structure
+// (common for CI systems that namespace checks under one pipeline name),
+// show that shared prefix once next to the section label instead of
+// repeating it in every single check name below.
+function commonCheckPrefix(checks) {
+  if (!checks || checks.length < 2) return null;
+  let prefix = checks[0].name;
+  for (let i = 1; i < checks.length; i++) {
+    while (!checks[i].name.startsWith(prefix)) {
+      prefix = prefix.slice(0, -1);
+      if (!prefix) return null;
+    }
+  }
+  const sepIdx = prefix.lastIndexOf(" / ");
+  return sepIdx >= 3 ? prefix.slice(0, sepIdx) : null;
+}
+
+function stripCommonPrefix(name, prefix) {
+  if (!prefix) return name;
+  const full = `${prefix} / `;
+  return name.startsWith(full) ? name.slice(full.length) : name;
+}
+
+function renderCheckRow(check, commonPrefix) {
+  const displayName = stripCommonPrefix(check.name, commonPrefix);
+  const isPending = check.status === "pending";
+  const icon = isPending
+    ? `<span class="check-icon" data-spin="true">${SPIN_FRAMES[0]}</span>`
+    : `<span class="${iconClass("ciFailure", "check-icon")}">${ICONS.ciFailure}</span>`;
+  const linkIcon = check.url
+    ? `<span class="${iconClass("externalLink", "check-external")}">${ICONS.externalLink}</span>`
+    : "";
+  // `data-url` on the whole row, not just the name text -- the row's icon,
+  // status label and padding all count as "the check", so clicking anywhere
+  // on it (not just a narrow strip of text) should open the browser.
+  const urlAttr = check.url ? ` data-url="${escapeHtml(check.url)}"` : "";
+  return `
+    <div class="check-row"${urlAttr}>
+      ${icon}
+      <span class="check-name">${escapeHtml(displayName)}</span>
+      <span class="check-state${isPending ? " pending" : ""}">${isPending ? "Running" : "Failed"}</span>
+      ${linkIcon}
+    </div>
+  `;
+}
+
+function renderCheckOverviewParts(groups) {
+  const parts = [];
+  if (groups.failure.length) parts.push(`<span class="check-count-failure">${groups.failure.length} failed</span>`);
+  if (groups.pending.length) parts.push(`<span class="check-count-pending">${groups.pending.length} running</span>`);
+  if (groups.success.length) parts.push(`<span class="check-count-passed">${groups.success.length} passed</span>`);
+  return parts.join('<span class="check-sep">·</span>');
+}
+
+// The overview badges ("2 failed · 1 running · 12 passed") double as the
+// `<details>` toggle itself, rather than a separate "N successful checks"
+// row below them -- one clickable line instead of two. Defaults open
+// whenever there's something that needs attention, so failed/pending checks
+// are visible without the user having to click anything; defaults closed
+// when everything passed, matching the original collapsed-by-default look.
+function renderChecksSection(pr) {
+  const checks = pr.ci_checks || [];
+  if (checks.length === 0) return "";
+  const groups = groupChecks(checks);
+  const hasIssues = groups.failure.length > 0 || groups.pending.length > 0;
+  const commonPrefix = commonCheckPrefix(checks);
+  const contextLabel = commonPrefix ? `<span class="section-context">${escapeHtml(commonPrefix)}</span>` : "";
+  const rows = [...groups.failure, ...groups.pending].map((c) => renderCheckRow(c, commonPrefix)).join("");
+  const successItems = groups.success
+    .map((c) => {
+      const urlAttr = c.url ? ` data-url="${escapeHtml(c.url)}"` : "";
+      return `<div${urlAttr}>${escapeHtml(stripCommonPrefix(c.name, commonPrefix))}</div>`;
+    })
+    .join("");
+  return `
+    <div class="section checks-block">
+      <div class="section-heading"><div class="section-label">Checks</div>${contextLabel}</div>
+      <details${hasIssues ? " open" : ""}>
+        <summary class="check-overview">${renderCheckOverviewParts(groups)}<span class="chevron">›</span></summary>
+        ${hasIssues ? `<div class="check-rows">${rows}</div>` : ""}
+        ${groups.success.length ? `<div class="check-list">${successItems}</div>` : ""}
+      </details>
     </div>
   `;
 }
@@ -638,19 +839,61 @@ function renderReviewRequests(reviewPrs) {
   `;
 }
 
-function renderAgents(agents) {
+const AGENT_ROW_STATUS_CLASS = {
+  working: "agent-row-working",
+  idle: "agent-row-idle",
+  waiting: "agent-row-waiting",
+};
+const AGENT_ROW_TEXT = {
+  waiting: "Needs input",
+  working: "Working",
+  idle: "Idle",
+};
+
+function renderAgentStatusIcon(status) {
+  if (status === "working") return `<span class="agent-row-status-icon" data-spin="true">${SPIN_FRAMES[0]}</span>`;
+  if (status === "waiting") return `<span class="${iconClass("agentWaiting", "agent-row-status-icon")}">${ICONS.agentWaiting}</span>`;
+  if (status === "idle") return `<span class="${iconClass("agentIdle", "agent-row-status-icon")}">${ICONS.agentIdle}</span>`;
+  return "";
+}
+
+// Only the waiting row gets a tint -- working/idle stay visually quiet, the
+// same "reserve color for what actually needs attention" rule the chips
+// themselves follow.
+function renderAgentRow(agent) {
+  const rowCls = agent.status === "waiting" ? "row agent-row--waiting" : "row";
+  const statusCls = AGENT_ROW_STATUS_CLASS[agent.status] || "";
+  const statusText = AGENT_ROW_TEXT[agent.status] || agent.status;
+  return `
+    <div class="${rowCls}">
+      <span class="row-left"><span class="${iconClass("agent", "agent-icon")}">${ICONS.agent}</span><span class="agent-name">${escapeHtml(agent.name)}</span></span>
+      <span class="agent-row-status ${statusCls}">${renderAgentStatusIcon(agent.status)}${escapeHtml(statusText)}</span>
+    </div>
+  `;
+}
+
+// A dedicated section listing every agent by name and its own status,
+// mirroring Branch/Pull Request/Checks: a section heading (label + agent
+// count) followed by full per-agent detail. The count replaces a single
+// section-wide status label, which can't describe mixed states (e.g. one
+// agent working while another needs input) -- the strip's own chip status
+// still shows just the single highest-priority state (waiting > working >
+// idle); this section is where every agent gets its own say, and the
+// highlighted waiting row (if any) communicates both who and what needs
+// attention without a separate banner.
+function renderAgentsSection(agents) {
   if (!agents || agents.length === 0) return "";
-  const rows = agents.map((a) => {
-    const iconInfo = {
-      working: {key: null, cls: "agent-working", spin: true},
-      idle: {key: "agentIdle", cls: "agent-idle", spin: false},
-      waiting: {key: "agentWaiting", cls: "agent-waiting", spin: false},
-    }[a.status] || {key: null, cls: "", spin: false, literal: a.status};
-    const icon = iconInfo.key ? ICONS[iconInfo.key] : (iconInfo.literal ?? SPIN_FRAMES[0]);
-    const spinAttr = iconInfo.spin ? ' data-spin="true"' : "";
-    return `<div class="row"><span class="row-left"><span class="${iconClass("agent", "agent-icon")}">${ICONS.agent}</span><span class="agent-name">${escapeHtml(a.name)}</span></span><span class="${iconClass(iconInfo.key, iconInfo.cls)}"${spinAttr}>${icon}</span></div>`;
-  }).join("");
-  return `<div class="agents-block">${rows}</div>`;
+  const countLabel = `${agents.length} ${agents.length === 1 ? "agent" : "agents"}`;
+  return `
+    <div class="section agents-block">
+      <div class="section-heading"><div class="section-label">AI</div><span class="section-context">${countLabel}</span></div>
+      ${agents.map(renderAgentRow).join("")}
+    </div>
+  `;
+}
+
+function renderPopupFooter(ownerRepo) {
+  return `<div class="popup-footer"><span>${escapeHtml(ownerRepo)}</span></div>`;
 }
 
 function renderPopupContent(session) {
@@ -662,6 +905,7 @@ function renderPopupContent(session) {
   const repoLink = session.repository_url
     ? `<span class="icon repo-link" data-url="${escapeHtml(session.repository_url)}" title="Open repository">${ICONS.externalLink}</span>`
     : "";
+  const ownerRepo = ownerRepoFromProjectId(session.project_id);
   return `
     <div class="row header">
       <span class="name">${escapeHtml(session.project_name)}</span>
@@ -671,9 +915,11 @@ function renderPopupContent(session) {
       </span>
     </div>
     ${renderBranch(session)}
-    ${renderPr(session.pr, ownerRepoFromProjectId(session.project_id))}
+    ${session.pr ? renderPr(session.pr, ownerRepo) : ""}
+    ${session.pr ? renderChecksSection(session.pr) : ""}
     ${renderReviewRequests(session.review_prs)}
-    ${renderAgents(session.agents)}
+    ${renderAgentsSection(session.agents)}
+    ${renderPopupFooter(ownerRepo)}
   `;
 }
 
@@ -818,6 +1064,26 @@ stripEl.addEventListener("click", (ev) => {
 // screen position instead of the one now there.
 stripEl.addEventListener("scroll", reportChipRects);
 
+// Re-renders the popup's content in place, preserving whether the
+// successful-checks `<details>` was expanded -- a plain `innerHTML`
+// replacement would otherwise recreate it closed every time, which made it
+// look like the user's click to expand it "didn't stick" on the next daemon
+// state push (the popup refreshes live while hovering, see `updateState()`).
+function refreshPopupContent(session) {
+  const popup = document.getElementById("popup");
+  const previousDetails = popup.querySelector("details");
+  popup.innerHTML = renderPopupContent(session);
+  // Only force the *new* details element's state when one already existed
+  // before this refresh -- if it didn't (e.g. the checks section had no
+  // checks yet), there's nothing to preserve, and forcing `open = false`
+  // would wrongly override `renderChecksSection()`'s own open-by-default
+  // decision for a newly-arrived failed/pending check.
+  if (previousDetails) {
+    const details = popup.querySelector("details");
+    if (details) details.open = previousDetails.open;
+  }
+}
+
 function updateState(payload) {
   lastState = payload;
   // The popup window needs `lastState` (for `findSession()` in
@@ -834,7 +1100,7 @@ function updateState(payload) {
     if (shownPopupSession) {
       const session = findSession(shownPopupSession);
       if (session) {
-        document.getElementById("popup").innerHTML = renderPopupContent(session);
+        refreshPopupContent(session);
       } else {
         // The session this popup was showing is gone (e.g. killed) --
         // dismiss it instead of leaving stale content open indefinitely,

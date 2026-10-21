@@ -7,7 +7,12 @@
  * that must never serve stale cached state.
  */
 
-const CACHE_NAME = 'pyworkon-relay-static-v1';
+// Bump this whenever a cached static asset changes (e.g. the icon webfont) --
+// `activate` below deletes every `pyworkon-relay-static-*` cache that isn't
+// this exact name, so a version bump is what makes a returning PWA client
+// actually fetch the new asset instead of serving the stale cached one
+// indefinitely under the old cache-first strategy.
+const CACHE_NAME = 'pyworkon-relay-static-v2';
 const CACHEABLE_RE = /\/(fonts|pwa)\//;
 
 self.addEventListener('install', () => {
