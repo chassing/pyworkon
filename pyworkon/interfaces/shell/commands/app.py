@@ -58,6 +58,49 @@ INFO_PLIST = """\
 
 GHOSTTY_BIN = GHOSTTY_APP / "Contents" / "MacOS" / "ghostty"
 
+# The strip is a pywebview GUI app on its own -- no terminal runtime to wrap,
+# unlike the Dashboard above. The bundle exists purely to give it a real
+# Launch Services identity (Spotlight, `open -a`, Login Items), not to change
+# how it runs: `hide_from_dock()` (see `interfaces/strip/native.py`) already
+# handles hiding its Dock tile at runtime, so the Info.plist here doesn't
+# need (and deliberately doesn't set) `LSUIElement`.
+STRIP_APP_NAME = "Pyworkon Strip"
+STRIP_APP_DIR = Path.home() / "Applications" / f"{STRIP_APP_NAME}.app"
+
+STRIP_INFO_PLIST = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" \
+"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>{name}</string>
+    <key>CFBundleDisplayName</key>
+    <string>{name}</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.pyworkon.strip</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleExecutable</key>
+    <string>launcher</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+"""
+
+STRIP_LAUNCHER_SCRIPT = """\
+#!/usr/bin/env bash
+set -euo pipefail
+exec {pyworkon_bin} strip
+"""
+
 LAUNCHER_SCRIPT = """\
 #!/usr/bin/env bash
 set -euo pipefail
@@ -85,36 +128,60 @@ def app() -> None:
 
 @app.command()
 def install() -> None:
-    """Install Pyworkon Dashboard as a macOS app in ~/Applications."""
+    """Install Pyworkon Dashboard and Strip as macOS apps in ~/Applications.
+
+    The Dashboard needs Ghostty (it wraps a terminal runtime); the Strip
+    doesn't (it's a standalone pywebview GUI app) and installs independently
+    -- if Ghostty isn't found, the Dashboard install is skipped with a
+    warning rather than failing the whole command.
+    """
     if sys.platform != "darwin":
         click.echo("Error: this command is only available on macOS.", err=True)
         sys.exit(1)
 
-    if not GHOSTTY_BIN.exists():
-        click.echo("Error: Ghostty.app not found in /Applications.", err=True)
-        sys.exit(1)
-
-    if pyworkon_bin := shutil.which("pyworkon"):
-        updating = APP_DIR.exists()
-        try:
-            _install_app(pyworkon_bin=pyworkon_bin)
-        except subprocess.CalledProcessError as exc:
-            raise click.ClickException(
-                f"Could not install Dashboard app: {exc.stderr or exc}"
-            ) from exc
-        except (OSError, TypeError, ValueError, plistlib.InvalidFileException) as exc:
-            raise click.ClickException(
-                f"Could not install Dashboard app: {exc}"
-            ) from exc
-    else:
+    pyworkon_bin = shutil.which("pyworkon")
+    if pyworkon_bin is None:
         click.echo("Error: pyworkon not found in PATH.", err=True)
         sys.exit(1)
+
+    if GHOSTTY_BIN.exists():
+        _install_dashboard_app(pyworkon_bin=pyworkon_bin)
+    else:
+        rich_print(
+            "[yellow]Skipped Dashboard app:[/] Ghostty.app not found in /Applications."
+        )
+
+    _install_strip_app_command(pyworkon_bin=pyworkon_bin)
+
+
+def _install_dashboard_app(*, pyworkon_bin: str) -> None:
+    updating = APP_DIR.exists()
+    try:
+        _install_app(pyworkon_bin=pyworkon_bin)
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(
+            f"Could not install Dashboard app: {exc.stderr or exc}"
+        ) from exc
+    except (OSError, TypeError, ValueError, plistlib.InvalidFileException) as exc:
+        raise click.ClickException(f"Could not install Dashboard app: {exc}") from exc
 
     _refresh_icon_cache()
 
     action = "Updated" if updating else "Installed"
     rich_print(f"[green]{action}:[/] {APP_DIR}")
     rich_print("Launch via Spotlight or: [bold]open -a 'Pyworkon Dashboard'[/]")
+
+
+def _install_strip_app_command(*, pyworkon_bin: str) -> None:
+    updating = STRIP_APP_DIR.exists()
+    try:
+        _install_strip_app(pyworkon_bin=pyworkon_bin)
+    except OSError as exc:
+        raise click.ClickException(f"Could not install Strip app: {exc}") from exc
+
+    action = "Updated" if updating else "Installed"
+    rich_print(f"[green]{action}:[/] {STRIP_APP_DIR}")
+    rich_print("Launch via Spotlight or: [bold]open -a 'Pyworkon Strip'[/]")
 
 
 def _install_app(*, pyworkon_bin: str) -> None:
@@ -238,12 +305,56 @@ def _refresh_icon_cache() -> None:
         subprocess.run(["/usr/bin/killall", "Dock"], check=True, capture_output=True)
 
 
+def _install_strip_app(*, pyworkon_bin: str) -> None:
+    """Build and publish the Strip app bundle, same staged-swap-with-rollback pattern as `_install_app()`."""
+    STRIP_APP_DIR.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(
+        prefix=".pyworkon-strip-app-", dir=STRIP_APP_DIR.parent
+    ) as directory:
+        staging_dir = Path(directory)
+        staged_app = staging_dir / STRIP_APP_DIR.name
+        _build_strip_app(app_dir=staged_app, pyworkon_bin=pyworkon_bin)
+        previous_app = staging_dir / "previous.app"
+        if STRIP_APP_DIR.exists():
+            STRIP_APP_DIR.rename(previous_app)
+        try:
+            staged_app.rename(STRIP_APP_DIR)
+        except OSError:
+            if previous_app.exists():
+                previous_app.rename(STRIP_APP_DIR)
+            raise
+
+
+def _build_strip_app(*, app_dir: Path, pyworkon_bin: str) -> None:
+    contents = app_dir / "Contents"
+    macos_dir = contents / "MacOS"
+    resources_dir = contents / "Resources"
+    macos_dir.mkdir(parents=True, exist_ok=True)
+    resources_dir.mkdir(parents=True, exist_ok=True)
+
+    (contents / "Info.plist").write_text(STRIP_INFO_PLIST.format(name=STRIP_APP_NAME))
+
+    launcher = macos_dir / "launcher"
+    launcher.write_text(
+        STRIP_LAUNCHER_SCRIPT.format(pyworkon_bin=shlex.quote(pyworkon_bin))
+    )
+    launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    icon_src = importlib.resources.files("pyworkon.assets").joinpath("AppIcon.icns")
+    with importlib.resources.as_file(icon_src) as icon_path:
+        shutil.copy2(icon_path, resources_dir / "AppIcon.icns")
+
+
 @app.command()
 def uninstall() -> None:
-    """Remove the Pyworkon Dashboard macOS app."""
-    if not APP_DIR.exists():
-        rich_print("[yellow]App not installed.[/]")
+    """Remove the Pyworkon Dashboard and Strip macOS apps."""
+    if not APP_DIR.exists() and not STRIP_APP_DIR.exists():
+        rich_print("[yellow]No apps installed.[/]")
         return
 
-    shutil.rmtree(APP_DIR)
-    rich_print(f"[green]Removed:[/] {APP_DIR}")
+    if APP_DIR.exists():
+        shutil.rmtree(APP_DIR)
+        rich_print(f"[green]Removed:[/] {APP_DIR}")
+    if STRIP_APP_DIR.exists():
+        shutil.rmtree(STRIP_APP_DIR)
+        rich_print(f"[green]Removed:[/] {STRIP_APP_DIR}")

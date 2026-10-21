@@ -131,7 +131,7 @@ class GitHubApi:
             if _STATUS_PRIORITY[status] > _STATUS_PRIORITY[overall]:
                 overall = status
         checks.sort(key=lambda c: c.name)
-        return overall, checks if overall != PRStatus.SUCCESS else []
+        return overall, checks
 
     async def _get_review_status(
         self, owner: str, repo: str, pull_number: int

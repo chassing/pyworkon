@@ -23,6 +23,7 @@ dependencies = [
     "pydantic-settings>=2.4.0",
     "pydantic>=2.8.2",
     "pyyaml>=6.0.2",
+    "pywebview>=5.0",
     "rich>=13.7.1",
     "textual>=1.0",
     "watchfiles>=1.0",
@@ -54,6 +55,7 @@ dev = [
     "types-pyyaml",
     "types-requests",
     "uvicorn[standard]",
+    "pywebview>=6.2.1",
 ]
 
 [tool.pytest.ini_options]
@@ -85,6 +87,8 @@ show_error_codes = true
 
 [[tool.mypy.overrides]]
 module = [
+    "AppKit",
+    "PyObjCTools.*",
     "appdirs.*",
     "diskcache.*",
     "fuzzyfinder.*",

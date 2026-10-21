@@ -61,6 +61,12 @@ def dashboard_app(
     monkeypatch.setattr(app_module, "APP_DIR", app_dir)
     monkeypatch.setattr(app_module, "GHOSTTY_APP", ghostty_app)
     monkeypatch.setattr(app_module, "GHOSTTY_BIN", ghostty_bin)
+    # Isolate the Strip app install too -- `install()` always attempts it
+    # alongside the Dashboard, and it must never touch the real
+    # ~/Applications on whatever machine runs this test suite.
+    monkeypatch.setattr(
+        app_module, "STRIP_APP_DIR", tmp_path / "Applications" / "Pyworkon Strip.app"
+    )
     monkeypatch.setattr(app_module.sys, "platform", "darwin")
     monkeypatch.setattr(
         app_module.shutil, "which", MagicMock(return_value="/usr/local/bin/pyworkon")
@@ -347,6 +353,131 @@ def test_app_install_reports_invalid_runtime_metadata(dashboard_app: Path) -> No
     assert result.exit_code == 1
     assert "Ghostty Info.plist must contain a dictionary" in result.output
     assert not dashboard_app.exists()
+
+
+def test_app_install_also_creates_the_strip_app_bundle(dashboard_app: Path) -> None:
+    result = CliRunner().invoke(cli, ["app", "install"], obj=PyworkonContext())
+
+    assert result.exit_code == 0, result.output
+    assert "Installed:" in result.output
+    assert app_module.STRIP_APP_DIR.exists()
+    info = plistlib.loads(
+        (app_module.STRIP_APP_DIR / "Contents" / "Info.plist").read_bytes()
+    )
+    assert info["CFBundleIdentifier"] == "dev.pyworkon.strip"
+    assert info["CFBundleName"] == "Pyworkon Strip"
+    assert info["CFBundleExecutable"] == "launcher"
+    assert "LSUIElement" not in info  # hide_from_dock() handles this at runtime instead
+    launcher = app_module.STRIP_APP_DIR / "Contents" / "MacOS" / "launcher"
+    assert launcher.read_text().splitlines()[-1] == "exec /usr/local/bin/pyworkon strip"
+    assert launcher.stat().st_mode & 0o111 == 0o111
+    assert (
+        app_module.STRIP_APP_DIR / "Contents" / "Resources" / "AppIcon.icns"
+    ).read_bytes() == (
+        importlib.resources
+        .files("pyworkon.assets")
+        .joinpath("AppIcon.icns")
+        .read_bytes()
+    )
+
+
+def test_app_install_quotes_a_pyworkon_path_with_spaces(
+    dashboard_app: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        app_module.shutil,
+        "which",
+        MagicMock(return_value="/Users/cassing/My Bin/pyworkon"),
+    )
+
+    result = CliRunner().invoke(cli, ["app", "install"], obj=PyworkonContext())
+
+    assert result.exit_code == 0, result.output
+    launcher = app_module.STRIP_APP_DIR / "Contents" / "MacOS" / "launcher"
+    assert (
+        launcher.read_text().splitlines()[-1]
+        == "exec '/Users/cassing/My Bin/pyworkon' strip"
+    )
+
+
+@pytest.fixture
+def no_ghostty(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """No Ghostty.app at all -- only the Strip app should install."""
+    strip_app_dir = tmp_path / "Applications" / "Pyworkon Strip.app"
+    monkeypatch.setattr(
+        app_module, "APP_DIR", tmp_path / "Applications" / "Pyworkon Dashboard.app"
+    )
+    monkeypatch.setattr(
+        app_module,
+        "GHOSTTY_BIN",
+        tmp_path / "Applications" / "Ghostty.app" / "Contents" / "MacOS" / "ghostty",
+    )
+    monkeypatch.setattr(app_module, "STRIP_APP_DIR", strip_app_dir)
+    monkeypatch.setattr(app_module.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        app_module.shutil, "which", MagicMock(return_value="/usr/local/bin/pyworkon")
+    )
+    return strip_app_dir
+
+
+def test_app_install_skips_dashboard_but_installs_strip_without_ghostty(
+    no_ghostty: Path,
+) -> None:
+    result = CliRunner().invoke(cli, ["app", "install"], obj=PyworkonContext())
+
+    assert result.exit_code == 0, result.output
+    assert "Skipped Dashboard app" in result.output
+    assert "Ghostty.app not found" in result.output
+    assert not app_module.APP_DIR.exists()
+    assert no_ghostty.exists()
+    assert "Installed:" in result.output
+
+
+def test_app_install_fails_without_pyworkon_on_path(
+    no_ghostty: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(app_module.shutil, "which", MagicMock(return_value=None))
+
+    result = CliRunner().invoke(cli, ["app", "install"], obj=PyworkonContext())
+
+    assert result.exit_code == 1
+    assert "pyworkon not found in PATH" in result.output
+    assert not no_ghostty.exists()
+    assert not app_module.APP_DIR.exists()
+
+
+def test_app_uninstall_removes_both_apps(dashboard_app: Path) -> None:
+    CliRunner().invoke(cli, ["app", "install"], obj=PyworkonContext())
+    assert dashboard_app.exists()
+    assert app_module.STRIP_APP_DIR.exists()
+
+    result = CliRunner().invoke(cli, ["app", "uninstall"], obj=PyworkonContext())
+
+    assert result.exit_code == 0, result.output
+    assert not dashboard_app.exists()
+    assert not app_module.STRIP_APP_DIR.exists()
+    assert result.output.count("Removed:") == 2
+
+
+def test_app_uninstall_removes_only_the_strip_app_when_thats_all_thats_installed(
+    no_ghostty: Path,
+) -> None:
+    CliRunner().invoke(cli, ["app", "install"], obj=PyworkonContext())
+    assert no_ghostty.exists()
+    assert not app_module.APP_DIR.exists()
+
+    result = CliRunner().invoke(cli, ["app", "uninstall"], obj=PyworkonContext())
+
+    assert result.exit_code == 0, result.output
+    assert not no_ghostty.exists()
+    assert result.output.count("Removed:") == 1
+
+
+def test_app_uninstall_reports_when_nothing_installed(no_ghostty: Path) -> None:
+    result = CliRunner().invoke(cli, ["app", "uninstall"], obj=PyworkonContext())
+
+    assert result.exit_code == 0, result.output
+    assert "No apps installed" in result.output
 
 
 def _run_bundle_command(

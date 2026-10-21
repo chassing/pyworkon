@@ -1,0 +1,923 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face {
+    font-family: "pyworkon-icons";
+    src: url(data:font/woff2;base64,__PYWORKON_FONT_BASE64__) format("woff2");
+    font-display: swap;
+  }
+  :root {
+    --strip-radius: 14px;
+    --bg: rgba(20, 22, 26, 0.6);
+    --card: #1d2026;
+    --border: #2a2e36;
+    --text: #d8dbe2;
+    --dim: #96a0b3;
+    --green: #4caf7d;
+    --red: #e0616f;
+    --yellow: #d9b35c;
+    --purple: #b18cf2;
+    --accent: #e0af68;
+    --cyan: #56c2e6;
+    --magenta: #ff5fd7;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    background: transparent;
+    overflow: hidden;
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--text);
+    user-select: none;
+  }
+  .icon {
+    display: inline-flex;
+    justify-content: center;
+    width: 1.3em;
+    flex: none;
+  }
+  .nf {
+    font-family: "pyworkon-icons", sans-serif;
+    font-weight: normal;
+    font-style: normal;
+    line-height: 1;
+  }
+  [data-spin="true"] { font-size: 1.2em; }
+
+  body { position: relative; }
+
+  /* --- Collapsed handle --- */
+  #handle {
+    display: none;
+    position: absolute;
+    left: 50%;
+    bottom: 2px;
+    transform: translateX(-50%);
+    width: 64px;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.28);
+    cursor: pointer;
+  }
+  body.collapsed #handle { display: block; }
+  body.collapsed #strip { display: none; }
+
+  /* --- Strip: pinned to the bottom edge, filling the native window's full
+     height -- `100%`, not a fixed px value, since that height itself varies
+     (56px full-width mode, or the real Dock's own height in beside-dock
+     mode -- see dock_geometry.py's StripLayout). Safe to do now that the
+     window only ever resizes between exactly this and `.collapsed`'s hidden
+     state (`toggle_collapse()`) -- unlike the old single-window design,
+     where the window also grew taller to make room for the hover popup and
+     `#strip` needed to stay fixed-height to leave that space empty above it. --- */
+  #strip {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: row;
+    /* A chip's own natural (un-stretched) height is usually well under the
+       strip's -- in `full_width` mode that's a fixed 56px, but `beside_dock`
+       mode matches the real Dock's own height (dock_geometry.py), which can
+       be noticeably taller -- so `center` leaves leftover space split above
+       and below each chip, same as the real Dock does with its own icons.
+       An earlier attempt switched this to `flex-start` specifically to close
+       a visible gap between the hover popup and the chip row -- wrong fix:
+       it closed the gap by making chips hug the top instead, which looked
+       off-center. The real fix is in `hover_monitor.py`'s
+       `_popup_screen_position()`, which now anchors the popup to the
+       *hovered chip's own* top edge rather than the strip window's, so it
+       sits flush against the chip regardless of how the chip is aligned
+       within the (possibly taller) strip. */
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px;
+    background: var(--bg);
+    border-radius: var(--strip-radius);
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+  }
+  #empty {
+    color: var(--dim);
+    padding: 0 4px;
+  }
+  .chip {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 10px 12px 12px;
+    border-radius: 8px;
+    background: rgba(29, 32, 38, 0.9);
+    border-left: 3px solid var(--green);
+    cursor: pointer;
+    min-width: 110px;
+    max-width: 260px;
+    flex: none;
+  }
+  .chip:hover { background: rgba(42, 46, 54, 0.95); }
+  .chip.--attention { border-left-color: var(--red); background: rgba(176, 32, 44, 0.5); }
+  .chip.--attention:hover { background: rgba(196, 40, 54, 0.6); }
+  .chip.--pending { border-left-color: var(--yellow); background: rgba(120, 95, 20, 0.28); }
+  .chip.--pending:hover { background: rgba(135, 107, 24, 0.38); }
+  .chip.--plain { border-left-color: var(--dim); opacity: 0.75; }
+
+  /* An AI agent waiting on input is the one "attention" case that gets a
+     blink on top of the red background -- a PR failure alone doesn't blink,
+     since it's not time-sensitive the way a blocked agent is. Pulses the
+     background color itself (not the chip's overall opacity), so text/icons
+     stay fully legible throughout. */
+  @keyframes chip-agent-waiting-blink {
+    0%, 100% { background-color: rgba(176, 32, 44, 0.5); }
+    50% { background-color: rgba(206, 44, 58, 0.72); }
+  }
+  .chip.--agent-waiting {
+    animation: chip-agent-waiting-blink 3s ease-in-out infinite;
+  }
+  .chip-main {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+  .chip-name {
+    font-weight: 600;
+    font-size: 14.5px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chip-sub {
+    font-size: 12px;
+    color: var(--dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .chip-sub .branch { overflow: hidden; text-overflow: ellipsis; }
+  .badge {
+    font-size: 10.5px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    flex: none;
+  }
+  .badge.--draft { background: rgba(255, 255, 255, 0.08); color: var(--dim); }
+
+  /* Chip status icon: ONE combined indicator per chip for both AI agent
+     status and PR/MR CI check status -- a dedicated column spanning the
+     chip's full height, right-aligned. Rendered at all only for the three
+     non-trivial states (busy/waiting/failed); nothing shown otherwise. */
+  .chip-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 24px;
+    font-size: 20px;
+  }
+  .chip-status.status-busy { color: var(--green); }
+  .chip-status.status-waiting { color: var(--yellow); }
+  .chip-status.status-failed { color: var(--red); }
+  .chip-status.status-idle { color: var(--dim); }
+
+  /* --- Hover popup (full detail) --- */
+  #popup {
+    position: absolute;
+    bottom: 56px;
+    display: none;
+    min-width: 280px;
+    max-width: 360px;
+    max-height: 300px;
+    overflow-y: auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--strip-radius);
+    padding: 0.9rem 1rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+    z-index: 1000;
+    user-select: text;
+  }
+  #popup.--visible { display: block; }
+  #popup > * + * { margin-top: 0.5rem; }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.15rem 0;
+  }
+  .row-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    overflow: hidden;
+    min-width: 0;
+    flex: 1;
+  }
+  .header .name {
+    font-weight: 600;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .header-icons { display: flex; align-items: center; gap: 6px; flex: none; }
+  .provider-icon { color: var(--dim); }
+  .repo-link { color: var(--dim); }
+  .repo-link:hover { color: var(--accent); }
+  .dim { color: var(--dim); }
+  .branch-icon { color: var(--cyan); }
+  /* `min-width: 0` overrides the flex item default of `min-width: auto`,
+     which otherwise means "never shrink below this content's unwrapped
+     width" -- for a long, hyphen-heavy identifier (a branch/check name with
+     no spaces) that default refuses to shrink at all, overflowing straight
+     past the popup's own edge (clipped with no visual indication, since
+     `html`/`body` have `overflow: hidden`) instead of wrapping onto another
+     line the way shorter text naturally does. `overflow-wrap: anywhere` is
+     a defensive fallback for the rare case where even a single "word" (no
+     hyphen/space break opportunity at all) is still too long on its own. */
+  .branch-name { color: var(--dim); min-width: 0; overflow-wrap: anywhere; }
+  .dirty-icon { color: var(--yellow); }
+  .branch-block { padding-top: 0.3rem; border-top: 1px solid var(--border); }
+  .pr-block { padding: 0.3rem 0 0 0.1rem; border-top: 1px solid var(--border); }
+  .pr-icon { color: var(--accent); }
+  .pr-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; color: var(--dim); }
+  .pr-title.draft { opacity: 0.6; }
+  /* Covers every clickable link in the popup (PR link, review-request links,
+     and *any* CI check with a url -- not just failed ones, which previously
+     were the only `.ci-check-*` class with `cursor: pointer` of its own). */
+  [data-url] { cursor: pointer; }
+  .link-accent { color: var(--accent); text-decoration: underline; }
+  .ci-check { font-size: 0.85rem; padding-left: 2.6rem; }
+  /* Same flex `min-width: auto` overflow issue as `.branch-name` above --
+     without this, a long check name (e.g. "Red Hat Konflux / automated
+     -actions-main-enterprise-contract / automated-actions-cli-main")
+     overflows straight past the popup's edge instead of wrapping. */
+  .ci-check-name { min-width: 0; overflow-wrap: anywhere; }
+  .ci-check-success { color: var(--green); }
+  .ci-check-failure { color: var(--red); text-decoration: underline; }
+  .ci-check-pending { color: var(--yellow); }
+  .state-open { color: var(--green); }
+  .state-closed { color: var(--red); }
+  .state-merged { color: var(--purple); }
+  .state-failure { color: var(--red); }
+  .state-pending { color: var(--yellow); }
+  .state-draft { color: var(--dim); }
+  .review-approved { color: var(--green); }
+  .review-changes { color: var(--red); }
+  .review-pending { color: var(--yellow); }
+  .reviews-block { padding-top: 0.3rem; border-top: 1px solid var(--border); }
+  .review-header-icon { color: var(--yellow); }
+  .review-title { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agents-block { padding-top: 0.3rem; border-top: 1px solid var(--border); }
+  .agent-icon { color: var(--magenta); }
+  .agent-name { color: var(--dim); }
+  .agent-working { color: var(--green); }
+  .agent-idle { color: var(--dim); }
+  .agent-waiting { color: var(--yellow); }
+
+  /* --- Popup window mode: the hover-detail popup is a separate, fixed-size
+     native window (see native.py's `prepare_popup_window()`), not part of
+     the strip's own resizable frame -- this same html/CSS/JS is shared by
+     both windows, gated by the `__PYWORKON_IS_POPUP__`-derived
+     `body.popup-window` class set near the top of the script below. Only
+     `#popup` is ever shown in this mode; it fills the entire (separate)
+     window instead of being absolutely positioned above the strip. --- */
+  body.popup-window #strip,
+  body.popup-window #handle,
+  body.popup-window #ctxmenu {
+    display: none !important;
+  }
+  /* `height: 100%`, not `auto` -- the window is *always* already sized
+     (`hover_monitor.py`'s `_process()`) to fit the content measured by
+     `__showPopupFor()`, so forcing the card to actually fill that window
+     guarantees it never leaves a visible gap below itself, regardless of any
+     subtle mismatch between the measured size and the final rendered one
+     (confirmed via `CGWindowListCopyWindowInfo` that the *native* windows
+     really were pixel-flush with zero gap between them -- the gap some
+     popups showed was entirely inside this element, between its own
+     bottom edge and the window's). `__showPopupFor()` temporarily forces
+     `height: auto` back via inline style purely for its own measurement (see
+     below) -- *that* must stay content-driven, not window-size-driven, or
+     `scrollHeight` would be at least the window's current (possibly stale,
+     already-large) size regardless of actual content, a self-reinforcing
+     ratchet where one tall popup makes every later one measure as tall too.
+     `max-height: 100vh` still matters for that same measurement step's
+     fallback: `updateState()`'s live popup refresh (see below) deliberately
+     updates content without resizing the native window (to avoid a WKWebView
+     relayout flash on an already-visible window), so content can grow taller
+     than whatever height the window happened to be shown at -- `100vh`
+     always matches the real window, so the overflow becomes reachable via
+     this element's own `overflow-y: auto` instead of a fixed px value
+     silently rendering past the real viewport. */
+  body.popup-window #popup {
+    display: block !important;
+    position: static;
+    bottom: auto;
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+    height: 100%;
+    max-height: 100vh;
+    box-shadow: none;
+  }
+
+  /* --- Context menu --- */
+  #ctxmenu {
+    position: fixed;
+    display: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+    min-width: 160px;
+    z-index: 2000;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  }
+  #ctxmenu.--visible { display: block; }
+  .ctx-item {
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .ctx-item:hover { background: rgba(255, 255, 255, 0.08); }
+  .ctx-item.--danger { color: var(--red); }
+</style>
+</head>
+<body>
+<div id="handle" title="Show pyworkon strip"></div>
+<div id="strip"></div>
+<div id="popup"></div>
+<div id="ctxmenu"></div>
+
+<script>
+// This same page is loaded by both the strip window and its separate
+// hover-popup window (see native.py's `prepare_popup_window()` for why the
+// popup is a whole separate window rather than part of the strip's own
+// resizable frame). `__PYWORKON_IS_POPUP__` is substituted server-side by
+// `app.py`'s `_render_strip_html(is_popup=...)`.
+const IS_POPUP_WINDOW = __PYWORKON_IS_POPUP__;
+if (IS_POPUP_WINDOW) document.body.classList.add("popup-window");
+
+// "__PYWORKON_STRIP_MODE__" is substituted server-side by `app.py`'s
+// `_render_strip_html(mode=...)` -- see `dock_geometry.StripLayout.mode`.
+// Sets `body.beside-dock`, currently unused by any CSS rule (full chip
+// detail renders the same in both modes -- a dedicated compact-chip style
+// was tried and reverted after looking too sparse in practice) but kept as
+// a hook for the strip/popup windows to key future mode-dependent styling
+// off, since `bridge.update_layout()` already pushes mode changes here live.
+const STRIP_MODE = "__PYWORKON_STRIP_MODE__";
+window.setStripMode = function (mode) {
+  document.body.classList.toggle("beside-dock", mode === "beside_dock");
+};
+window.setStripMode(STRIP_MODE);
+
+// Injected server-side from native.py's `POPUP_MIN_WIDTH`/`POPUP_MAX_WIDTH`
+// -- see `__showPopupFor()` below for why the popup window's own width
+// measurement needs to match Python's `clamp_popup_width()` bounds exactly,
+// not just a separately hardcoded (and easy to drift out of sync) copy.
+const POPUP_MIN_WIDTH = Number("__PYWORKON_POPUP_MIN_WIDTH__");
+const POPUP_MAX_WIDTH = Number("__PYWORKON_POPUP_MAX_WIDTH__");
+// `width: max-content`'s own reported `scrollWidth` doesn't reliably
+// round-trip: re-applying that *exact* integer as a plain pixel `width` can
+// still wrap a deeply-nested line (confirmed empirically in isolation --
+// `#popup > .pr-block > .row.ci-check > .ci-check-name` wrapped at
+// `scrollWidth`'s own reported value, and needed +4px, not +0, to stop;
+// WebKit's intrinsic-sizing pass and its real layout pass disagree by a
+// couple of sub-pixel-rounding steps once nested this many flex levels deep).
+// A small fixed buffer -- not content-dependent, so it doesn't reintroduce
+// the "arbitrary fixed cap" problem this file's width/height measurement has
+// already moved away from -- absorbs that rounding gap with room to spare.
+const POPUP_WIDTH_ROUNDING_SAFETY_MARGIN = 8;
+
+// Injected server-side from pyworkon/interfaces/tui/icons.py -- see
+// pyworkon/interfaces/relay/icons.py and app.py's `_render_strip_html()`. Do
+// not hardcode icon glyphs here; add a new key to relay/icons.py instead.
+const ICONS = /*__PYWORKON_ICONS__*/;
+
+const NF_KEYS = new Set([
+  "branch", "pr", "agent", "github", "gitlab", "agentIdle", "agentWaiting",
+  "reviewRequest", "dirty", "ciPending",
+]);
+
+function iconClass(key, extra) {
+  const parts = ["icon"];
+  if (NF_KEYS.has(key)) parts.push("nf");
+  if (extra) parts.push(extra);
+  return parts.join(" ");
+}
+
+const ICON_SPACER = `<span class="icon"></span>`;
+
+// Safe for both text-node content *and* double- or single-quoted attribute
+// values. `textContent` -> `innerHTML` alone escapes `&`/`<`/`>` but not
+// quote characters (they're only special inside an attribute, not in text
+// node content, so the serializer has no reason to escape them) -- used
+// inside e.g. `data-session="${escapeHtml(name)}"`, an unescaped `"` in
+// `name` would terminate the attribute early and corrupt the element's
+// other attributes, breaking `el.dataset.session` lookups. `&quot;`/`&#39;`
+// decode back to literal quote characters in *any* context, so escaping
+// them unconditionally here is always safe, not just where currently needed.
+function escapeHtml(value) {
+  const div = document.createElement("div");
+  div.textContent = value ?? "";
+  return div.innerHTML.replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+
+function ownerRepoFromProjectId(projectId) {
+  const parts = projectId.split("/");
+  return parts.length > 1 ? parts.slice(1).join("/") : projectId;
+}
+
+const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+let spinFrame = 0;
+function tickSpinners() {
+  spinFrame = (spinFrame + 1) % SPIN_FRAMES.length;
+  document.querySelectorAll('[data-spin="true"]').forEach((el) => {
+    el.textContent = SPIN_FRAMES[spinFrame];
+  });
+}
+setInterval(tickSpinners, 80);
+
+// ---- Chip badges (compact, only the most important status) ----
+
+function hasFailedCheck(pr) {
+  return (pr.ci_checks || []).some((c) => c.status === "failure");
+}
+
+// Combines PR CI status *and* agent status into one attention level, since
+// either one needing the user's eyes should make the chip stand out the
+// same way: a failed PR check and an agent waiting on input are equally
+// "come look at this" signals.
+function chipAttentionLevel(session) {
+  const pr = session.pr;
+  const agents = session.agents || [];
+  const prFailed = pr && hasFailedCheck(pr);
+  const agentWaiting = agents.some((a) => a.status === "waiting");
+  if (prFailed || agentWaiting) return "attention";
+  const prPending = pr && !pr.is_draft && pr.status === "pending";
+  const agentWorking = agents.some((a) => a.status === "working");
+  if (prPending || agentWorking) return "pending";
+  return "ok";
+}
+
+// An agent waiting on input gets a blink on top of the shared "attention"
+// red background (see the `.chip.--agent-waiting` CSS above) -- a PR
+// failure alone doesn't blink, only a blocked agent asking a question does.
+function chipIsAgentWaiting(session) {
+  const agents = session.agents || [];
+  return agents.some((a) => a.status === "waiting");
+}
+
+function renderPrBadge(pr) {
+  if (!pr) return "";
+  if (pr.is_draft) return `<span class="badge --draft">Draft</span>`;
+  return "";
+}
+
+// ONE combined status icon per chip, covering both AI agent status and
+// PR/MR CI check status -- never two separate spinners. Priority (highest
+// first), exactly:
+//   agent waiting              -> "?" (agentWaiting icon), regardless of CI
+//   agent working OR CI pending -> spinner
+//   CI failed                  -> "x" (ciFailure icon)
+//   agent idle (none of above) -> dim idle icon
+//   no agent and no CI info    -> nothing
+function renderChipStatus(session) {
+  const pr = session.pr;
+  const agents = session.agents || [];
+  const agentWaiting = agents.some((a) => a.status === "waiting");
+  const agentWorking = agents.some((a) => a.status === "working");
+  const agentIdle = agents.some((a) => a.status === "idle");
+  const ciPending = pr && !pr.is_draft && pr.status === "pending";
+  const ciFailed = pr && hasFailedCheck(pr);
+
+  if (agentWaiting) {
+    return `<div class="chip-status status-waiting"><span class="${iconClass("agentWaiting")}">${ICONS.agentWaiting}</span></div>`;
+  }
+  if (agentWorking || ciPending) {
+    return `<div class="chip-status status-busy"><span data-spin="true">${SPIN_FRAMES[0]}</span></div>`;
+  }
+  if (ciFailed) {
+    return `<div class="chip-status status-failed"><span class="${iconClass("ciFailure")}">${ICONS.ciFailure}</span></div>`;
+  }
+  if (agentIdle) {
+    return `<div class="chip-status status-idle"><span class="${iconClass("agentIdle")}">${ICONS.agentIdle}</span></div>`;
+  }
+  return "";
+}
+
+function renderChip(session) {
+  const status = chipAttentionLevel(session);
+  const waitingClass = chipIsAgentWaiting(session) ? " --agent-waiting" : "";
+  return `
+    <div class="chip --${status}${waitingClass}" data-session="${escapeHtml(session.session_name)}">
+      <div class="chip-main">
+        <div class="chip-name">${escapeHtml(session.project_name)}</div>
+        <div class="chip-sub">
+          <span class="branch">${escapeHtml(session.branch || "")}</span>
+          ${renderPrBadge(session.pr)}
+        </div>
+      </div>
+      ${renderChipStatus(session)}
+    </div>
+  `;
+}
+
+function renderPlainChip(name) {
+  return `
+    <div class="chip --plain" data-session="${escapeHtml(name)}">
+      <div class="chip-main">
+        <div class="chip-name">${escapeHtml(name)}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ---- Hover popup (full detail, same rendering as the relay dashboard) ----
+
+function renderBranch(session) {
+  if (!session.branch) return "";
+  return `
+    <div class="row branch-block">
+      <span class="row-left"><span class="${iconClass("branch", "branch-icon")}">${ICONS.branch}</span><span class="branch-name">${escapeHtml(session.branch)}</span></span>
+      <span class="${iconClass("dirty", "dirty-icon")}">${session.is_dirty ? ICONS.dirty : ""}</span>
+    </div>
+  `;
+}
+
+const REVIEW_ICON_INFO = {
+  approved: {key: "reviewApproved", cls: "review-approved"},
+  changes_requested: {key: "reviewChangesRequested", cls: "review-changes"},
+  pending: {key: "reviewPending", cls: "review-pending"},
+};
+const CI_ICON_INFO = {
+  success: {key: "ciSuccess", cls: "ci-check-success"},
+  failure: {key: "ciFailure", cls: "ci-check-failure"},
+  pending: {key: "ciPending", cls: "ci-check-pending"},
+};
+
+function prStateIcon(pr) {
+  if (hasFailedCheck(pr)) return {key: "ciFailure", cls: "state-failure", spin: false};
+  if (!pr.is_draft && pr.status === "pending") return {key: "ciPending", cls: "state-pending", spin: true};
+  if (pr.is_draft) return {key: "stateDraft", cls: "state-draft", spin: false};
+  const byState = {
+    open: {key: "stateOpen", cls: "state-open"},
+    closed: {key: "stateClosed", cls: "state-closed"},
+    merged: {key: "stateMerged", cls: "state-merged"},
+  };
+  return {...(byState[pr.state] || byState.open), spin: false};
+}
+
+function renderPr(pr, ownerRepo) {
+  if (!pr) return "";
+  const titleClass = pr.is_draft ? "pr-title draft" : "pr-title";
+  const title = (pr.is_draft ? "[Draft] " : "") + escapeHtml(pr.title);
+  const review = pr.is_draft ? null : REVIEW_ICON_INFO[pr.review_status];
+  const reviewIcon = review ? ICONS[review.key] : "";
+  const state = prStateIcon(pr);
+  const linkText = `${ownerRepo}#${pr.number}`;
+  const link = pr.url
+    ? `<span class="link-accent" data-url="${escapeHtml(pr.url)}">${linkText}</span>`
+    : linkText;
+  const checks = (pr.ci_checks || []).map((c) => {
+    const info = CI_ICON_INFO[c.status];
+    const icon = info ? ICONS[info.key] : "";
+    const name = c.url
+      ? `<span data-url="${escapeHtml(c.url)}">${escapeHtml(c.name)}</span>`
+      : escapeHtml(c.name);
+    const nameCls = info ? info.cls : "dim";
+    const spinAttr = info && c.status === "pending" ? ' data-spin="true"' : "";
+    return `<div class="row ci-check"><span class="ci-check-name ${nameCls}">${name}</span><span class="${iconClass(info && info.key, info && info.cls)}"${spinAttr}>${icon}</span></div>`;
+  }).join("");
+  const stateSpin = state.spin ? ' data-spin="true"' : "";
+  return `
+    <div class="pr-block">
+      <div class="row">
+        <span class="row-left"><span class="${iconClass("pr", "pr-icon")}">${ICONS.pr}</span><span class="${titleClass}">${title}</span></span>
+        <span class="${iconClass(review && review.key, review && review.cls)}">${reviewIcon}</span>
+      </div>
+      <div class="row">
+        <span class="row-left">${ICON_SPACER}<span class="link-accent">${link}</span></span>
+        <span class="${iconClass(state.key, state.cls)}"${stateSpin}>${ICONS[state.key]}</span>
+      </div>
+      ${checks}
+    </div>
+  `;
+}
+
+function renderReviewRequests(reviewPrs) {
+  if (!reviewPrs || reviewPrs.length === 0) return "";
+  const items = reviewPrs.map((pr) => `
+    <div class="row">
+      <span class="row-left">${ICON_SPACER}<span class="review-title link-accent" data-url="${escapeHtml(pr.url)}">${escapeHtml(pr.title)} (#${pr.number})</span></span>
+      <span class="dim">${escapeHtml(pr.author)}</span>
+    </div>
+  `).join("");
+  return `
+    <div class="reviews-block">
+      <div class="row dim"><span class="row-left"><span class="${iconClass("reviewRequest", "review-header-icon")}">${ICONS.reviewRequest}</span><span>Reviews requested (${reviewPrs.length})</span></span></div>
+      ${items}
+    </div>
+  `;
+}
+
+function renderAgents(agents) {
+  if (!agents || agents.length === 0) return "";
+  const rows = agents.map((a) => {
+    const iconInfo = {
+      working: {key: null, cls: "agent-working", spin: true},
+      idle: {key: "agentIdle", cls: "agent-idle", spin: false},
+      waiting: {key: "agentWaiting", cls: "agent-waiting", spin: false},
+    }[a.status] || {key: null, cls: "", spin: false, literal: a.status};
+    const icon = iconInfo.key ? ICONS[iconInfo.key] : (iconInfo.literal ?? SPIN_FRAMES[0]);
+    const spinAttr = iconInfo.spin ? ' data-spin="true"' : "";
+    return `<div class="row"><span class="row-left"><span class="${iconClass("agent", "agent-icon")}">${ICONS.agent}</span><span class="agent-name">${escapeHtml(a.name)}</span></span><span class="${iconClass(iconInfo.key, iconInfo.cls)}"${spinAttr}>${icon}</span></div>`;
+  }).join("");
+  return `<div class="agents-block">${rows}</div>`;
+}
+
+function renderPopupContent(session) {
+  const providerIcon = ICONS[session.provider_type] || "";
+  // Dedicated link icon next to the title, distinct from the provider icon
+  // (a plain Unicode arrow, not a Nerd Font glyph -- the embedded webfont is
+  // a hand-picked subset with no "link" glyph in it, see
+  // static/fonts/NERD_FONTS_LICENSE.txt).
+  const repoLink = session.repository_url
+    ? `<span class="icon repo-link" data-url="${escapeHtml(session.repository_url)}" title="Open repository">${ICONS.externalLink}</span>`
+    : "";
+  return `
+    <div class="row header">
+      <span class="name">${escapeHtml(session.project_name)}</span>
+      <span class="header-icons">
+        ${repoLink}
+        <span class="${iconClass(session.provider_type, "provider-icon")}">${providerIcon}</span>
+      </span>
+    </div>
+    ${renderBranch(session)}
+    ${renderPr(session.pr, ownerRepoFromProjectId(session.project_id))}
+    ${renderReviewRequests(session.review_prs)}
+    ${renderAgents(session.agents)}
+  `;
+}
+
+// ---- State + rendering ----
+
+let lastState = {sessions: [], plain_sessions: []};
+// Session the popup window is currently showing content for, if any -- the
+// hover monitor only calls `__showPopupFor()` again when the *hovered chip*
+// changes (see hover_monitor.py's `_poll_once()`), so a daemon-pushed state
+// update while hovering the same chip the whole time would otherwise never
+// reach the DOM until the user moves away and back. `updateState()` below
+// uses this to refresh the open popup's content in place.
+let shownPopupSession = null;
+
+function findSession(name) {
+  return lastState.sessions.find((s) => s.session_name === name) || null;
+}
+
+function renderStrip() {
+  const container = document.getElementById("strip");
+  const plain = lastState.plain_sessions.map(renderPlainChip).join("");
+  const chips = lastState.sessions.map(renderChip).join("");
+  if (!chips && !plain) {
+    container.innerHTML = `<div id="empty">No sessions yet — waiting for the daemon…</div>`;
+    reportChipRects();
+    return;
+  }
+  container.innerHTML = plain + chips;
+  reportChipRects();
+}
+
+// The strip never takes focus (see native.py's `prepare_window()`), so a
+// background window's WKWebView never gets real `mouseover`/`mouseout`
+// events -- hover is instead driven externally by a Python-side global mouse
+// monitor (`hover_monitor.py`) doing its own point-in-rect hit-testing. It
+// needs each chip's on-screen rect, since layout (and therefore position) is
+// entirely our own HTML/CSS, not something Python can compute on its own.
+// Guarded by `IS_POPUP_WINDOW` as a safety net on top of `updateState()`'s own
+// guard below: both windows share the same `HoverMonitor` instance via the
+// same `js_api` bridge, so if this ever ran in the popup window it would
+// overwrite the real chip rects with an empty list (nothing in `#strip` is
+// ever rendered there) and silently break hover entirely.
+function reportChipRects() {
+  if (IS_POPUP_WINDOW) return;
+  const rects = Array.from(stripEl.querySelectorAll(".chip")).map((el) => {
+    const r = el.getBoundingClientRect();
+    return {
+      session_name: el.dataset.session,
+      left: r.left,
+      top: r.top,
+      width: r.width,
+      height: r.height,
+    };
+  });
+  pywebview.api.update_chip_rects(rects);
+}
+
+// Called by the Python-side hover monitor (via `evaluate_js()`) on the
+// *popup* window specifically -- see `native.py`'s `prepare_popup_window()`
+// for why the popup is a separate window rather than part of the strip's own
+// resizable frame. Renders content, then returns the measured `[width,
+// height]` (the expression this function evaluates to is what
+// `evaluate_js()` hands back to Python, as a real Python list -- confirmed
+// WKWebView bridges a JS array to one, not just plain numbers) so
+// `hover_monitor.py` can resize the (still-hidden) popup window to fit
+// before showing it.
+window.__showPopupFor = function (sessionName, maxWidth) {
+  const session = findSession(sessionName);
+  const popup = document.getElementById("popup");
+  if (!session) {
+    shownPopupSession = null;
+    return null;
+  }
+  shownPopupSession = sessionName;
+  popup.innerHTML = renderPopupContent(session);
+  // `maxWidth` is `hover_monitor.py`'s own `_max_popup_width()`, passed
+  // fresh on every call -- the real, screen-aware amount of horizontal room
+  // next to the strip, not the fixed `POPUP_MAX_WIDTH` fallback (used only
+  // when called without it).
+  const effectiveMaxWidth = typeof maxWidth === "number" ? maxWidth : POPUP_MAX_WIDTH;
+  // Two-pass measurement. Pass 1: find the content's natural (unwrapped)
+  // width via `max-content`, then clamp it ourselves, in JS, to a single
+  // exact pixel number -- not left as inline `min-width`/`max-width`
+  // alongside `width: max-content`. That combination measured a few pixels
+  // narrower here than the *same* numeric width later resolved to once the
+  // native window was actually sized to it and `#popup` fell back to its
+  // stylesheet `width: 100%` -- `max-content` is an intrinsic-sizing
+  // keyword, and how it composes with simultaneous `min-width`/`max-width`
+  // isn't pixel-identical to clamping a plain number (confirmed empirically:
+  // `getBoundingClientRect()`/`scrollWidth` read back a different value
+  // after the real resize than what was measured here). A narrower width
+  // wraps text differently -- enough, for a long CI check name, to need an
+  // extra line that pass 1's `scrollHeight` never accounted for, clipping
+  // real content past the window's bottom edge.
+  popup.style.width = "max-content";
+  const naturalWidth = popup.scrollWidth + POPUP_WIDTH_ROUNDING_SAFETY_MARGIN;
+  popup.style.width = "";
+  const width = Math.max(POPUP_MIN_WIDTH, Math.min(naturalWidth, effectiveMaxWidth));
+  // Pass 2: measure height with `width` set to that *exact* pixel value --
+  // the same number `resize_and_position_popup_window()` will use for the
+  // real window, so wrapping (and therefore height) is measured under
+  // identical conditions to the final render, with no keyword-sizing
+  // ambiguity left to drift between the two. `height` is forced to `auto`
+  // for the same "measure the real thing" reason -- the CSS default is
+  // `100%` (see above, so the *visible* card always fills its window with no
+  // gap), which would otherwise measure `scrollHeight` as at least the
+  // window's current, possibly-stale size instead of the content's natural
+  // one.
+  popup.style.width = `${width}px`;
+  popup.style.height = "auto";
+  const height = Math.ceil(popup.scrollHeight);
+  popup.style.width = "";
+  popup.style.height = "";
+  return [Math.ceil(width), height];
+};
+
+document.getElementById("popup").addEventListener("click", (ev) => {
+  const el = ev.target.closest("[data-url]");
+  if (el && el.dataset.url) pywebview.api.open_url(el.dataset.url);
+});
+
+const stripEl = document.getElementById("strip");
+
+// The window can never become key (`focus=False`, see `native.py`'s
+// `prepare_window()`), so this is the *only* way session-switching happens --
+// not a fallback. It still works: `WKWebView` overrides `acceptsFirstMouse:`
+// to return `YES` by default, so a real click is delivered to the DOM as a
+// normal event regardless of key status. Continuous hover tracking is the
+// one thing that *does* require key status, which is why hover is driven
+// externally via `__hoverEnter`/`__hoverLeave` above instead of a
+// `mouseover`/`mouseout` listener here -- a background, never-key window's
+// WKWebView never receives those at all.
+stripEl.addEventListener("click", (ev) => {
+  const chip = ev.target.closest(".chip");
+  if (chip) pywebview.api.switch_session(chip.dataset.session);
+});
+
+// `#strip` has `overflow-x: auto` (see CSS above), so scrolling it shifts
+// every chip's `getBoundingClientRect()` result exactly like a resize does
+// -- without reporting here too, the hover monitor's cached rects go stale
+// the moment the user scrolls, targeting whichever chip used to be at that
+// screen position instead of the one now there.
+stripEl.addEventListener("scroll", reportChipRects);
+
+function updateState(payload) {
+  lastState = payload;
+  // The popup window needs `lastState` (for `findSession()` in
+  // `__showPopupFor`) but must never render `#strip` -- see
+  // `reportChipRects()`'s own guard above for why.
+  if (IS_POPUP_WINDOW) {
+    // Keep an already-open popup's branch/PR/CI/agent details live instead
+    // of frozen at whatever they were when the hover started -- deliberately
+    // refreshes content only, not the native window's size: resizing a
+    // *visible* popup window risks the same WKWebView-relayout transparency
+    // flash the two-window redesign exists to avoid (see native.py's
+    // `resize_and_position_popup_window()`), so growing content relies on
+    // `#popup`'s own `overflow-y: auto` instead of a live resize here.
+    if (shownPopupSession) {
+      const session = findSession(shownPopupSession);
+      if (session) {
+        document.getElementById("popup").innerHTML = renderPopupContent(session);
+      } else {
+        // The session this popup was showing is gone (e.g. killed) --
+        // dismiss it instead of leaving stale content open indefinitely,
+        // which would otherwise happen if the mouse is resting on the
+        // popup itself (hover_monitor.py treats that as "stay open").
+        shownPopupSession = null;
+        pywebview.api.hide_popup();
+      }
+    }
+    return;
+  }
+  renderStrip();
+}
+
+// ---- Context menu ----
+
+function positionMenu(menu, x, y) {
+  menu.classList.add("--visible");
+  const h = menu.offsetHeight;
+  const w = menu.offsetWidth;
+  menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - w - 4))}px`;
+  menu.style.top = `${Math.max(4, y - h - 8)}px`;
+}
+
+stripEl.addEventListener("contextmenu", (ev) => {
+  ev.preventDefault();
+  const menu = document.getElementById("ctxmenu");
+  const chip = ev.target.closest(".chip");
+  if (chip) {
+    menu.innerHTML = `<div class="ctx-item --danger" data-action="kill">Kill session</div>`;
+    menu.dataset.session = chip.dataset.session;
+  } else {
+    menu.innerHTML = `<div class="ctx-item --danger" data-action="quit">Quit strip</div>`;
+    delete menu.dataset.session;
+  }
+  positionMenu(menu, ev.clientX, ev.clientY);
+});
+
+document.getElementById("ctxmenu").addEventListener("click", (ev) => {
+  const item = ev.target.closest(".ctx-item");
+  const menu = document.getElementById("ctxmenu");
+  if (item) {
+    if (item.dataset.action === "kill" && menu.dataset.session) {
+      // The context menu's "Kill session" item is itself the confirmation --
+      // a second dialog on top of it would just be an extra click for no reason.
+      pywebview.api.kill_session(menu.dataset.session);
+    } else if (item.dataset.action === "quit") {
+      pywebview.api.quit();
+    }
+  }
+  menu.classList.remove("--visible");
+});
+
+document.addEventListener("click", (ev) => {
+  if (!ev.target.closest("#ctxmenu")) {
+    document.getElementById("ctxmenu").classList.remove("--visible");
+  }
+});
+
+document.getElementById("handle").addEventListener("click", () => {
+  pywebview.api.toggle_collapse();
+});
+
+// ---- Collapsed/expanded driven purely by the native window's actual size ----
+// (strip window only -- the popup window's size never changes at all, see
+// native.py's `prepare_popup_window()`, and it has no collapsed state.)
+
+if (!IS_POPUP_WINDOW) {
+  function updateCollapsedClass() {
+    document.body.classList.toggle("collapsed", window.innerHeight <= 20);
+  }
+  // `#strip` is CSS-pinned to `bottom: 0`, so a chip's on-screen position
+  // shifts every time the native window resizes (now only for
+  // `toggle_collapse()`, 56px <-> 10px) even though nothing re-rendered.
+  // `reportChipRects()` is otherwise only called from `renderStrip()` (on
+  // daemon state pushes), so without this, the hover monitor's cached chip
+  // rects would go stale the instant a resize happens.
+  window.addEventListener("resize", () => {
+    updateCollapsedClass();
+    reportChipRects();
+  });
+  updateCollapsedClass();
+}
+</script>
+</body>
+</html>

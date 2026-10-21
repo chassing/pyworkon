@@ -7,6 +7,7 @@ from .dashboard import dashboard
 from .popup import popup
 from .provider import provider
 from .shell import shell
+from .strip import strip
 from .workon import workon
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "popup",
     "provider",
     "shell",
+    "strip",
     "workon",
 ]

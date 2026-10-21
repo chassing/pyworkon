@@ -15,6 +15,7 @@ def test_dashboard_icons_match_tui_glyphs() -> None:
     assert DASHBOARD_ICONS["agent"] == tui_icons.ICON_AGENT
     assert DASHBOARD_ICONS["github"] == tui_icons.ICON_GITHUB
     assert DASHBOARD_ICONS["gitlab"] == tui_icons.ICON_GITLAB
+    assert DASHBOARD_ICONS["externalLink"] == tui_icons.ICON_EXTERNAL_LINK
     assert DASHBOARD_ICONS["agentIdle"] == tui_icons.AGENT_IDLE
     assert DASHBOARD_ICONS["agentWaiting"] == tui_icons.AGENT_WAITING
     assert DASHBOARD_ICONS["reviewRequest"] == tui_icons.ICON_REVIEW_REQUEST

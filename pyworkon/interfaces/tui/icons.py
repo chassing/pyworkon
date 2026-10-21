@@ -10,6 +10,12 @@ ICON_PR = ""  # (nf-dev-git_pull_request)
 ICON_AGENT = ""  # (nf-fa-cog)
 ICON_FOLDER = ""  # (nf-fa-folder_open)
 ICON_PLAIN_SESSION = "▸"  # ▸
+# Plain Unicode (not a Nerd Font PUA glyph) -- the strip's embedded webfont is
+# a hand-picked subset (see relay/static/fonts/NERD_FONTS_LICENSE.txt) that
+# doesn't include a "link" glyph, and adding one means downloading the real
+# Nerd Font source + fonttools to regenerate it. A plain arrow renders fine
+# via the default system font without touching the embedded font at all.
+ICON_EXTERNAL_LINK = "↗"  # external link (e.g. to a repository)
 
 # Provider icons
 ICON_GITHUB = ""  # (nf-fa-github)

@@ -272,7 +272,14 @@ class _KillRaceDaemonClient:
         self, events: list[str], *, full: bool = True
     ) -> Iterator[ResponseUnion]:
         yield EventResponse(event="state", data=_two_session_state())
-        found = self._post_kill_pushed.wait(timeout=2)
+        # Generous margin -- under a loaded full-suite run (CPU contention
+        # from hundreds of other tests/background threads), the main
+        # thread's `action_kill_session()` call can take noticeably longer
+        # to reach `kill_session()` than it does running this file alone.
+        # The assertion below is about correctness of the race ordering,
+        # not about speed, so a short timeout only risks a flaky failure
+        # without making the test any more meaningful.
+        found = self._post_kill_pushed.wait(timeout=10)
         assert found, "kill_session() was never called"
         yield EventResponse(
             event="state", data=_session_state_with_ci_checks("session-a")

@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700" viewBox="0 0 900 700">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+    <filter id="shadow-sm" x="-5%" y="-5%" width="115%" height="115%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+    <linearGradient id="menubar-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3a3a3c"/>
+      <stop offset="100%" stop-color="#2c2c2e"/>
+    </linearGradient>
+    <linearGradient id="panel-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2c2c2e"/>
+      <stop offset="100%" stop-color="#1c1c1e"/>
+    </linearGradient>
+    <linearGradient id="card-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3a3a3c"/>
+      <stop offset="100%" stop-color="#333336"/>
+    </linearGradient>
+    <clipPath id="panel-clip">
+      <rect x="340" y="62" width="340" height="580" rx="12"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background: simulated desktop -->
+  <rect width="900" height="700" fill="#1a1a1d"/>
+
+  <!-- Title -->
+  <text x="450" y="690" text-anchor="middle" fill="#8e8e93" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="13" font-weight="500">KONZEPT 1: Menu Bar Dropdown</text>
+
+  <!-- macOS Menu Bar -->
+  <rect x="0" y="0" width="900" height="28" fill="url(#menubar-bg)" opacity="0.95"/>
+  <circle cx="12" cy="14" r="6" fill="#ff5f57"/>
+  <text x="30" y="18" fill="#e5e5ea" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="13" font-weight="600">Finder</text>
+  <text x="80" y="18" fill="#aeaeb2" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="13">File</text>
+  <text x="105" y="18" fill="#aeaeb2" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="13">Edit</text>
+  <text x="133" y="18" fill="#aeaeb2" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="13">View</text>
+
+  <!-- Menu Bar Right Side -->
+  <text x="830" y="18" fill="#e5e5ea" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="12">10:23</text>
+  <text x="780" y="18" fill="#e5e5ea" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="14">Wi-Fi</text>
+
+  <!-- pyworkon menu bar icon (highlighted) -->
+  <rect x="490" y="2" width="32" height="24" rx="4" fill="#48484a"/>
+  <text x="506" y="19" text-anchor="middle" fill="#30d158" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="14" font-weight="700">P</text>
+
+  <!-- Status dots in menu bar next to P icon -->
+  <circle cx="530" cy="14" r="3" fill="#30d158"/>
+  <circle cx="538" cy="14" r="3" fill="#ff9f0a"/>
+  <circle cx="546" cy="14" r="3" fill="#30d158"/>
+
+  <!-- Dropdown arrow from menu bar icon -->
+  <polygon points="506,28 500,35 512,35" fill="#48484a"/>
+
+  <!-- Dropdown Panel -->
+  <rect x="340" y="38" width="340" height="580" rx="12" fill="url(#panel-bg)" filter="url(#shadow)" opacity="0.97"/>
+
+  <!-- Panel header -->
+  <rect x="340" y="38" width="340" height="44" rx="12" fill="#3a3a3c" opacity="0.6"/>
+  <rect x="340" y="70" width="340" height="12" fill="#3a3a3c" opacity="0.6"/>
+  <text x="360" y="66" fill="#e5e5ea" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="15" font-weight="600">pyworkon</text>
+  <text x="600" y="66" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">4 sessions</text>
+
+  <!-- Search bar -->
+  <rect x="356" y="92" width="308" height="30" rx="8" fill="#48484a" opacity="0.6"/>
+  <text x="374" y="111" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="12">Search sessions...</text>
+
+  <!-- Session Card 1: app-interface -->
+  <rect x="356" y="134" width="308" height="108" rx="10" fill="url(#card-bg)" filter="url(#shadow-sm)"/>
+  <!-- Active indicator -->
+  <rect x="356" y="134" width="4" height="108" rx="2" fill="#30d158"/>
+  <!-- Session name -->
+  <circle cx="376" cy="154" r="5" fill="#30d158"/>
+  <text x="390" y="158" fill="#e5e5ea" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="14" font-weight="600">app-interface</text>
+  <!-- Branch -->
+  <text x="376" y="178" fill="#aeaeb2" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">fix-glitchtip-access-reporter</text>
+  <!-- PR info -->
+  <text x="376" y="196" fill="#8e8e93" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">fix output file path</text>
+  <text x="376" y="212" fill="#0a84ff" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11" text-decoration="underline">app-interface#214624</text>
+  <!-- CI status pill -->
+  <rect x="580" y="200" width="72" height="20" rx="10" fill="#30d158" opacity="0.15"/>
+  <text x="616" y="214" text-anchor="middle" fill="#30d158" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="10" font-weight="500">CI Passed</text>
+  <!-- Agent -->
+  <text x="376" y="232" fill="#bf5af2" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">claude-28836</text>
+  <circle cx="642" cy="228" r="4" fill="#ff9f0a"/>
+
+  <!-- Session Card 2: pyworkon -->
+  <rect x="356" y="252" width="308" height="62" rx="10" fill="url(#card-bg)" filter="url(#shadow-sm)"/>
+  <circle cx="376" cy="275" r="5" fill="#30d158"/>
+  <text x="390" y="279" fill="#e5e5ea" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="14" font-weight="600">pyworkon</text>
+  <text x="376" y="299" fill="#aeaeb2" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">main</text>
+  <text x="376" y="230" fill="#bf5af2" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11"></text>
+
+  <!-- Session Card 3: qontract-reconcile (expanded, has failures) -->
+  <rect x="356" y="324" width="308" height="192" rx="10" fill="url(#card-bg)" filter="url(#shadow-sm)"/>
+  <rect x="356" y="324" width="4" height="192" rx="2" fill="#ff9f0a"/>
+  <circle cx="376" cy="347" r="5" fill="#30d158"/>
+  <text x="390" y="351" fill="#e5e5ea" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="14" font-weight="600">qontract-reconcile</text>
+  <text x="376" y="371" fill="#aeaeb2" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">LDAP-membership-sources-notifications</text>
+  <text x="376" y="389" fill="#8e8e93" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">resolve LDAP role memberships</text>
+  <text x="376" y="405" fill="#0a84ff" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11" text-decoration="underline">qontract-reconcile#5859</text>
+  <!-- CI checks compact -->
+  <rect x="580" y="393" width="72" height="20" rx="10" fill="#ff453a" opacity="0.15"/>
+  <text x="616" y="407" text-anchor="middle" fill="#ff453a" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="10" font-weight="500">3 Failed</text>
+  <!-- Expanded CI list (compact) -->
+  <text x="388" y="425" fill="#ff453a" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="10">opa-master-on-pull-request</text>
+  <text x="646" y="425" fill="#ff453a" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11" text-anchor="end">x</text>
+  <text x="388" y="440" fill="#ff453a" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="10">qontract-api-client-master</text>
+  <text x="646" y="440" fill="#ff453a" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11" text-anchor="end">x</text>
+  <text x="388" y="455" fill="#ff453a" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="10">qontract-reconcile-fips-master</text>
+  <text x="646" y="455" fill="#ff453a" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11" text-anchor="end">x</text>
+  <text x="388" y="470" fill="#30d158" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="10">reconcile-main-enterprise</text>
+  <text x="388" y="485" fill="#30d158" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="10">qontract-reconcile-master</text>
+  <!-- Show more -->
+  <text x="388" y="502" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="10">+5 more checks...</text>
+  <!-- Agent -->
+  <text x="376" y="232" fill="#bf5af2" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11"></text>
+
+  <!-- Session Card 4: sre-capabilities -->
+  <rect x="356" y="526" width="308" height="80" rx="10" fill="url(#card-bg)" filter="url(#shadow-sm)"/>
+  <circle cx="376" cy="549" r="5" fill="#30d158"/>
+  <text x="390" y="553" fill="#e5e5ea" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="14" font-weight="600">sre-capabilities</text>
+  <text x="376" y="573" fill="#aeaeb2" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">ROSAENG-67952</text>
+  <text x="376" y="591" fill="#8e8e93" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">[Draft] Migrate SRE capabilities docs</text>
+  <!-- Draft pill -->
+  <rect x="590" y="578" width="62" height="20" rx="10" fill="#636366" opacity="0.3"/>
+  <text x="621" y="592" text-anchor="middle" fill="#8e8e93" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="10" font-weight="500">Draft</text>
+
+  <!-- Annotation arrows and labels -->
+  <line x1="160" y1="100" x2="340" y2="100" stroke="#0a84ff" stroke-width="1" stroke-dasharray="4,4" opacity="0.6"/>
+  <text x="30" y="60" fill="#0a84ff" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="12" font-weight="500">Lebt in der Menu Bar</text>
+  <text x="30" y="78" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">Null Screen-Platz wenn zu.</text>
+  <text x="30" y="93" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">Klick oder Hotkey offnet Panel.</text>
+  <text x="30" y="108" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">Dots zeigen Gesamtstatus.</text>
+
+  <line x1="160" y1="260" x2="356" y2="260" stroke="#30d158" stroke-width="1" stroke-dasharray="4,4" opacity="0.6"/>
+  <text x="30" y="240" fill="#30d158" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="12" font-weight="500">Kompakte Session Cards</text>
+  <text x="30" y="258" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">Klick wechselt zum tmux Session.</text>
+  <text x="30" y="273" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">CI-Status als Pill-Badge.</text>
+
+  <line x1="160" y1="420" x2="356" y2="420" stroke="#ff453a" stroke-width="1" stroke-dasharray="4,4" opacity="0.6"/>
+  <text x="30" y="400" fill="#ff453a" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="12" font-weight="500">Expandierbare CI Checks</text>
+  <text x="30" y="418" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">Nur Failures default anzeigen.</text>
+  <text x="30" y="433" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">Klick auf Check offnet URL.</text>
+
+  <line x1="780" y1="180" x2="664" y2="180" stroke="#bf5af2" stroke-width="1" stroke-dasharray="4,4" opacity="0.6"/>
+  <text x="700" y="170" fill="#bf5af2" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="12" font-weight="500">Agent Status</text>
+  <text x="700" y="188" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">Live working/idle/waiting.</text>
+  <text x="700" y="203" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">Spinner-Animation.</text>
+
+  <text x="700" y="350" fill="#ff9f0a" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="12" font-weight="500">Technologie</text>
+  <text x="700" y="368" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">Swift + AppKit NSStatusItem</text>
+  <text x="700" y="383" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">oder Tauri v2 (Web + Rust)</text>
+  <text x="700" y="398" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">Daemon Socket Anbindung</text>
+  <text x="700" y="413" fill="#636366" font-family="-apple-system, SF Pro Display, Helvetica Neue, sans-serif" font-size="11">Globaler Hotkey: Cmd+Shift+P</text>
+</svg>
