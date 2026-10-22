@@ -111,6 +111,8 @@ class HoverMonitor:
         self._hovered: str | None = None
         self._miss_streak = 0
         self._last_other_app: Any = None
+        # See `set_reclaim_suspended()` for why this exists.
+        self._reclaim_suspended = False
 
     def start(self) -> None:
         threading.Thread(target=self._poll_loop, daemon=True).start()
@@ -120,6 +122,22 @@ class HoverMonitor:
             r["session_name"]: _Rect(r["left"], r["top"], r["width"], r["height"])
             for r in rects
         }
+
+    def set_reclaim_suspended(self, *, suspended: bool) -> None:
+        """Pause or resume `_reclaim_activation_if_stolen()`'s watchdog.
+
+        Must be suspended for as long as the "open a new session" project
+        picker (see `bridge.py`'s `open_project_picker()`) intentionally holds
+        real keyboard focus -- that's the one deliberate exception to "this
+        process should never be frontmost" the watchdog exists to enforce.
+        Without this, the very next poll tick (within ~30ms) sees the picker
+        *correctly* having made us frontmost, treats it exactly like the
+        accidental activation this watchdog was built to undo, and
+        immediately hands focus back to whatever was frontmost before --
+        fighting the picker's own focus grab before the user can type
+        anything into it.
+        """
+        self._reclaim_suspended = suspended
 
     def _poll_loop(self) -> None:
         """Runs forever on its own thread: safe to block on `evaluate_js()` here.
@@ -160,6 +178,8 @@ class HoverMonitor:
         frontmost most recently, tracked in `_last_other_app`) is a much more
         direct ask and reliably takes effect instead.
         """
+        if self._reclaim_suspended:
+            return
 
         def _apply() -> None:
             workspace = AppKit.NSWorkspace.sharedWorkspace()

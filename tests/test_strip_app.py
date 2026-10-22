@@ -45,8 +45,11 @@ def test_build_windows_never_allows_either_window_to_become_key(
     Regression test: `focus=True` previously let every real click on a chip
     key the window, which silently steals keyboard focus from whatever app
     (e.g. a terminal) the user is actually working in, regardless of the
-    strip's own app never activating. Applies to both windows -- the popup
-    window delivers real clicks too (e.g. for PR links).
+    strip's own app never activating. Applies to the strip and popup windows
+    -- the popup window delivers real clicks too (e.g. for PR links). The
+    project picker is the one deliberate exception (see `bridge.py`'s
+    `open_project_picker()`): it hosts a real search box, so it needs
+    `focus=True`.
     """
     screen = _FakeScreen()
     calls: list[dict[str, object]] = []
@@ -59,15 +62,18 @@ def test_build_windows_never_allows_either_window_to_become_key(
 
     _build_windows(MagicMock(), layout=_make_layout(screen), auto_hide=False)
 
-    assert len(calls) == 2
-    assert all(call["focus"] is False for call in calls)
+    assert len(calls) == 3
+    strip_call, popup_call, picker_call = calls
+    assert strip_call["focus"] is False
+    assert popup_call["focus"] is False
+    assert picker_call["focus"] is True
 
 
-def test_build_windows_binds_the_bridge_to_both_windows(
+def test_build_windows_binds_the_bridge_to_all_three_windows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     screen = _FakeScreen()
-    windows = [MagicMock(), MagicMock()]
+    windows = [MagicMock(), MagicMock(), MagicMock()]
 
     monkeypatch.setattr(
         app_module.webview, "create_window", lambda *_a, **_kw: windows.pop(0)
@@ -75,10 +81,12 @@ def test_build_windows_binds_the_bridge_to_both_windows(
     bridge = MagicMock()
     layout = _make_layout(screen)
 
-    window, popup_window = _build_windows(bridge, layout=layout, auto_hide=False)
+    window, popup_window, picker_window = _build_windows(
+        bridge, layout=layout, auto_hide=False
+    )
 
     bridge.bind.assert_called_once_with(
-        window, popup_window, layout=layout, collapsed=False
+        window, popup_window, picker_window, layout=layout, collapsed=False
     )
 
 

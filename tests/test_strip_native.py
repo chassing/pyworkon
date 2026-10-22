@@ -10,13 +10,19 @@ from pyworkon.interfaces.strip import native as native_module
 from pyworkon.interfaces.strip.native import (
     POPUP_MAX_HEIGHT,
     POPUP_MIN_HEIGHT,
+    capture_frontmost_app,
     clamp_popup_height,
     hide_from_dock,
+    hide_picker_window,
     hide_popup_window,
+    move_picker_window,
+    prepare_picker_window,
     prepare_popup_window,
     prepare_window,
+    reactivate_app,
     resize_and_position_popup_window,
     resize_frame,
+    show_picker_window,
     show_popup_window,
 )
 
@@ -267,6 +273,176 @@ def test_hide_popup_window_orders_out() -> None:
     hide_popup_window(native)
 
     native.orderOut_.assert_called_once_with(None)
+
+
+def test_prepare_picker_window_starts_hidden(fake_appkit: MagicMock) -> None:
+    """Unlike the strip window, the picker starts hidden -- only shown on explicit "+" click."""
+    native = MagicMock()
+
+    prepare_picker_window(native, lambda: None)
+
+    native.orderOut_.assert_called_once_with(None)
+    native.orderFrontRegardless.assert_not_called()
+    native.makeKeyAndOrderFront_.assert_not_called()
+
+
+def test_prepare_picker_window_uses_plain_borderless_style_mask(
+    fake_appkit: MagicMock,
+) -> None:
+    native = MagicMock()
+
+    prepare_picker_window(native, lambda: None)
+
+    native.setStyleMask_.assert_called_once_with(0)
+
+
+def test_prepare_picker_window_keeps_window_on_all_spaces(
+    fake_appkit: MagicMock,
+) -> None:
+    native = MagicMock()
+
+    prepare_picker_window(native, lambda: None)
+
+    native.setCollectionBehavior_.assert_called_once_with((1 << 0) | (1 << 4))
+
+
+def test_prepare_picker_window_sets_level_below_the_dock(
+    fake_appkit: MagicMock,
+) -> None:
+    native = MagicMock()
+
+    prepare_picker_window(native, lambda: None)
+
+    native.setLevel_.assert_called_once_with(19)
+
+
+def test_prepare_picker_window_registers_a_resign_key_observer_scoped_to_this_window(
+    fake_appkit: MagicMock,
+) -> None:
+    """Scoped via `object=native` -- not a global observer for every window's resign-key."""
+    native = MagicMock()
+
+    prepare_picker_window(native, lambda: None)
+
+    center = fake_appkit.NSNotificationCenter.defaultCenter.return_value
+    (name, obj, queue, _block), _kwargs = (
+        center.addObserverForName_object_queue_usingBlock_.call_args
+    )
+    assert name == "NSWindowDidResignKeyNotification"
+    assert obj is native
+    assert queue is None
+
+
+def test_prepare_picker_window_resign_key_observer_defers_to_a_background_thread(
+    fake_appkit: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Must never call the callback inline -- see `prepare_picker_window()`'s docstring.
+
+    Regression test: the notification block used to call `on_resign_key()`
+    directly, which fires on AppKit's main thread -- since that callback
+    (`bridge.py`'s `on_picker_lost_focus()`) calls `Window.evaluate_js()`,
+    which blocks the calling thread waiting for the main thread's own run
+    loop to service it, calling it inline from the main thread deadlocked the
+    entire app on every close and on every click into the picker's filter
+    field.
+    """
+    native = MagicMock()
+    calls: list[None] = []
+    threads: list[dict[str, object]] = []
+
+    class _FakeThread:
+        def __init__(self, *, target: object, daemon: bool) -> None:
+            threads.append({"target": target, "daemon": daemon})
+
+        def start(self) -> None:
+            pass
+
+    monkeypatch.setattr(native_module, "threading", MagicMock(Thread=_FakeThread))
+
+    prepare_picker_window(native, lambda: calls.append(None))
+
+    center = fake_appkit.NSNotificationCenter.defaultCenter.return_value
+    (_name, _obj, _queue, block), _kwargs = (
+        center.addObserverForName_object_queue_usingBlock_.call_args
+    )
+    block(None)
+
+    assert calls == []
+    assert len(threads) == 1
+    assert threads[0]["daemon"] is True
+    target = threads[0]["target"]
+    assert callable(target)
+    target()
+    assert calls == [None]
+
+
+def test_move_picker_window_sets_origin_only() -> None:
+    """Position only -- the picker's size never changes (see `PICKER_WIDTH`/`PICKER_HEIGHT`)."""
+    native = MagicMock()
+
+    move_picker_window(native, 1200.0, 84.0)
+
+    (point,), _kwargs = native.setFrameOrigin_.call_args
+    assert (point.x, point.y) == (1200.0, 84.0)
+    native.setFrame_display_.assert_not_called()
+
+
+def test_show_picker_window_makes_it_key(fake_appkit: MagicMock) -> None:
+    """The one window in this module that *wants* key status -- it hosts a real text input."""
+    native = MagicMock()
+
+    show_picker_window(native)
+
+    native.makeKeyAndOrderFront_.assert_called_once_with(None)
+    native.orderFrontRegardless.assert_not_called()
+
+
+def test_show_picker_window_activates_our_own_app_first(fake_appkit: MagicMock) -> None:
+    """Regression test: a key window on an inactive Accessory-policy app doesn't reliably focus.
+
+    Manual testing confirmed the filter input never actually received
+    keyboard focus, and the first click after opening only activated the app
+    instead of registering on a project row -- both fixed by explicitly
+    activating our own process before making the window key, the same direct
+    `activateWithOptions_` call `reactivate_app()` uses for *other* apps.
+    """
+    native = MagicMock()
+
+    show_picker_window(native)
+
+    app = fake_appkit.NSRunningApplication.currentApplication.return_value
+    app.activateWithOptions_.assert_called_once_with(0)
+
+
+def test_hide_picker_window_orders_out() -> None:
+    native = MagicMock()
+
+    hide_picker_window(native)
+
+    native.orderOut_.assert_called_once_with(None)
+
+
+def test_capture_frontmost_app_returns_the_frontmost_application(
+    fake_appkit: MagicMock,
+) -> None:
+    workspace = fake_appkit.NSWorkspace.sharedWorkspace.return_value
+    frontmost = workspace.frontmostApplication.return_value
+
+    result = capture_frontmost_app()
+
+    assert result is frontmost
+
+
+def test_reactivate_app_activates_the_given_app() -> None:
+    app = MagicMock()
+
+    reactivate_app(app)
+
+    app.activateWithOptions_.assert_called_once_with(0)
+
+
+def test_reactivate_app_is_a_noop_for_none() -> None:
+    reactivate_app(None)  # must not raise
 
 
 def test_clamp_popup_height_clamps_to_minimum() -> None:

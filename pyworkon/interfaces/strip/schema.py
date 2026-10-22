@@ -47,9 +47,16 @@ class StripSessionState(_FrozenModel):
     review_prs: list[ReviewPR] = []
 
 
+class StripProjectState(_FrozenModel):
+    project_id: str
+    project_name: str
+    provider_type: ProviderKind | None = None
+
+
 class StripStatePayload(_FrozenModel):
     sessions: list[StripSessionState]
     plain_sessions: list[str]
+    projects: list[StripProjectState] = []
 
 
 def _repository_web_url(ssh_url: str | None) -> str | None:
@@ -87,4 +94,12 @@ def to_strip_payload(state: SidebarStatePayload) -> StripStatePayload:
             for s in state.sessions
         ],
         plain_sessions=list(state.plain_sessions),
+        projects=[
+            StripProjectState(
+                project_id=p.id,
+                project_name=p.name,
+                provider_type=p.provider.type if p.provider else None,
+            )
+            for p in state.projects
+        ],
     )

@@ -29,19 +29,25 @@ from pyworkon.interfaces.strip.bridge import COLLAPSED_HEIGHT, STRIP_HEIGHT, Str
 from pyworkon.interfaces.strip.schema import to_strip_payload
 lazy from pyworkon.interfaces.strip.dock_geometry import compute_strip_layout
 lazy from pyworkon.interfaces.strip.native import (
+    PICKER_HEIGHT,
+    PICKER_WIDTH,
     POPUP_MAX_HEIGHT,
     POPUP_MAX_WIDTH,
     POPUP_MIN_WIDTH,
     hide_from_dock,
+    prepare_picker_window,
     prepare_popup_window,
     prepare_window,
     resize_frame,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from webview import Window
 
     from pyworkon.interfaces.strip.dock_geometry import StripLayout, StripMode
+    from pyworkon.interfaces.strip.schema import StripStatePayload
 
 STATIC_DIR = Path(__file__).parent / "static"
 _RECONNECT_DELAY_SECS = 1.0
@@ -96,6 +102,23 @@ def _render_strip_html(*, is_popup: bool, mode: StripMode) -> str:
     return template.replace(_POPUP_MAX_WIDTH_PLACEHOLDER, str(POPUP_MAX_WIDTH))
 
 
+def _render_picker_html() -> str:
+    """Render `picker.html` -- the "open a new session" project picker's own page.
+
+    A genuinely separate static file, not a third mode on `strip.html`: the
+    strip and hover-popup share that file because their content overlaps
+    heavily and neither ever receives keyboard events, but the picker's whole
+    reason to exist is keyboard interaction (typing, arrow keys, Enter,
+    Escape) that must never reach the other two windows. Needs the same
+    icon/font injection as the strip (GitHub/GitLab marks, the embedded
+    webfont) but none of its `is_popup`/`mode` placeholders, since this
+    window has no shared-file gating to seed.
+    """
+    template = (STATIC_DIR / "picker.html").read_text(encoding="utf-8")
+    template = template.replace(_ICONS_PLACEHOLDER, json.dumps(DASHBOARD_ICONS))
+    return template.replace(_FONT_PLACEHOLDER, _font_base64())
+
+
 def _initial_create_coords(layout: StripLayout, height: int) -> tuple[int, int]:
     """Convert `layout`'s absolute placement into `create_window(x=, y=)`'s own convention.
 
@@ -127,8 +150,8 @@ def _initial_create_coords(layout: StripLayout, height: int) -> tuple[int, int]:
 
 def _build_windows(
     bridge: StripBridge, *, layout: StripLayout, auto_hide: bool
-) -> tuple[Window, Window]:
-    """Create the strip's pywebview window and its separate hover-popup window.
+) -> tuple[Window, Window, Window]:
+    """Create the strip's pywebview window and its two separate child windows.
 
     `focus=False` is load-bearing, not a default left alone, for *both*
     windows: pywebview's own `WindowHost.canBecomeKeyWindow`
@@ -153,6 +176,13 @@ def _build_windows(
     desktop showed through) during the resize, and nothing on the native or
     CSS side fixed that. A window that only ever moves and shows/hides, never
     resizes, sidesteps the problem instead.
+
+    The picker is a *third* window, for the "open a new session" project
+    picker -- and the one deliberate exception to "never take focus": it
+    passes `focus=True` (not `focus=False`) so it can host a real, typed
+    search box. See `native.py`'s `prepare_picker_window()` and `bridge.py`'s
+    `open_project_picker()`/`close_project_picker()` for how focus is handed
+    back the instant it closes.
     """
     height = COLLAPSED_HEIGHT if auto_hide else layout.height
     create_x, create_y = _initial_create_coords(layout, height)
@@ -210,14 +240,45 @@ def _build_windows(
     if popup_window is None:
         msg = "pywebview failed to create the strip's popup window"
         raise RuntimeError(msg)
-    bridge.bind(window, popup_window, layout=layout, collapsed=auto_hide)
-    return window, popup_window
+    picker_window = webview.create_window(
+        "pyworkon-strip-picker",
+        html=_render_picker_html(),
+        js_api=bridge,
+        screen=layout.screen,
+        # Position is irrelevant at creation time -- always moved
+        # (`bridge.py`'s `open_project_picker()`) before it's ever shown, and
+        # it starts hidden (`prepare_picker_window()`).
+        x=0,
+        y=0,
+        width=PICKER_WIDTH,
+        height=PICKER_HEIGHT,
+        frameless=True,
+        easy_drag=False,
+        on_top=True,
+        transparent=True,
+        vibrancy=False,
+        focus=True,
+        resizable=False,
+        shadow=False,
+        text_select=True,
+    )
+    if picker_window is None:
+        msg = "pywebview failed to create the strip's project picker window"
+        raise RuntimeError(msg)
+    bridge.bind(window, popup_window, picker_window, layout=layout, collapsed=auto_hide)
+    return window, popup_window, picker_window
 
 
 def _finalize_native_window(
-    window: Window, popup_window: Window, layout: StripLayout, *, height: int
+    window: Window,
+    popup_window: Window,
+    picker_window: Window,
+    layout: StripLayout,
+    *,
+    height: int,
+    on_picker_lost_focus: Callable[[], None],
 ) -> None:
-    """One-time native setup for both windows, then an initial strip resize."""
+    """One-time native setup for all three windows, then an initial strip resize."""
     with contextlib.suppress(Exception):
         native = window.native
         if native is not None:
@@ -227,10 +288,28 @@ def _finalize_native_window(
         popup_native = popup_window.native
         if popup_native is not None:
             prepare_popup_window(popup_native)
+    with contextlib.suppress(Exception):
+        picker_native = picker_window.native
+        if picker_native is not None:
+            prepare_picker_window(picker_native, on_picker_lost_focus)
     hide_from_dock()
 
 
-def _run_daemon_session(window: Window, popup_window: Window) -> None:
+def _push_state(
+    window: Window,
+    popup_window: Window,
+    picker_window: Window,
+    payload: StripStatePayload,
+) -> None:
+    script = f"updateState({payload.model_dump_json()})"
+    window.evaluate_js(script)
+    popup_window.evaluate_js(script)
+    picker_window.evaluate_js(script)
+
+
+def _run_daemon_session(
+    window: Window, popup_window: Window, picker_window: Window
+) -> None:
     client = DaemonClient()
     try:
         client.connect()
@@ -239,10 +318,9 @@ def _run_daemon_session(window: Window, popup_window: Window) -> None:
     try:
         for resp in client.subscribe(["state"], full=True):
             if isinstance(resp.data, SidebarStatePayload):
-                payload = to_strip_payload(resp.data)
-                script = f"updateState({payload.model_dump_json()})"
-                window.evaluate_js(script)
-                popup_window.evaluate_js(script)
+                _push_state(
+                    window, popup_window, picker_window, to_strip_payload(resp.data)
+                )
     except ConnectionError, OSError:
         pass
     finally:
@@ -353,6 +431,7 @@ def _watch_screen_changes(bridge: StripBridge) -> None:
 def _listen_daemon(
     window: Window,
     popup_window: Window,
+    picker_window: Window,
     bridge: StripBridge,
     layout: StripLayout,
     height: int,
@@ -360,16 +439,25 @@ def _listen_daemon(
     """Entry point for `webview.start()`'s background thread.
 
     This thread is started before pywebview's own `create_window()` calls on
-    the main thread, so neither window may be shown yet -- wait for both
-    `shown` events before touching their frames, or our own positioning would
-    race pywebview's initial placement and could be clobbered by it.
+    the main thread, so none of the three windows may be shown yet -- wait
+    for every `shown` event before touching their frames, or our own
+    positioning would race pywebview's initial placement and could be
+    clobbered by it.
     """
     window.events.shown.wait(15)
     popup_window.events.shown.wait(15)
-    _finalize_native_window(window, popup_window, layout, height=height)
+    picker_window.events.shown.wait(15)
+    _finalize_native_window(
+        window,
+        popup_window,
+        picker_window,
+        layout,
+        height=height,
+        on_picker_lost_focus=bridge.on_picker_lost_focus,
+    )
     _watch_screen_changes(bridge)
     while True:
-        _run_daemon_session(window, popup_window)
+        _run_daemon_session(window, popup_window, picker_window)
         time.sleep(_RECONNECT_DELAY_SECS)
 
 
@@ -392,13 +480,13 @@ def start_strip(*, auto_hide: bool = False) -> None:
     layout = compute_strip_layout(full_width_height=STRIP_HEIGHT)
     bridge = StripBridge()
     try:
-        window, popup_window = _build_windows(
+        window, popup_window, picker_window = _build_windows(
             bridge, layout=layout, auto_hide=auto_hide
         )
         height = COLLAPSED_HEIGHT if auto_hide else layout.height
         webview.start(
             _listen_daemon,
-            [window, popup_window, bridge, layout, height],
+            [window, popup_window, picker_window, bridge, layout, height],
             debug=False,
         )
     finally:

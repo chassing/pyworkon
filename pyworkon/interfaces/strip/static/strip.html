@@ -115,10 +115,66 @@
     border: 1px solid var(--strip-border);
     border-radius: var(--strip-radius);
     box-shadow: 0 12px 40px #0005, inset 0 1px #ffffff03;
+  }
+  /* The scrollable chip area, nested inside `#strip` -- separate from it so
+     the "open a new session" toggle button (a sibling, not a scrollable
+     chip) always stays visible at the strip's right edge instead of
+     scrolling away with the chips. */
+  #chip-row {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
     overflow-x: auto;
     overflow-y: hidden;
     white-space: nowrap;
   }
+  /* Separates the toggle button from the scrollable chip row -- without it,
+     the button reads as just one more chip instead of a distinct, permanent
+     action at the strip's edge. */
+  .add-divider {
+    height: 26px;
+    width: 1px;
+    background: var(--line);
+    flex: none;
+    margin: 0 1px;
+  }
+  .add-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex: none;
+    border: 1px solid var(--chip-border);
+    border-radius: 10px;
+    background: #ffffff04;
+    color: #9aa4b1;
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: 400;
+  }
+  .add-toggle .icon { transition: transform 0.16s ease; }
+  /* Deliberately no `:hover` rule here (unlike `.chip:hover` below) --
+     confirmed via `getComputedStyle()` after a real close that this button's
+     `:hover` state gets permanently stuck showing `.--open`'s own identical
+     warm color: this window never becomes key/active (see native.py's
+     `prepare_window()`), so the `mouseleave` that would normally clear
+     `:hover` never reliably reaches it once the app backgrounds itself again
+     (reactivating whatever app the picker handed focus back to) -- the exact
+     same "background window doesn't get real hover events" limitation
+     `hover_monitor.py` exists to work around for the session popup, just
+     never noticed here before since a stuck hover looked identical to the
+     (correct) `.--open` state. The button's only visual state that matters
+     is `--open` (driven explicitly from Python, never a native pseudo-class),
+     so it doesn't need its own separate, unreliable hover affordance. */
+  .add-toggle.--open {
+    background: #e0af6818;
+    border-color: #e0af6870;
+    color: #edc58e;
+  }
+  .add-toggle.--open .icon { transform: rotate(45deg); }
   #empty {
     color: var(--dim);
     padding: 0 4px;
@@ -462,7 +518,11 @@
 </head>
 <body>
 <div id="handle" title="Show pyworkon strip"></div>
-<div id="strip"></div>
+<div id="strip">
+  <div id="chip-row"></div>
+  <div class="add-divider"></div>
+  <div id="add-toggle" class="add-toggle" title="Open a new session"><span class="icon">+</span></div>
+</div>
 <div id="popup"></div>
 <div id="ctxmenu"></div>
 
@@ -939,7 +999,7 @@ function findSession(name) {
 }
 
 function renderStrip() {
-  const container = document.getElementById("strip");
+  const container = document.getElementById("chip-row");
   const plain = lastState.plain_sessions.map(renderPlainChip).join("");
   const chips = lastState.sessions.map(renderChip).join("");
   if (!chips && !plain) {
@@ -1057,12 +1117,36 @@ stripEl.addEventListener("click", (ev) => {
   if (chip) pywebview.api.switch_session(chip.dataset.session);
 });
 
-// `#strip` has `overflow-x: auto` (see CSS above), so scrolling it shifts
-// every chip's `getBoundingClientRect()` result exactly like a resize does
-// -- without reporting here too, the hover monitor's cached rects go stale
-// the moment the user scrolls, targeting whichever chip used to be at that
-// screen position instead of the one now there.
-stripEl.addEventListener("scroll", reportChipRects);
+// `#chip-row` (not `#strip` itself -- see its CSS above) has `overflow-x:
+// auto`, so scrolling it shifts every chip's `getBoundingClientRect()`
+// result exactly like a resize does -- without reporting here too, the
+// hover monitor's cached rects go stale the moment the user scrolls,
+// targeting whichever chip used to be at that screen position instead of
+// the one now there.
+document.getElementById("chip-row").addEventListener("scroll", reportChipRects);
+
+// `bridge.py` is the single source of truth for whether the picker is
+// actually open (it can close without any strip-side click at all, e.g.
+// click-away via `on_picker_lost_focus()`) -- `window.__setPickerOpen()`
+// below is how it syncs this button's visual state back on every open/close
+// path, the same way `window.setStripMode()` already works. The click
+// handler itself only ever *asks* Python to open or close; it never
+// optimistically guesses the resulting state.
+let pickerOpen = false;
+const addToggleEl = document.getElementById("add-toggle");
+
+window.__setPickerOpen = function (open) {
+  pickerOpen = open;
+  addToggleEl.classList.toggle("--open", open);
+};
+
+addToggleEl.addEventListener("click", () => {
+  if (pickerOpen) {
+    pywebview.api.close_project_picker();
+  } else {
+    pywebview.api.open_project_picker();
+  }
+});
 
 // Re-renders the popup's content in place, preserving whether the
 // successful-checks `<details>` was expanded -- a plain `innerHTML`

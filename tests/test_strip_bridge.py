@@ -74,6 +74,9 @@ class _RecordingDaemonClient:
     def kill_session(self, session_name: str) -> None:
         self.calls.append(("kill_session", session_name))
 
+    def enter_project(self, project_id: str) -> None:
+        self.calls.append(("enter_project", project_id))
+
 
 def _make_layout(
     *,
@@ -93,6 +96,18 @@ class _FakeWindow:
         self.native = MagicMock()
         self.destroy = MagicMock()
         self.evaluate_js = MagicMock()
+        # Real numbers, not a bare MagicMock -- `_picker_screen_position()`
+        # does arithmetic on `.frame().origin`/`.size`, which would otherwise
+        # raise `TypeError` (silently swallowed by `open_project_picker()`'s
+        # `contextlib.suppress(Exception)` -- confirmed the hard way: without
+        # this, `move_picker_window`/`show_picker_window` never got called at
+        # all, with no visible error).
+        frame = MagicMock()
+        frame.origin.x = 0.0
+        frame.origin.y = 0.0
+        frame.size.width = 1920.0
+        frame.size.height = 56.0
+        self.native.frame.return_value = frame
 
 
 def test_switch_session_calls_daemon_client(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -137,7 +152,9 @@ def test_bind_creates_and_starts_a_hover_monitor(
     window = _FakeWindow()
     popup_window = _FakeWindow()
 
-    bridge.bind(window, popup_window, layout=_make_layout(), collapsed=False)  # type: ignore[arg-type]
+    bridge.bind(
+        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+    )  # type: ignore[arg-type]
 
     fake_hover_monitor.assert_called_once_with(window, popup_window)
     fake_hover_monitor.return_value.start.assert_called_once()
@@ -149,7 +166,9 @@ def test_update_chip_rects_forwards_to_the_hover_monitor(
     bridge = StripBridge()
     window = _FakeWindow()
     popup_window = _FakeWindow()
-    bridge.bind(window, popup_window, layout=_make_layout(), collapsed=False)  # type: ignore[arg-type]
+    bridge.bind(
+        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+    )  # type: ignore[arg-type]
     rects = [{"session_name": "s1", "left": 0, "top": 0, "width": 10, "height": 10}]
 
     bridge.update_chip_rects(rects)
@@ -166,7 +185,9 @@ def test_quit_destroys_both_windows() -> None:
     bridge = StripBridge()
     window = _FakeWindow()
     popup_window = _FakeWindow()
-    bridge.bind(window, popup_window, layout=_make_layout(), collapsed=False)  # type: ignore[arg-type]
+    bridge.bind(
+        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+    )  # type: ignore[arg-type]
 
     bridge.quit()
 
@@ -184,7 +205,7 @@ def test_toggle_collapse_shrinks_then_expands() -> None:
     window = _FakeWindow()
     popup_window = _FakeWindow()
     layout = _make_layout(x=0, y=0, width=1920, height=STRIP_HEIGHT)
-    bridge.bind(window, popup_window, layout=layout, collapsed=False)  # type: ignore[arg-type]
+    bridge.bind(window, popup_window, _FakeWindow(), layout=layout, collapsed=False)  # type: ignore[arg-type]
 
     bridge.toggle_collapse()
     assert _last_frame_rect(window) == (0, 0, 1920, COLLAPSED_HEIGHT)
@@ -202,7 +223,9 @@ def test_toggle_collapse_hides_the_popup_window(
     bridge = StripBridge()
     window = _FakeWindow()
     popup_window = _FakeWindow()
-    bridge.bind(window, popup_window, layout=_make_layout(), collapsed=False)  # type: ignore[arg-type]
+    bridge.bind(
+        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+    )  # type: ignore[arg-type]
 
     bridge.toggle_collapse()
 
@@ -213,7 +236,9 @@ def test_update_layout_resizes_the_strip_to_the_new_placement() -> None:
     bridge = StripBridge()
     window = _FakeWindow()
     popup_window = _FakeWindow()
-    bridge.bind(window, popup_window, layout=_make_layout(), collapsed=False)  # type: ignore[arg-type]
+    bridge.bind(
+        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+    )  # type: ignore[arg-type]
 
     bridge.update_layout(
         _make_layout(mode="beside_dock", x=2694, y=0, width=1146, height=84)
@@ -227,7 +252,9 @@ def test_update_layout_keeps_the_collapsed_height() -> None:
     bridge = StripBridge()
     window = _FakeWindow()
     popup_window = _FakeWindow()
-    bridge.bind(window, popup_window, layout=_make_layout(), collapsed=True)  # type: ignore[arg-type]
+    bridge.bind(
+        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=True
+    )  # type: ignore[arg-type]
 
     bridge.update_layout(
         _make_layout(mode="beside_dock", x=2694, y=0, width=1146, height=84)
@@ -240,7 +267,9 @@ def test_update_layout_pushes_the_new_mode_to_both_windows() -> None:
     bridge = StripBridge()
     window = _FakeWindow()
     popup_window = _FakeWindow()
-    bridge.bind(window, popup_window, layout=_make_layout(), collapsed=False)  # type: ignore[arg-type]
+    bridge.bind(
+        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+    )  # type: ignore[arg-type]
 
     bridge.update_layout(_make_layout(mode="beside_dock"))
 
@@ -259,6 +288,7 @@ def test_bind_enables_dock_autohide_for_full_width_mode(
     bridge.bind(
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="full_width"),
         collapsed=False,
     )
@@ -273,6 +303,7 @@ def test_bind_leaves_dock_autohide_alone_for_beside_dock_mode(
     bridge = StripBridge()
 
     bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="beside_dock"),
@@ -293,6 +324,7 @@ def test_update_layout_enables_dock_autohide_when_falling_back_to_full_width(
     fake_dock_autohide["enabled"] = False
     bridge = StripBridge()
     bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="beside_dock"),
@@ -318,6 +350,7 @@ def test_update_layout_restores_the_original_setting_when_returning_to_beside_do
     bridge.bind(
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="full_width"),
         collapsed=False,
     )
@@ -334,6 +367,7 @@ def test_update_layout_restores_the_original_off_value(
     fake_dock_autohide["enabled"] = False
     bridge = StripBridge()
     bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="full_width"),
@@ -356,6 +390,7 @@ def test_repeated_transitions_recapture_a_fresh_previous_value_each_time(
     fake_dock_autohide["enabled"] = False
     bridge = StripBridge()
     bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="full_width"),
@@ -382,6 +417,7 @@ def test_restore_dock_autohide_is_a_noop_without_an_override(
     bridge.bind(
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="beside_dock"),
         collapsed=False,
     )
@@ -397,6 +433,7 @@ def test_restore_dock_autohide_restores_on_shutdown(
     fake_dock_autohide["enabled"] = False
     bridge = StripBridge()
     bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="full_width"),
@@ -425,6 +462,7 @@ def test_recompute_and_apply_layout_serializes_concurrent_calls(
     """
     bridge = StripBridge()
     bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="beside_dock"),
@@ -490,6 +528,7 @@ def test_restore_dock_autohide_does_not_hang_forever_if_the_lock_is_stuck(
     bridge.bind(
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="full_width"),
         collapsed=False,
     )
@@ -514,3 +553,177 @@ def test_restore_dock_autohide_does_not_hang_forever_if_the_lock_is_stuck(
 
     assert elapsed < 1.0  # must not hang forever
     assert fake_dock_autohide["enabled"] is False  # restored anyway, best-effort
+
+
+def _bind_with_fakes(
+    bridge: StripBridge,
+) -> tuple[_FakeWindow, _FakeWindow, _FakeWindow]:
+    window = _FakeWindow()
+    popup_window = _FakeWindow()
+    picker_window = _FakeWindow()
+    bridge.bind(
+        window, popup_window, picker_window, layout=_make_layout(), collapsed=False
+    )  # type: ignore[arg-type]
+    return window, popup_window, picker_window
+
+
+def test_quit_destroys_the_picker_window_too() -> None:
+    bridge = StripBridge()
+    _window, _popup_window, picker_window = _bind_with_fakes(bridge)
+
+    bridge.quit()
+
+    picker_window.destroy.assert_called_once()
+
+
+def test_open_project_picker_captures_the_frontmost_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = StripBridge()
+    _bind_with_fakes(bridge)
+    captured = object()
+    monkeypatch.setattr(bridge_module, "capture_frontmost_app", lambda: captured)
+    monkeypatch.setattr(bridge_module, "move_picker_window", lambda *_args: None)
+    monkeypatch.setattr(bridge_module, "show_picker_window", lambda *_args: None)
+
+    bridge.open_project_picker()
+
+    assert bridge._picker_captured_app is captured
+
+
+def test_open_project_picker_moves_and_shows_the_picker_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = StripBridge()
+    _window, _popup_window, picker_window = _bind_with_fakes(bridge)
+    monkeypatch.setattr(bridge_module, "capture_frontmost_app", lambda: None)
+    move_calls: list[object] = []
+    show_calls: list[object] = []
+    monkeypatch.setattr(
+        bridge_module,
+        "move_picker_window",
+        lambda native, _x, _y: move_calls.append(native),
+    )
+    monkeypatch.setattr(bridge_module, "show_picker_window", show_calls.append)
+
+    bridge.open_project_picker()
+
+    assert move_calls == [picker_window.native]
+    assert show_calls == [picker_window.native]
+
+
+def test_open_project_picker_syncs_the_toggle_button_to_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = StripBridge()
+    window, _popup_window, _picker_window = _bind_with_fakes(bridge)
+    monkeypatch.setattr(bridge_module, "capture_frontmost_app", lambda: None)
+    monkeypatch.setattr(bridge_module, "move_picker_window", lambda *_args: None)
+    monkeypatch.setattr(bridge_module, "show_picker_window", lambda *_args: None)
+
+    bridge.open_project_picker()
+
+    (script,) = window.evaluate_js.call_args[0]
+    assert "__setPickerOpen(true)" in script
+
+
+def test_close_project_picker_hides_and_reactivates_the_captured_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The explicit-close path (select a project, press Escape) must hand focus back."""
+    bridge = StripBridge()
+    _window, _popup_window, picker_window = _bind_with_fakes(bridge)
+    captured = object()
+    monkeypatch.setattr(bridge_module, "capture_frontmost_app", lambda: captured)
+    monkeypatch.setattr(bridge_module, "move_picker_window", lambda *_args: None)
+    monkeypatch.setattr(bridge_module, "show_picker_window", lambda *_args: None)
+    hide_calls: list[object] = []
+    reactivate_calls: list[object] = []
+    monkeypatch.setattr(bridge_module, "hide_picker_window", hide_calls.append)
+    monkeypatch.setattr(bridge_module, "reactivate_app", reactivate_calls.append)
+    bridge.open_project_picker()
+
+    bridge.close_project_picker()
+
+    assert hide_calls == [picker_window.native]
+    assert reactivate_calls == [captured]
+    assert bridge._picker_captured_app is None
+
+
+def test_close_project_picker_syncs_the_toggle_button_to_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = StripBridge()
+    window, _popup_window, _picker_window = _bind_with_fakes(bridge)
+    monkeypatch.setattr(bridge_module, "hide_picker_window", lambda *_args: None)
+    monkeypatch.setattr(bridge_module, "reactivate_app", lambda *_args: None)
+
+    bridge.close_project_picker()
+
+    (script,) = window.evaluate_js.call_args[0]
+    assert "__setPickerOpen(false)" in script
+
+
+def test_on_picker_lost_focus_hides_without_reactivating_anything(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The click-away path must NOT reactivate the captured app.
+
+    Regression guard: the user's own click already made some *other* real
+    app frontmost -- reactivating our stale captured app here would fight
+    that fresh click and steal focus right back from whatever the user just
+    clicked into.
+    """
+    bridge = StripBridge()
+    _window, _popup_window, picker_window = _bind_with_fakes(bridge)
+    captured = object()
+    monkeypatch.setattr(bridge_module, "capture_frontmost_app", lambda: captured)
+    monkeypatch.setattr(bridge_module, "move_picker_window", lambda *_args: None)
+    monkeypatch.setattr(bridge_module, "show_picker_window", lambda *_args: None)
+    hide_calls: list[object] = []
+    reactivate_calls: list[object] = []
+    monkeypatch.setattr(bridge_module, "hide_picker_window", hide_calls.append)
+    monkeypatch.setattr(bridge_module, "reactivate_app", reactivate_calls.append)
+    bridge.open_project_picker()
+
+    bridge.on_picker_lost_focus()
+
+    assert hide_calls == [picker_window.native]
+    assert reactivate_calls == []
+    assert bridge._picker_captured_app is None
+
+
+def test_on_picker_lost_focus_syncs_the_toggle_button_to_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = StripBridge()
+    window, _popup_window, _picker_window = _bind_with_fakes(bridge)
+    monkeypatch.setattr(bridge_module, "hide_picker_window", lambda *_args: None)
+
+    bridge.on_picker_lost_focus()
+
+    (script,) = window.evaluate_js.call_args[0]
+    assert "__setPickerOpen(false)" in script
+
+
+def test_enter_project_calls_daemon_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = _RecordingDaemonClient()
+    monkeypatch.setattr(bridge_module, "DaemonClient", lambda: recorder)
+
+    StripBridge().enter_project("github/owner/repo")
+
+    assert recorder.calls == [("enter_project", "github/owner/repo")]
+
+
+def test_enter_project_closes_the_picker(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = _RecordingDaemonClient()
+    monkeypatch.setattr(bridge_module, "DaemonClient", lambda: recorder)
+    bridge = StripBridge()
+    _window, _popup_window, picker_window = _bind_with_fakes(bridge)
+    hide_calls: list[object] = []
+    monkeypatch.setattr(bridge_module, "hide_picker_window", hide_calls.append)
+    monkeypatch.setattr(bridge_module, "reactivate_app", lambda *_args: None)
+
+    bridge.enter_project("github/owner/repo")
+
+    assert hide_calls == [picker_window.native]

@@ -15,10 +15,14 @@ thread is not, so every mutation here is marshaled via
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+lazy import threading
 
 lazy import AppKit
 lazy from PyObjCTools import AppHelper
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # NSWindowStyleMaskBorderless -- plain borderless, no other bits. The window
 # must never become key at all (see `prepare_window()` below for why); that's
@@ -268,5 +272,154 @@ def show_popup_window(native: Any) -> None:
 def hide_popup_window(native: Any) -> None:
     def _apply() -> None:
         native.orderOut_(None)
+
+    AppHelper.callAfter(_apply)
+
+
+# Fixed size for the "open a new session" project picker window -- unlike the
+# hover popup (arbitrary PR/check content), this is always just a search box
+# plus a scrollable list, so only *position* needs setting per open, never
+# size. Sidesteps the whole WKWebView-relayout-resize-flash class of problems
+# `resize_and_position_popup_window()` above has to work around.
+PICKER_WIDTH = 340
+PICKER_HEIGHT = 440
+
+
+def prepare_picker_window(native: Any, on_resign_key: Callable[[], None]) -> None:
+    """One-time setup for the "open a new session" project picker's own window.
+
+    Unlike every other window in this module, the picker *must* become key --
+    it hosts a real text input for live search, which needs genuine keyboard
+    focus to receive typed characters at all. This is the one, deliberately
+    narrow exception to "the strip must never take focus" (see
+    `prepare_window()`): a separate window that doesn't exist most of the
+    time, created only on demand, with focus always handed back the instant
+    it closes (see `bridge.py`'s `open_project_picker()`/
+    `close_project_picker()`).
+
+    `on_resign_key` fires whenever this window stops being key, for *any*
+    reason -- an explicit close (which already hides it directly, see
+    `bridge.py`'s `close_project_picker()`) or the user clicking a different
+    real app while the picker is open, which doesn't go through our own close
+    path at all. Firing it redundantly on an already-hidden window is
+    harmless; see `bridge.py`'s `on_picker_lost_focus()` for why *this* path
+    specifically must never also try to reactivate anything (that would fight
+    whatever the user just clicked).
+
+    **The notification block hands `on_resign_key` off to a brand-new
+    background thread instead of calling it inline.** `NSNotificationCenter`
+    delivers to a block-based observer synchronously, on whatever thread
+    posts the notification -- for a window resigning key, that's always
+    AppKit's main thread (confirmed the hard way: this used to call
+    `on_resign_key()` directly here, which hung the entire app on every close
+    and on every click into the picker's own filter field, since clicking
+    into an already-key window's text field still routes through the same
+    resign/become-key machinery). `on_resign_key` ultimately reaches
+    `bridge.py`'s `_hide_picker()`, which calls `Window.evaluate_js()`, and
+    pywebview implements that as `AppHelper.callAfter(eval); semaphore
+    .acquire()` -- a blocking wait for a callback that can only run once the
+    main thread's own run loop is free to process it. Calling that *from* the
+    main thread is a guaranteed deadlock: the thread blocks on the semaphore
+    and can never get back to its own run loop to unblock itself. This is the
+    exact same class of bug `app.py`'s `_watch_screen_changes()` documents
+    and fixes the same way -- a plain background thread, not run inline.
+
+    Starts hidden via `orderOut_()`, same as `prepare_popup_window()` --
+    should only become visible when the user explicitly opens it.
+    """
+
+    def _apply() -> None:
+        native.setStyleMask_(_BORDERLESS)
+        native.setCollectionBehavior_(_ALL_SPACES_STATIONARY)
+        native.setLevel_(_BELOW_DOCK_LEVEL)
+        native.orderOut_(None)
+
+        def _handle_resign_key(_notification: Any) -> None:
+            threading.Thread(target=on_resign_key, daemon=True).start()
+
+        AppKit.NSNotificationCenter.defaultCenter().addObserverForName_object_queue_usingBlock_(
+            "NSWindowDidResignKeyNotification",
+            native,
+            None,
+            _handle_resign_key,
+        )
+
+    AppHelper.callAfter(_apply)
+
+
+def move_picker_window(native: Any, x: float, y: float) -> None:
+    """Reposition the picker window -- called every time before showing it.
+
+    Only position, never size (see `PICKER_WIDTH`/`PICKER_HEIGHT` above).
+    """
+
+    def _apply() -> None:
+        native.setFrameOrigin_(AppKit.NSMakePoint(x, y))
+
+    AppHelper.callAfter(_apply)
+
+
+def show_picker_window(native: Any) -> None:
+    """Show the picker *and* make it key -- the one place in this module that wants that.
+
+    `makeKeyAndOrderFront_()`, not `orderFrontRegardless()` (compare
+    `show_popup_window()` above): the whole point of this window is to
+    receive real keyboard input, which requires key status.
+
+    Also explicitly activates our own process first, via the same
+    `NSRunningApplication.activateWithOptions_` call `reactivate_app()` below
+    uses for *other* apps. `makeKeyAndOrderFront_()` alone only makes the
+    *window* key -- `hover_monitor.py`'s own docstring already documents that
+    becoming key and the *application* activating are two separate AppKit
+    mechanisms. For an `NSApplicationActivationPolicyAccessory` process (see
+    `hide_from_dock()`) that's never genuinely foreground, a key window on an
+    inactive app doesn't reliably receive real keyboard routing -- manual
+    testing showed the filter input never actually got keyboard focus, and
+    the first click after opening only activated the app instead of
+    registering as a real click on a project row (a second click was needed).
+    Explicitly activating first, the same direct way `reactivate_app()`
+    already does for handing focus *back*, fixes both.
+    """
+
+    def _apply() -> None:
+        AppKit.NSRunningApplication.currentApplication().activateWithOptions_(0)
+        native.makeKeyAndOrderFront_(None)
+
+    AppHelper.callAfter(_apply)
+
+
+def hide_picker_window(native: Any) -> None:
+    def _apply() -> None:
+        native.orderOut_(None)
+
+    AppHelper.callAfter(_apply)
+
+
+def capture_frontmost_app() -> Any:
+    """Snapshot whichever app is frontmost right now, to reactivate later.
+
+    A plain read, not a mutation -- safe to call directly without
+    `AppHelper.callAfter`, mirroring `hover_monitor.py`'s own direct
+    (un-marshaled) read of this same kind of state from its background
+    thread. Called right before `show_picker_window()` ever gives our own
+    process focus, so this reliably captures the user's *real*
+    previously-active app (a terminal, a browser, ...), never us.
+    """
+    return AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+
+
+def reactivate_app(app: Any) -> None:
+    """Hand frontmost status back to `app` (from `capture_frontmost_app()`).
+
+    No-op for `None` -- nothing was captured (e.g. the picker was never
+    actually opened). `activateWithOptions_` is a real mutation, so this
+    needs the same `AppHelper.callAfter` marshaling as every other AppKit
+    call in this module, unlike the plain read above.
+    """
+    if app is None:
+        return
+
+    def _apply() -> None:
+        app.activateWithOptions_(0)
 
     AppHelper.callAfter(_apply)

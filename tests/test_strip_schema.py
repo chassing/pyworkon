@@ -80,6 +80,25 @@ def test_to_strip_payload_preserves_pr_and_plain_sessions() -> None:
     assert strip_payload.plain_sessions == ["plain"]
 
 
+def test_to_strip_payload_maps_projects() -> None:
+    state = _state_with_provider(_provider(password="unused"))
+
+    strip_payload = to_strip_payload(state)
+
+    assert len(strip_payload.projects) == 1
+    assert strip_payload.projects[0].project_id == "github/owner/repo2"
+    assert strip_payload.projects[0].project_name == "repo2"
+    assert strip_payload.projects[0].provider_type == "github"
+
+
+def test_to_strip_payload_projects_handle_no_provider() -> None:
+    state = _state_with_provider(None)
+
+    strip_payload = to_strip_payload(state)
+
+    assert strip_payload.projects[0].provider_type is None
+
+
 def test_to_strip_payload_attaches_review_prs_by_project_id() -> None:
     state = _state_with_provider(None)
 
