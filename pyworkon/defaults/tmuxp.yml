@@ -4,6 +4,12 @@ environment:
   PYWORKON_PROJECT_ID: ${PYWORKON_PROJECT_ID}
   PYWORKON_PROJECT_NAME: ${PYWORKON_PROJECT_NAME}
   PYWORKON_PROJECT_HOME: ${PYWORKON_PROJECT_HOME}
+# tmuxp's default (auto) waits up to 2s per zsh pane for the prompt to draw,
+# to avoid a purely cosmetic redraw artifact on a live-attached session.
+# Sessions here are always built detached (see TmuxManager.enter()), so that
+# artifact is never visible and the wait is just wasted time.
+workspace_builder_options:
+  pane_readiness: never
 windows:
   - window_name: main 👨🏼‍💻
     focus: true
