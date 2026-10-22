@@ -53,12 +53,21 @@
   #search-row {
     display: flex;
     align-items: center;
-    gap: 9px;
-    padding: 12px 14px;
+    /* Matches `.project`'s own `gap`/left inset exactly (`#list`'s 6px
+       padding + `.project`'s 9px left padding = 15px), so "Search..." and
+       the typed text start in the same column as the row names below --
+       `#search-row` has no equivalent of `#list`'s wrapping padding, so its
+       own `padding-left` has to make up the difference on its own. */
+    gap: 11px;
+    padding: 12px 14px 12px 15px;
     border-bottom: 1px solid var(--line);
     flex: none;
   }
-  #search-row .icon { color: #818c9a; font-size: 14px; }
+  /* `provider` (not just `icon`) so the search icon sits in the exact same
+     24x24 box as every row's own icon -- plain `.icon`'s `width: 1.3em` is
+     relative to font-size and doesn't line up with `.provider`'s fixed
+     width. */
+  #search-row .icon { color: #818c9a; font-size: 24px; }
   #filter {
     flex: 1;
     min-width: 0;
@@ -116,6 +125,12 @@
      brand orange. */
   .provider.github { color: #c7cdd3; }
   .provider.gitlab { color: #e0714a; }
+  /* `▸` (U+25B8) is plain Unicode, not a Nerd Font PUA glyph (see
+     interfaces/tui/icons.py's ICON_PLAIN_SESSION) -- it has much more
+     whitespace around its "ink" than the Nerd Font provider glyphs at the
+     same font-size, so it reads as noticeably smaller/fainter unless bumped
+     up to compensate. */
+  .provider.plain { font-size: 28px; color: #7aa2e0; }
   .project-copy { flex: 1; min-width: 0; }
   .project-name {
     display: block;
@@ -131,6 +146,24 @@
     font-size: 11px;
     color: #7f8c98;
     margin-top: 2px;
+  }
+  .badge-open {
+    margin-left: auto;
+    flex: none;
+    font-size: 9.5px;
+    font-weight: 650;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #7fd99a;
+    background: #7fd99a1f;
+    border: 1px solid #7fd99a33;
+    border-radius: 999px;
+    padding: 2px 7px;
+  }
+  .section-divider {
+    height: 1px;
+    margin: 6px 5px;
+    background: var(--line);
   }
   #footer {
     display: flex;
@@ -154,14 +187,15 @@
 <body>
 <div id="card">
   <div id="search-row">
-    <span class="icon">⌕</span>
-    <input id="filter" type="text" placeholder="Filter projects…" autocomplete="off" spellcheck="false" />
+    <span class="icon provider">⌕</span>
+    <input id="filter" type="text" placeholder="Filter…" autocomplete="off" spellcheck="false" />
     <span id="count"></span>
   </div>
   <div id="list"></div>
   <div id="footer">
     <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
     <span><kbd>↵</kbd> open</span>
+    <span><kbd>⌃x</kbd> kill</span>
     <span><kbd>esc</kbd> cancel</span>
   </div>
 </div>
@@ -213,49 +247,158 @@ function highlight(text, term) {
 let lastState = {sessions: [], plain_sessions: [], projects: []};
 let currentMatches = [];
 let activeIndex = 0;
+// Set once per `__onPickerShown()` call (see `bridge.py`'s
+// `open_project_picker(switcher_mode=...)`), read by every `render()` until
+// the picker is shown again:
+//  - false (the "+" chip): one alphabetical list merging open project-
+//    sessions and closed projects, with an "Open" badge on running ones.
+//  - true (the global hotkey): a universal switcher -- plain tmux sessions
+//    and open project-sessions grouped above closed projects, matching the
+//    old Textual popup's exact section order (`interfaces/tui/base.py`'s
+//    `_render_items()`: `[*plain, *sessions, *projects]`).
+let switcherMode = false;
 
 const filterEl = document.getElementById("filter");
 const listEl = document.getElementById("list");
 const countEl = document.getElementById("count");
 
-function render() {
-  const projects = lastState.projects || [];
-  const term = filterEl.value.trim().toLowerCase();
-  currentMatches = projects.filter((p) => {
-    if (!term) return true;
-    const owner = ownerFromProjectId(p.project_id);
-    return `${p.project_name} ${owner}`.toLowerCase().includes(term);
-  });
-  activeIndex = Math.max(0, Math.min(activeIndex, currentMatches.length - 1));
-  countEl.textContent = term
-    ? `${currentMatches.length} of ${projects.length}`
-    : `${projects.length} project${projects.length === 1 ? "" : "s"}`;
-  if (!currentMatches.length) {
-    listEl.innerHTML = `<div class="empty">No matching projects.</div>`;
-    return;
-  }
-  listEl.innerHTML = currentMatches
-    .map((p, i) => {
-      const owner = ownerFromProjectId(p.project_id);
-      const icon = p.provider_type ? ICONS[p.provider_type] || "" : "";
-      const providerLabel = p.provider_type ? PROVIDER_LABELS[p.provider_type] || p.provider_type : null;
-      const ownerLine = providerLabel ? `${providerLabel} · ${escapeHtml(owner)}` : escapeHtml(owner);
-      return `
-        <div class="project${i === activeIndex ? " --active" : ""}" data-index="${i}">
-          <span class="${iconClass(p.provider_type, "provider")} ${escapeHtml(p.provider_type || "")}">${icon}</span>
-          <span class="project-copy">
-            <span class="project-name">${highlight(p.project_name, term)}</span>
-            <span class="project-owner">${ownerLine}</span>
-          </span>
-        </div>
-      `;
-    })
-    .join("");
+// Normalizes the three wire shapes (`StripSessionState`, `StripProjectState`,
+// and a bare plain-session name string) into one row shape so filtering/
+// rendering/selection don't need to branch on the daemon's payload shape.
+function normalizeSession(s) {
+  return {
+    kind: "session",
+    isOpen: true,
+    session_name: s.session_name,
+    project_id: s.project_id,
+    project_name: s.project_name,
+    provider_type: s.provider_type,
+  };
 }
 
-function openProject(project) {
-  if (!project) return;
-  pywebview.api.enter_project(project.project_id);
+function normalizeProject(p) {
+  return {
+    kind: "project",
+    isOpen: false,
+    project_id: p.project_id,
+    project_name: p.project_name,
+    provider_type: p.provider_type,
+  };
+}
+
+function normalizePlain(name) {
+  return {kind: "plain", isOpen: true, name};
+}
+
+function displayName(item) {
+  return item.kind === "plain" ? item.name : item.project_name;
+}
+
+function matchesTerm(item, term) {
+  if (!term) return true;
+  if (item.kind === "plain") return item.name.toLowerCase().includes(term);
+  const owner = ownerFromProjectId(item.project_id);
+  return `${item.project_name} ${owner}`.toLowerCase().includes(term);
+}
+
+// "+" chip: one project-centric list, open sessions merged in alongside
+// closed projects (not grouped) -- an "Open" badge is what tells them apart.
+// Plain tmux sessions are deliberately excluded: they aren't "projects".
+function buildButtonModeItems() {
+  const merged = [
+    ...lastState.sessions.map(normalizeSession),
+    ...lastState.projects.map(normalizeProject),
+  ];
+  merged.sort((a, b) =>
+    displayName(a).localeCompare(displayName(b), undefined, {sensitivity: "base"})
+  );
+  return {open: [], closed: merged};
+}
+
+// Global hotkey: a universal switcher, open items grouped above closed ones.
+function buildSwitcherModeItems() {
+  const open = [
+    ...lastState.plain_sessions.map(normalizePlain),
+    ...lastState.sessions.map(normalizeSession),
+  ];
+  const closed = lastState.projects.map(normalizeProject);
+  return {open, closed};
+}
+
+function renderRow(item, index, term) {
+  let icon;
+  let ownerLine;
+  if (item.kind === "plain") {
+    icon = `<span class="provider plain">${ICONS.plainSession || ""}</span>`;
+    ownerLine = "Plain session";
+  } else {
+    const owner = ownerFromProjectId(item.project_id);
+    const providerIcon = item.provider_type ? ICONS[item.provider_type] || "" : "";
+    const providerLabel = item.provider_type
+      ? PROVIDER_LABELS[item.provider_type] || item.provider_type
+      : null;
+    icon = `<span class="${iconClass(item.provider_type, "provider")} ${escapeHtml(item.provider_type || "")}">${providerIcon}</span>`;
+    ownerLine = providerLabel ? `${providerLabel} · ${escapeHtml(owner)}` : escapeHtml(owner);
+  }
+  const badge = item.isOpen ? `<span class="badge-open">Open</span>` : "";
+  return `
+    <div class="project${index === activeIndex ? " --active" : ""}" data-index="${index}">
+      ${icon}
+      <span class="project-copy">
+        <span class="project-name">${highlight(displayName(item), term)}</span>
+        <span class="project-owner">${ownerLine}</span>
+      </span>
+      ${badge}
+    </div>
+  `;
+}
+
+function render() {
+  const term = filterEl.value.trim().toLowerCase();
+  const {open, closed} = switcherMode ? buildSwitcherModeItems() : buildButtonModeItems();
+  const openMatches = open.filter((item) => matchesTerm(item, term));
+  const closedMatches = closed.filter((item) => matchesTerm(item, term));
+  currentMatches = [...openMatches, ...closedMatches];
+  const total = open.length + closed.length;
+  activeIndex = Math.max(0, Math.min(activeIndex, currentMatches.length - 1));
+  countEl.textContent = term
+    ? `${currentMatches.length} of ${total}`
+    : `${total} item${total === 1 ? "" : "s"}`;
+  if (!currentMatches.length) {
+    listEl.innerHTML = `<div class="empty">No matches.</div>`;
+    return;
+  }
+  const openHtml = openMatches.map((item, i) => renderRow(item, i, term)).join("");
+  const dividerHtml =
+    switcherMode && openMatches.length && closedMatches.length
+      ? `<div class="section-divider"></div>`
+      : "";
+  const closedHtml = closedMatches
+    .map((item, i) => renderRow(item, openMatches.length + i, term))
+    .join("");
+  listEl.innerHTML = openHtml + dividerHtml + closedHtml;
+}
+
+function activateItem(item) {
+  if (!item) return;
+  if (item.kind === "project") {
+    pywebview.api.enter_project(item.project_id);
+  } else if (item.kind === "session") {
+    pywebview.api.switch_session_from_picker(item.session_name);
+  } else {
+    pywebview.api.switch_session_from_picker(item.name);
+  }
+}
+
+// Mirrors `interfaces/tui/base.py`'s `BaseApp.action_kill_session()`: no JS
+// confirm() dialog (pressing Ctrl+X is itself the confirmation, same
+// reasoning as the strip chip's own context-menu kill item), a no-op for a
+// closed project (nothing running to kill), and the picker stays open
+// afterward -- the killed session simply drops out of the list on the next
+// daemon state push, same as the TUI popup never exits on kill either.
+function killItem(item) {
+  if (!item || item.kind === "project") return;
+  pywebview.api.kill_session(item.kind === "plain" ? item.name : item.session_name);
 }
 
 filterEl.addEventListener("input", () => {
@@ -265,7 +408,7 @@ filterEl.addEventListener("input", () => {
 
 listEl.addEventListener("click", (ev) => {
   const row = ev.target.closest(".project");
-  if (row) openProject(currentMatches[Number(row.dataset.index)]);
+  if (row) activateItem(currentMatches[Number(row.dataset.index)]);
 });
 
 document.addEventListener("keydown", (ev) => {
@@ -282,18 +425,34 @@ document.addEventListener("keydown", (ev) => {
     listEl.querySelector(".project.--active")?.scrollIntoView({block: "nearest"});
   } else if (ev.key === "Enter") {
     ev.preventDefault();
-    openProject(currentMatches[activeIndex]);
+    activateItem(currentMatches[activeIndex]);
+  } else if (ev.ctrlKey && ev.key.toLowerCase() === "x") {
+    // preventDefault() is load-bearing here, not just tidy: Ctrl+X is the
+    // native "cut" shortcut for a focused text input (the filter box always
+    // has focus -- see `__onPickerShown()`), and this handler only runs on
+    // the bubble phase at `document`, same as every other binding here.
+    ev.preventDefault();
+    killItem(currentMatches[activeIndex]);
   }
 });
 
 // Called by `bridge.py`'s `open_project_picker()` right after the native
 // window is shown -- making the *window* key doesn't put the page's own
 // focus on any particular element, and any filter text from the last time
-// this was open would otherwise still be sitting there.
-window.__onPickerShown = function () {
+// this was open would otherwise still be sitting there. `switcher` is
+// `open_project_picker()`'s `switcher_mode` argument, forwarded verbatim.
+window.__onPickerShown = function (switcher) {
+  switcherMode = Boolean(switcher);
+  filterEl.placeholder = switcherMode ? "Search sessions and projects…" : "Filter projects…";
   filterEl.value = "";
   activeIndex = 0;
   render();
+  // `#list`'s `scrollTop` is a property of the scroll container itself, not
+  // its (fully replaced) children -- `render()`'s `innerHTML` reassignment
+  // creates all-new child nodes but does NOT reset the container's own
+  // scroll offset, so without this the picker would reopen still scrolled
+  // to wherever it was left last time instead of at the top.
+  listEl.scrollTop = 0;
   filterEl.focus({preventScroll: true});
 };
 

@@ -273,8 +273,8 @@ class StripBridge:
     def open_url(self, url: str) -> None:
         webbrowser.open(url)
 
-    def open_project_picker(self) -> None:
-        """Show the "open a new session" project picker, giving it real keyboard focus.
+    def open_project_picker(self, *, switcher_mode: bool = False) -> None:
+        """Show the project picker, giving it real keyboard focus.
 
         The ONE deliberate exception to "the strip must never take focus"
         (see `native.py`'s `prepare_window()`) -- scoped to this separate,
@@ -282,6 +282,13 @@ class StripBridge:
         exactly as focus-proof as before. Captures whichever app is
         frontmost right now so `close_project_picker()` can hand it back the
         instant the picker closes.
+
+        `switcher_mode` distinguishes the two callers: the "+" chip (`False`,
+        the default -- a project-centric merged list with an "Open" badge on
+        already-running ones, see `picker.html`) vs. `toggle_project_picker()`
+        (`True` -- a universal switcher grouping plain/open sessions above
+        closed projects, matching the old Textual popup's section order).
+        Passed straight through to the picker page via `__onPickerShown()`.
         """
         if self._picker_window is None or self._window is None:
             return
@@ -311,7 +318,8 @@ class StripBridge:
                 # only makes the *window* key, it doesn't put the page's own
                 # focus on any particular element within it.
                 self._picker_window.evaluate_js(
-                    "window.__onPickerShown && window.__onPickerShown()"
+                    "window.__onPickerShown && window.__onPickerShown("
+                    f"{json.dumps(switcher_mode)})"
                 )
 
     def _picker_screen_position(self, strip_native: Any) -> tuple[float, float]:
@@ -383,6 +391,35 @@ class StripBridge:
             self._window.evaluate_js(
                 f"window.__setPickerOpen && window.__setPickerOpen({json.dumps(is_open)})"
             )
+
+    def toggle_project_picker(self) -> None:
+        """Toggle the project picker open/closed -- the global hotkey's callback target.
+
+        Mirrors `strip.html`'s own "+" button toggle logic (`if (pickerOpen)
+        close else open`), just decided from the Python side instead of JS,
+        since the hotkey has no DOM click event to carry that state.
+        `isVisible()` is a plain read, safe from any thread (same pattern as
+        `hover_monitor.py`'s `_mouse_over_popup_window()`).
+        """
+        if self._picker_window is None:
+            return
+        with contextlib.suppress(Exception):
+            picker_native = self._picker_window.native
+            if picker_native is not None and picker_native.isVisible():
+                self.close_project_picker()
+            else:
+                self.open_project_picker(switcher_mode=True)
+
+    def switch_session_from_picker(self, session_name: str) -> None:
+        """Switch to an already-open session and close the picker right away.
+
+        Mirrors `enter_project()`'s ordering (close first, then make the
+        daemon call) for the same reason. `switch_session()` itself is left
+        untouched -- it's also called directly for strip chip clicks, which
+        have no picker to close.
+        """
+        self.close_project_picker()
+        self.switch_session(session_name)
 
     def enter_project(self, project_id: str) -> None:
         """Open a session for `project_id` and close the picker right away.

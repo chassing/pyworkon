@@ -27,6 +27,7 @@ DASHBOARD_ICONS: dict[str, str] = {
     "github": tui_icons.ICON_GITHUB,
     "gitlab": tui_icons.ICON_GITLAB,
     "externalLink": tui_icons.ICON_EXTERNAL_LINK,
+    "plainSession": tui_icons.ICON_PLAIN_SESSION,
     "agentIdle": tui_icons.AGENT_IDLE,
     "agentWaiting": tui_icons.AGENT_WAITING,
     "reviewRequest": tui_icons.ICON_REVIEW_REQUEST,

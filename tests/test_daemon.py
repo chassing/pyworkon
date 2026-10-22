@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -432,6 +433,55 @@ async def test_open_project_third_pane_stays_none(daemon: Daemon) -> None:
     for pane_id in ("%1", "%2", "%3"):
         cmd = OpenProjectCommand(project_id="github/owner/repo", pane_id=pane_id)
         await _collect_responses(daemon, cmd)
+
+    assert len(daemon._open_projects) == 1
+    op = next(iter(daemon._open_projects.values()))
+    assert op.pane_id is None
+
+
+async def test_open_project_concurrent_panes_do_not_duplicate(daemon: Daemon) -> None:
+    """Two near-simultaneous OPEN_PROJECT calls for the same project must not both land.
+
+    Reproduces a real-world duplicate-chip/duplicate-session-row bug: the
+    default tmuxp template's "main" and "AI" windows each run their own
+    `workon` shell hook at session startup, which can call `OPEN_PROJECT`
+    for the same project_id microseconds apart. `_cmd_open_project()`'s
+    stale-entry check (meant to collapse multi-pane opens into one entry,
+    see its own comment) ran *before* the function's only real `await`
+    (`_find_session_for_pane()`, which shells out to `tmux` and genuinely
+    yields control) -- so two concurrent calls could each see "no stale
+    entry yet" during that window and both write their own entry, producing
+    two `OpenProject` rows for one project_id (and therefore two duplicate
+    chips in the strip / rows in the popup, since both are built directly
+    from `_open_projects`).
+    """
+    release = asyncio.Event()
+
+    async def fake_get_pane_session(_pane_id: str) -> str | None:
+        # A real subprocess await (`run_cmd()`) yields control for long
+        # enough that another concurrent `OPEN_PROJECT` call can run its own
+        # stale-entry check in the gap -- block on a shared event instead of
+        # `asyncio.sleep(0)` so both tasks are *guaranteed* to be suspended
+        # here simultaneously before either is allowed to proceed, making the
+        # race deterministic rather than timing-dependent.
+        await release.wait()
+        return "my-session"
+
+    with patch(
+        "pyworkon.daemon.tmux_mgr.tmux_manager.get_pane_session",
+        side_effect=fake_get_pane_session,
+    ):
+        first = OpenProjectCommand(project_id="github/owner/repo", pane_id="%1")
+        second = OpenProjectCommand(project_id="github/owner/repo", pane_id="%2")
+        task1 = asyncio.create_task(_collect_responses(daemon, first))
+        task2 = asyncio.create_task(_collect_responses(daemon, second))
+        # Let both tasks reach `await fake_get_pane_session(...)` and suspend
+        # there before releasing them, so their stale-entry checks (whichever
+        # ran before the await, in the buggy version) definitely overlapped.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.gather(task1, task2)
 
     assert len(daemon._open_projects) == 1
     op = next(iter(daemon._open_projects.values()))

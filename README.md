@@ -346,6 +346,7 @@ workon_command: /bin/zsh           # default: user's login shell
 workon_pre_command: ""             # runs before workon_command
 ai_agent_command: opencode         # command for the default AI pane, including arguments
 sidebar_refresh_interval: 5        # seconds (daemon poll interval for tmux/PR data)
+strip_hotkey: ctrl+option+space    # global hotkey that toggles the strip's project picker
 debug: false
 
 providers:
@@ -407,6 +408,10 @@ Filtering applies to review-request lists in the TUI and relay, including local
 forks of the configured repository. Branch PR details remain visible. This filters
 by PR author, not the person who clicked “Request review,” and does not modify
 anything on GitHub. Restart the daemon after changing the configuration.
+
+### ⌨️ Global Hotkey
+
+When the `strip` is running (`pyworkon strip`), `strip_hotkey` (default `ctrl+option+space`) opens the strip's picker from any app as a universal switcher: open sessions (plain tmux sessions and running pyworkon sessions) are grouped at the top, closed projects below, with typing to filter, arrow keys, Enter to open/switch, Escape to dismiss. Clicking the strip's "+" button instead opens the same picker in a plainer view — one alphabetically-sorted list of projects with a small "Open" badge on the ones currently running, without the grouping. Set `strip_hotkey` to any `modifier+modifier+key` combination (e.g. `cmd+shift+p`), or set it to an empty string to disable the hotkey entirely. Restart the strip after changing it.
 
 ### 🏗️ Per-Project tmux Layout
 

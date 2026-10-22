@@ -89,6 +89,7 @@ show_error_codes = true
 module = [
     "AppKit",
     "PyObjCTools.*",
+    "objc",
     "appdirs.*",
     "diskcache.*",
     "fuzzyfinder.*",

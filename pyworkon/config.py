@@ -61,6 +61,7 @@ class Config(BaseSettings):
     sidebar_refresh_interval: int = 5
     relay_url: HttpUrl | None = None
     relay_token: str | None = None
+    strip_hotkey: str = "ctrl+option+space"
 
     model_config = SettingsConfigDict(
         yaml_file=user_config_file,

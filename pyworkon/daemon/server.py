@@ -250,6 +250,24 @@ class Daemon:
             yield error(f"Project not found: {cmd.project_id}")
 
     async def _cmd_open_project(self, cmd: OpenProjectCommand) -> AsyncResponseIterator:
+        # Session resolution happens *before* the stale-entry check below,
+        # not after -- it's the only `await` in this function, and
+        # `_find_session_for_pane()` genuinely yields control (it shells out
+        # to `tmux`). Two near-simultaneous OPEN_PROJECT calls for the same
+        # project (e.g. the default tmuxp template's "main" + "AI" windows
+        # both registering at session startup) used to each run the
+        # stale-entry check *before* that await, so both could see "no stale
+        # entry yet" during the gap and each write their own entry --
+        # producing two duplicate chips/rows for one project. Resolving the
+        # session first means the stale-check-through-write sequence below
+        # has no intervening await, so it can't be interleaved with another
+        # call: whichever call's write lands first is then correctly seen as
+        # "stale" by the other, collapsing back down to one entry.
+        session = (
+            cmd.session
+            or self._find_session_for_project(cmd.project_id)
+            or await self._find_session_for_pane(cmd.pane_id)
+        )
         # Remove existing entry for this project (e.g. tmux-discovered).
         # If one already existed, the project is open in more than one pane
         # (e.g. the default tmuxp template's main + AI windows both register
@@ -260,11 +278,6 @@ class Daemon:
         pane_id = None if stale else cmd.pane_id
         for k in stale:
             del self._open_projects[k]
-        session = (
-            cmd.session
-            or self._find_session_for_project(cmd.project_id)
-            or await self._find_session_for_pane(cmd.pane_id)
-        )
         key = f"{cmd.project_id}|{cmd.pane_id or 'default'}"
         op = OpenProject(
             project_id=cmd.project_id,

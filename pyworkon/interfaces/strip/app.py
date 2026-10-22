@@ -27,7 +27,9 @@ from pyworkon.daemon.protocol import SidebarStatePayload
 from pyworkon.interfaces.relay.icons import DASHBOARD_ICONS
 from pyworkon.interfaces.strip.bridge import COLLAPSED_HEIGHT, STRIP_HEIGHT, StripBridge
 from pyworkon.interfaces.strip.schema import to_strip_payload
+lazy from pyworkon.config import config
 lazy from pyworkon.interfaces.strip.dock_geometry import compute_strip_layout
+lazy from pyworkon.interfaces.strip.hotkey import register_hotkey
 lazy from pyworkon.interfaces.strip.native import (
     PICKER_HEIGHT,
     PICKER_WIDTH,
@@ -443,6 +445,13 @@ def _listen_daemon(
     for every `shown` event before touching their frames, or our own
     positioning would race pywebview's initial placement and could be
     clobbered by it.
+
+    Also registers `config.strip_hotkey` (default `ctrl+option+space`) as a
+    global macOS hotkey toggling the project picker -- see `hotkey.py` for
+    why this is Carbon-based rather than an `NSEvent` monitor. Wrapped in
+    `contextlib.suppress(Exception)` so a malformed `strip_hotkey` config
+    value (or `""`, disabling it) can't take down this whole background
+    thread and silently kill the daemon-subscribe loop below it.
     """
     window.events.shown.wait(15)
     popup_window.events.shown.wait(15)
@@ -456,6 +465,9 @@ def _listen_daemon(
         on_picker_lost_focus=bridge.on_picker_lost_focus,
     )
     _watch_screen_changes(bridge)
+    if config.strip_hotkey:
+        with contextlib.suppress(Exception):
+            register_hotkey(config.strip_hotkey, bridge.toggle_project_picker)
     while True:
         _run_daemon_session(window, popup_window, picker_window)
         time.sleep(_RECONNECT_DELAY_SECS)
