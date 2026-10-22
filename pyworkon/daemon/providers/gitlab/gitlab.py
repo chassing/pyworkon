@@ -91,14 +91,7 @@ class GitLabApi:
 
             mr = mrs[0]
             is_draft = mr.draft or mr.work_in_progress
-            status = PRStatus.NONE
-            ci_checks: list[CICheck] = []
-            if mr.pipeline:
-                status = _PIPELINE_STATUS_MAP.get(mr.pipeline.status, PRStatus.PENDING)
-                pipeline_url = (
-                    f"{self._base_url}/{project_path}/-/pipelines/{mr.pipeline.id}"
-                )
-                ci_checks = [CICheck(name="Pipeline", status=status, url=pipeline_url)]
+            status, ci_checks = await self._get_checks(project_path, mr.iid)
 
             review_status = (
                 PRReviewStatus.NONE
@@ -116,6 +109,71 @@ class GitLabApi:
                 ci_checks=ci_checks,
             )
         return None
+
+    async def _get_checks(
+        self, project_path: str, mr_iid: int
+    ) -> tuple[PRStatus, list[CICheck]]:
+        """Fetch the MR's latest pipeline and its jobs.
+
+        The MR list response never includes pipeline info (only the
+        single-MR GET endpoint does), so the pipeline is fetched via the
+        dedicated MR-pipelines endpoint instead. That pipeline's own
+        `project_id` (not the MR's project) is then used to fetch jobs,
+        since a pipeline for a fork-sourced MR runs in the fork's project.
+        Externally-reported pipelines (status posted by a third-party CI
+        system rather than run by GitLab CI itself) have no jobs at all;
+        those fall back to a single check reflecting the pipeline's own
+        overall status.
+        """
+        try:
+            pipelines = await consumer.mr_pipelines(
+                project_id=project_path, merge_request_iid=mr_iid
+            )
+        except ConnectionError, TimeoutError, OSError:
+            log.debug("Failed to fetch pipelines for %s!%d", project_path, mr_iid)
+            return PRStatus.NONE, []
+
+        if not pipelines:
+            return PRStatus.NONE, []
+
+        pipeline = pipelines[0]
+        overall = _PIPELINE_STATUS_MAP.get(pipeline.status, PRStatus.PENDING)
+
+        try:
+            jobs = await consumer.pipeline_jobs(
+                project_id=str(pipeline.project_id), pipeline_id=pipeline.id
+            )
+        except ConnectionError, TimeoutError, OSError:
+            log.debug(
+                "Failed to fetch jobs for project=%d pipeline=%d",
+                pipeline.project_id,
+                pipeline.id,
+            )
+            jobs = []
+
+        # Manual jobs require a human to trigger them and are often
+        # optional (e.g. a deploy-to-prod job); an untriggered manual job
+        # isn't pending CI work, so it's excluded rather than shown as an
+        # indefinitely "running" check.
+        jobs = [job for job in jobs if job.status != "manual"]
+
+        if not jobs:
+            return overall, [
+                CICheck(name="Pipeline", status=overall, url=pipeline.web_url)
+            ]
+
+        checks = sorted(
+            (
+                CICheck(
+                    name=job.name,
+                    status=_PIPELINE_STATUS_MAP.get(job.status, PRStatus.PENDING),
+                    url=job.web_url,
+                )
+                for job in jobs
+            ),
+            key=lambda c: c.name,
+        )
+        return overall, checks
 
     async def _get_review_status(
         self, project_path: str, mr_iid: int

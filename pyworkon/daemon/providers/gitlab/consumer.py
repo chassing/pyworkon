@@ -2,7 +2,13 @@ import logging
 
 from clientele import api as clientele_api
 
-from .models import MergeRequest, MRApprovalState, Repository
+from .models import (
+    MergeRequest,
+    MergeRequestPipeline,
+    MRApprovalState,
+    PipelineJob,
+    Repository,
+)
 
 log = logging.getLogger(__name__)
 
@@ -58,4 +64,27 @@ async def mr_approval_state(
     merge_request_iid: int,
 ) -> MRApprovalState:
     """Get approval state for a merge request."""
+    return result
+
+
+@client.get(
+    "/api/v4/projects/{project_id}/merge_requests/{merge_request_iid}/pipelines"
+)
+async def mr_pipelines(
+    result: list[MergeRequestPipeline],
+    project_id: str,
+    merge_request_iid: int,
+) -> list[MergeRequestPipeline]:
+    """Get pipelines for a merge request, most recent first."""
+    return result
+
+
+@client.get("/api/v4/projects/{project_id}/pipelines/{pipeline_id}/jobs")
+async def pipeline_jobs(
+    result: list[PipelineJob],
+    project_id: str,
+    pipeline_id: int,
+    per_page: int = 100,
+) -> list[PipelineJob]:
+    """Get jobs for a pipeline."""
     return result

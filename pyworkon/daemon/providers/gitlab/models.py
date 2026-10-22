@@ -10,11 +10,6 @@ class Repository(BaseModel):
     ssh_url_to_repo: str  # 'git@gitlab.com:assing/pyworkon.git'
 
 
-class MergeRequestPipeline(BaseModel):
-    id: int
-    status: str  # success, failed, running, pending, canceled
-
-
 class MergeRequest(BaseModel):
     iid: int
     title: str
@@ -22,7 +17,6 @@ class MergeRequest(BaseModel):
     state: str  # opened, closed, merged
     draft: bool = False
     work_in_progress: bool = False
-    pipeline: MergeRequestPipeline | None = None
 
 
 class MRApprovalRule(BaseModel):
@@ -31,3 +25,16 @@ class MRApprovalRule(BaseModel):
 
 class MRApprovalState(BaseModel):
     rules: list[MRApprovalRule] = []
+
+
+class MergeRequestPipeline(BaseModel):
+    id: int
+    project_id: int  # pipelines run in the MR's source project, which may be a fork
+    status: str  # success, failed, running, pending, canceled
+    web_url: str
+
+
+class PipelineJob(BaseModel):
+    name: str
+    status: str  # success, failed, running, pending, canceled, created, manual, skipped
+    web_url: str
