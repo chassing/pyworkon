@@ -207,6 +207,7 @@ def _bind_watch_screen_changes(
     fake_appkit = MagicMock()
     monkeypatch.setattr(app_module, "AppKit", fake_appkit)
     monkeypatch.setattr(app_module, "threading", MagicMock(Thread=_FakeThread))
+    monkeypatch.setattr(app_module.time, "sleep", lambda _seconds: None)
     bridge = MagicMock()
     app_module._watch_screen_changes(bridge)
     return _get_on_screen_change(fake_appkit), bridge
@@ -281,3 +282,63 @@ def test_watch_screen_changes_handles_a_fresh_notification_after_completion(
     on_screen_change(None)
 
     assert len(_FakeThread.instances) == 2
+
+
+def test_watch_screen_changes_waits_briefly_before_declaring_itself_settled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A delayed self-echo must get a chance to arrive before `busy` clears.
+
+    Regression test: a real Dock-autohide toggle's own notification doesn't
+    necessarily land the instant `recompute_and_apply_layout()` returns --
+    checking `pending` immediately afterward, with no pause at all, can miss
+    it, incorrectly declaring the cycle settled right before its own echo
+    arrives and (seeing `busy` already cleared) starts a brand new,
+    unnecessary cycle instead of being coalesced into this one.
+    """
+    on_screen_change, _bridge = _bind_watch_screen_changes(monkeypatch)
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(app_module.time, "sleep", sleep_calls.append)
+
+    on_screen_change(None)
+    instance = _FakeThread.instances[0]
+    instance.target(**instance.kwargs)
+
+    assert sleep_calls == [app_module._SCREEN_CHANGE_SETTLE_SECONDS]
+
+
+def test_watch_screen_changes_caps_a_sustained_coalescing_storm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A storm of real notifications must not be able to loop forever.
+
+    Regression test: observed in practice after waking a laptop from sleep
+    and logging back in -- a burst of genuinely new screen-change
+    notifications (display reattaching, login window dismissing, Dock
+    relaunching) kept arriving faster than each recompute's own settle pause,
+    so an uncapped coalescing loop kept running indefinitely, visibly
+    flickering the real Dock between hidden and shown on every iteration
+    until the strip was restarted. Each iteration's own `compute_strip_
+    layout()` measurement can also be transiently wrong this early after
+    wake (e.g. the Dock process or Accessibility tree not fully back up
+    yet) -- capping the loop means a bad reading can only get "stuck" for
+    one capped burst, not forever, since the very next notification starts a
+    fresh one that can measure correctly once the system has settled.
+    """
+    on_screen_change, bridge = _bind_watch_screen_changes(monkeypatch)
+
+    def _a_fresh_notification_arrives_mid_recompute(**_kwargs: object) -> None:
+        on_screen_change(None)
+
+    bridge.recompute_and_apply_layout.side_effect = (
+        _a_fresh_notification_arrives_mid_recompute
+    )
+
+    on_screen_change(None)
+    instance = _FakeThread.instances[0]
+    instance.target(**instance.kwargs)
+
+    assert (
+        bridge.recompute_and_apply_layout.call_count
+        == app_module._MAX_COALESCED_SCREEN_CHANGE_RECOMPUTES
+    )

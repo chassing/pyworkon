@@ -45,6 +45,9 @@ if TYPE_CHECKING:
 
 STATIC_DIR = Path(__file__).parent / "static"
 _RECONNECT_DELAY_SECS = 1.0
+# See `_watch_screen_changes()`'s docstring for why both of these exist.
+_SCREEN_CHANGE_SETTLE_SECONDS = 0.3
+_MAX_COALESCED_SCREEN_CHANGE_RECOMPUTES = 5
 _ICONS_PLACEHOLDER = "/*__PYWORKON_ICONS__*/"
 _FONT_PLACEHOLDER = "__PYWORKON_FONT_BASE64__"
 _IS_POPUP_PLACEHOLDER = "__PYWORKON_IS_POPUP__"
@@ -288,24 +291,48 @@ def _watch_screen_changes(bridge: StripBridge) -> None:
     along. A `busy`/`pending` pair fixes both, independent of timing: while a
     recompute is in flight, *any* further notification (self-generated or
     real) only sets `pending` instead of starting a second thread; once the
-    in-flight recompute returns, it immediately loops and runs exactly one
-    more time if `pending` was set, then stops -- coalescing however many
-    notifications arrived during the run into a single trailing recompute
-    that reflects the latest state, rather than dropping them. `_on_screen_
-    change` runs synchronously on the main thread (see above) but `_run_
-    recompute` doesn't, so the shared state is a dict guarded by `lock`.
+    in-flight recompute returns, it loops and runs again if `pending` was
+    set, then stops -- coalescing however many notifications arrived during
+    the run into trailing recomputes that reflect the latest state, rather
+    than dropping them. `_on_screen_change` runs synchronously on the main
+    thread (see above) but `_run_recompute` doesn't, so the shared state is a
+    dict guarded by `lock`.
+
+    Two things that first version was still missing, confirmed in practice
+    after waking a laptop from sleep and logging back in: the real Dock
+    visibly flickered between hidden and shown for a while, and the strip was
+    stuck on "full_width" geometry afterward until manually restarted.
+    First, checking `pending` the instant `recompute_and_apply_layout()`
+    returns can run *before* that same call's own Dock-toggle notification
+    has actually arrived -- declaring the cycle settled a few milliseconds
+    too early starts a brand-new, unnecessary cycle instead of coalescing
+    into this one. `_SCREEN_CHANGE_SETTLE_SECONDS` is a short pause before
+    that check to give it a chance to land. Second, a real burst of
+    notifications (display reattaching, login window dismissing, Dock
+    relaunching) can keep arriving faster than that pause, in which case an
+    uncapped loop never stops -- toggling the Dock, and therefore re-
+    triggering itself, every single iteration. `_MAX_COALESCED_SCREEN_
+    CHANGE_RECOMPUTES` bounds a single burst to a fixed number of iterations;
+    the very next notification after that starts a fresh one, so a
+    transiently wrong `compute_strip_layout()` reading this early after wake
+    (e.g. the Dock process or Accessibility tree not fully back up yet) can
+    only get "stuck" for one capped burst, not forever.
     """
     lock = threading.Lock()
     state = {"busy": False, "pending": False}
 
     def _run_recompute() -> None:
-        while True:
+        for _ in range(_MAX_COALESCED_SCREEN_CHANGE_RECOMPUTES):
             bridge.recompute_and_apply_layout(full_width_height=STRIP_HEIGHT)
+            time.sleep(_SCREEN_CHANGE_SETTLE_SECONDS)
             with lock:
                 if not state["pending"]:
                     state["busy"] = False
                     return
                 state["pending"] = False
+        with lock:
+            state["busy"] = False
+            state["pending"] = False
 
     def _on_screen_change(_notification: object) -> None:
         with lock:
