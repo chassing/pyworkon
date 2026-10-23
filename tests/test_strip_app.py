@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pyworkon.interfaces.relay.icons import DASHBOARD_ICONS
+from pyworkon.icons import DASHBOARD_ICONS
 from pyworkon.interfaces.strip import app as app_module
 from pyworkon.interfaces.strip.app import _build_windows, _render_strip_html
 from pyworkon.interfaces.strip.dock_geometry import StripLayout

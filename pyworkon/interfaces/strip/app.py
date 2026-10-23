@@ -24,7 +24,7 @@ lazy import webview
 
 from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
 from pyworkon.daemon.protocol import SidebarStatePayload
-from pyworkon.interfaces.relay.icons import DASHBOARD_ICONS
+from pyworkon.icons import DASHBOARD_ICONS
 from pyworkon.interfaces.strip.bridge import COLLAPSED_HEIGHT, STRIP_HEIGHT, StripBridge
 from pyworkon.interfaces.strip.schema import to_strip_payload
 lazy from pyworkon.config import config

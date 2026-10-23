@@ -16,6 +16,7 @@ uv run pytest                              # tests
 ```text
 pyworkon/
 ├── config.py              # pydantic-settings Config, YAML-based (~/.config/pyworkon/config.yaml)
+├── icons.py               # Shared icon glyphs -- single source of truth for TUI/relay/strip, dependency-free
 ├── assets/
 │   ├── opencode/          # Bundled OpenCode CLI plugin
 │   └── skills/            # Portable agent skills, one directory with SKILL.md per skill
@@ -321,7 +322,7 @@ Run `make opencode-check` for frozen Bun dependency installation, strict TypeScr
 
 ## Nerd Font Icons
 
-Icons are defined in `interfaces/tui/icons.py`. **ALWAYS use explicit Unicode escapes** (e.g., `""`) — never paste the raw glyph character. Raw glyphs get silently stripped by formatters and editors, producing empty strings that are hard to debug.
+Icons are defined in `pyworkon/icons.py` — a dependency-free, top-level leaf module, **not** under any `interfaces/*` subpackage. `interfaces/tui/icons.py` and `interfaces/relay/icons.py` are thin re-export shims over it (see `pyworkon/icons.py`'s own module docstring for why: the relay and strip both need these constants and must not depend on the TUI package, which is expected to go away eventually, to get at them). **ALWAYS use explicit Unicode escapes** (e.g., `""`) — never paste the raw glyph character. Raw glyphs get silently stripped by formatters and editors, producing empty strings that are hard to debug.
 
 ```python
 # GOOD
@@ -331,15 +332,17 @@ ICON_GITHUB = ""  # (nf-fa-github)
 ICON_GITHUB = ""  # (nf-fa-github)
 ```
 
+**This stripping risk is not just a typing mistake — it happens when *relocating* icon-bearing code too, including through an agent's own read/regenerate cycle.** When `pyworkon/icons.py` was split out of `interfaces/tui/icons.py`, retyping the file's content (reading it, then writing a new file with what looked like the same text) silently dropped every raw glyph down to an empty string — confirmed the hard way, caught only once a test asserting glyph length failed and the user reported empty icons in the running app. The fix: when moving/copying a file (or section of one) that contains raw PUA glyphs, get the exact bytes via `git show <ref>:<path>` (or a plain filesystem copy) and splice new surrounding content around that untouched byte-exact block — never let the glyph-bearing lines pass through a manual retype, even an apparently faithful one.
+
 **ONLY use single-width icons** from the BMP Private Use Area (U+E000–U+F8FF): Powerline, Devicons, Font Awesome, Codicons, etc. **NEVER use Material Design Icons** (U+F0000+, Supplementary PUA) — Nerd Fonts v3 renders them as double-width, which breaks Textual's layout calculations.
 
 ### Agent Status Icons
 
 Agent status is set via CLI hooks as plain strings (`idle`, `working`, `waiting`). The TUI maps these to colored Nerd Font icons via `_AGENT_STATUS_ICONS` in `widgets/agent_list.py`. Unknown status values are rendered as-is.
 
-### Reuse in the relay web dashboard
+### Reuse in the relay web dashboard and the strip
 
-`interfaces/relay/icons.py` builds its icon set from these same constants rather than duplicating glyphs — see the "Relay" section above. Add new dashboard icons there, not as hardcoded glyphs in `dashboard.html`.
+`pyworkon.icons.DASHBOARD_ICONS` is built directly from the constants in that same module (not from the TUI) and is reused as-is by both `interfaces/relay/icons.py` (re-exported for the relay dashboard) and `interfaces/strip/app.py` (imported directly — the strip must not import from `interfaces/relay` at all, see the "Strip" section's `static/picker.html` notes). Add new dashboard/strip icons to `pyworkon/icons.py`, not as hardcoded glyphs in `dashboard.html`/`strip.html`/`picker.html`.
 
 ## Testing
 

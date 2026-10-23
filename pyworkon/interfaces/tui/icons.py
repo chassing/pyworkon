@@ -1,50 +1,67 @@
-# Nerd Font / Unicode icons used in the sidebar TUI.
-# Defined as constants with explicit Unicode escapes to survive formatters and editors.
+"""Re-exports `pyworkon.icons` for the TUI's existing import sites.
 
-# Session indicators
-SESSION_INDICATOR = "●"
+The actual glyph definitions live in `pyworkon.icons` now, not here -- the
+relay dashboard and the strip also need them and must not depend on this
+package to get at them (see `pyworkon/icons.py`'s module docstring). Kept as
+a thin shim purely so every existing TUI widget import (`from
+pyworkon.interfaces.tui.icons import X` / `from pyworkon.interfaces.tui
+import icons as tui_icons`) keeps working unchanged.
+"""
 
-# Git / PR detail icons
-ICON_BRANCH = ""  # (nf-pl-branchadfadfadfadf)
-ICON_PR = ""  # (nf-dev-git_pull_request)
-ICON_AGENT = ""  # (nf-fa-cog)
-ICON_FOLDER = ""  # (nf-fa-folder_open)
-ICON_PLAIN_SESSION = "▸"  # ▸
-# Plain Unicode (not a Nerd Font PUA glyph) -- the strip's embedded webfont is
-# a hand-picked subset (see relay/static/fonts/NERD_FONTS_LICENSE.txt) that
-# doesn't include a "link" glyph, and adding one means downloading the real
-# Nerd Font source + fonttools to regenerate it. A plain arrow renders fine
-# via the default system font without touching the embedded font at all.
-ICON_EXTERNAL_LINK = "↗"  # external link (e.g. to a repository)
+from __future__ import annotations
 
-# Provider icons
-ICON_GITHUB = ""  # (nf-fa-github)
-ICON_GITLAB = ""  # (nf-fa-gitlab)
+from pyworkon.icons import (
+    AGENT_IDLE,
+    AGENT_WAITING,
+    AGENT_WORKING_SPINNER,
+    BRANCH_DIRTY,
+    ICON_AGENT,
+    ICON_BRANCH,
+    ICON_EXTERNAL_LINK,
+    ICON_FOLDER,
+    ICON_GITHUB,
+    ICON_GITLAB,
+    ICON_PLAIN_SESSION,
+    ICON_PR,
+    ICON_REVIEW_REQUEST,
+    PR_CI_FAILURE,
+    PR_CI_PENDING,
+    PR_CI_PENDING_SPINNER,
+    PR_CI_SUCCESS,
+    PR_REVIEW_APPROVED,
+    PR_REVIEW_CHANGES_REQUESTED,
+    PR_REVIEW_PENDING,
+    PR_STATE_CLOSED,
+    PR_STATE_DRAFT,
+    PR_STATE_MERGED,
+    PR_STATE_OPEN,
+    SESSION_INDICATOR,
+)
 
-# Agent status icons (single-width Nerd Font)
-AGENT_IDLE = ""  #  (nf-fa-moon_o)
-AGENT_WORKING_SPINNER = "dots"
-AGENT_WAITING = ""  #  (nf-fa-question_circle_o)
-
-# Branch status icons (with Rich markup)
-BRANCH_DIRTY = "[yellow][/]"  #  (nf-fa-pencil)
-
-# PR status icons (with Rich markup)
-PR_CI_SUCCESS = "[green]✓[/]"
-PR_CI_FAILURE = "[red]✗[/]"
-PR_CI_PENDING = "[yellow][/]"
-PR_CI_PENDING_SPINNER = "dots"
-
-# PR state icons (with Rich markup)
-PR_STATE_OPEN = "[green]●[/]"
-PR_STATE_CLOSED = "[red]●[/]"
-PR_STATE_MERGED = "[purple]●[/]"
-PR_STATE_DRAFT = "[dim]●[/]"
-
-# PR review icons (with Rich markup)
-PR_REVIEW_APPROVED = "[green]✓[/]"
-PR_REVIEW_CHANGES_REQUESTED = "[red]✗[/]"
-PR_REVIEW_PENDING = "[yellow]○[/]"
-
-# Review request icon
-ICON_REVIEW_REQUEST = ""  # (nf-fa-eye)
+__all__ = [
+    "AGENT_IDLE",
+    "AGENT_WAITING",
+    "AGENT_WORKING_SPINNER",
+    "BRANCH_DIRTY",
+    "ICON_AGENT",
+    "ICON_BRANCH",
+    "ICON_EXTERNAL_LINK",
+    "ICON_FOLDER",
+    "ICON_GITHUB",
+    "ICON_GITLAB",
+    "ICON_PLAIN_SESSION",
+    "ICON_PR",
+    "ICON_REVIEW_REQUEST",
+    "PR_CI_FAILURE",
+    "PR_CI_PENDING",
+    "PR_CI_PENDING_SPINNER",
+    "PR_CI_SUCCESS",
+    "PR_REVIEW_APPROVED",
+    "PR_REVIEW_CHANGES_REQUESTED",
+    "PR_REVIEW_PENDING",
+    "PR_STATE_CLOSED",
+    "PR_STATE_DRAFT",
+    "PR_STATE_MERGED",
+    "PR_STATE_OPEN",
+    "SESSION_INDICATOR",
+]

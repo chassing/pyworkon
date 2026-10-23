@@ -1,4 +1,10 @@
-"""Tests for the relay dashboard's icon reuse of interfaces/tui/icons.py."""
+"""Tests for the relay dashboard's icon reuse of pyworkon.icons.
+
+`relay.icons` and `tui.icons` are both thin re-export shims over the shared
+`pyworkon.icons` module now (see that module's docstring) -- comparing them
+here still protects against either shim's re-export list silently drifting
+out of sync (e.g. a typo or omission when adding a new icon).
+"""
 
 from __future__ import annotations
 
