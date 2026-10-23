@@ -199,9 +199,22 @@ def _get_on_screen_change(fake_appkit: MagicMock) -> object:
     return block
 
 
+def _fake_ns_screen(
+    *, x: float, y: float = 0, width: float = 1920, height: float = 1080
+) -> MagicMock:
+    screen = MagicMock()
+    frame = MagicMock()
+    frame.origin.x = x
+    frame.origin.y = y
+    frame.size.width = width
+    frame.size.height = height
+    screen.frame.return_value = frame
+    return screen
+
+
 def _bind_watch_screen_changes(
     monkeypatch: pytest.MonkeyPatch,
-) -> tuple[object, MagicMock]:
+) -> tuple[object, MagicMock, MagicMock]:
     # macOS-only -- absent on Linux CI, where `pywebview` installs without its
     # Cocoa backend deps. `app.py` imports `AppKit` lazily, so merely importing
     # this module doesn't fail -- but `monkeypatch.setattr(app_module,
@@ -213,12 +226,25 @@ def _bind_watch_screen_changes(
     pytest.importorskip("AppKit")
     _FakeThread.instances = []
     fake_appkit = MagicMock()
+    # Real screen geometry (`NSScreen.frame()`) is distinct on every call by
+    # default -- most tests here simulate genuinely new external events, not
+    # our own Dock-autohide echo (which never changes `frame()`, only
+    # `visibleFrame()` -- see `dock_geometry.py`'s module docstring). Tests
+    # for the self-echo-suppression behavior itself override this with a
+    # fixed `return_value` instead.
+    call_count = [0]
+
+    def _next_screens() -> list[MagicMock]:
+        call_count[0] += 1
+        return [_fake_ns_screen(x=call_count[0])]
+
+    fake_appkit.NSScreen.screens.side_effect = _next_screens
     monkeypatch.setattr(app_module, "AppKit", fake_appkit)
     monkeypatch.setattr(app_module, "threading", MagicMock(Thread=_FakeThread))
     monkeypatch.setattr(app_module.time, "sleep", lambda _seconds: None)
     bridge = MagicMock()
     app_module._watch_screen_changes(bridge)
-    return _get_on_screen_change(fake_appkit), bridge
+    return _get_on_screen_change(fake_appkit), bridge, fake_appkit
 
 
 def test_watch_screen_changes_suppresses_notifications_while_a_recompute_is_in_flight(
@@ -237,7 +263,7 @@ def test_watch_screen_changes_suppresses_notifications_while_a_recompute_is_in_f
     recompute must stay suppressed for as long as it's actually running, not
     just for a fixed duration that a sluggish `osascript` call could outlast.
     """
-    on_screen_change, bridge = _bind_watch_screen_changes(monkeypatch)
+    on_screen_change, bridge, _fake_appkit = _bind_watch_screen_changes(monkeypatch)
 
     on_screen_change(None)
     assert len(_FakeThread.instances) == 1
@@ -263,7 +289,7 @@ def test_watch_screen_changes_coalesces_a_pending_notification_into_one_trailing
     the coalesced notification was self-generated or a real second change,
     exactly one trailing recompute must run once the in-flight one finishes.
     """
-    on_screen_change, bridge = _bind_watch_screen_changes(monkeypatch)
+    on_screen_change, bridge, _fake_appkit = _bind_watch_screen_changes(monkeypatch)
 
     on_screen_change(None)
     on_screen_change(None)  # coalesced instead of dropped -- see above
@@ -280,7 +306,7 @@ def test_watch_screen_changes_handles_a_fresh_notification_after_completion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Once a recompute cycle fully settles, a later notification starts a new one."""
-    on_screen_change, bridge = _bind_watch_screen_changes(monkeypatch)
+    on_screen_change, bridge, _fake_appkit = _bind_watch_screen_changes(monkeypatch)
 
     on_screen_change(None)
     instance = _FakeThread.instances[0]
@@ -304,7 +330,7 @@ def test_watch_screen_changes_waits_briefly_before_declaring_itself_settled(
     arrives and (seeing `busy` already cleared) starts a brand new,
     unnecessary cycle instead of being coalesced into this one.
     """
-    on_screen_change, _bridge = _bind_watch_screen_changes(monkeypatch)
+    on_screen_change, _bridge, _fake_appkit = _bind_watch_screen_changes(monkeypatch)
     sleep_calls: list[float] = []
     monkeypatch.setattr(app_module.time, "sleep", sleep_calls.append)
 
@@ -333,7 +359,7 @@ def test_watch_screen_changes_caps_a_sustained_coalescing_storm(
     one capped burst, not forever, since the very next notification starts a
     fresh one that can measure correctly once the system has settled.
     """
-    on_screen_change, bridge = _bind_watch_screen_changes(monkeypatch)
+    on_screen_change, bridge, _fake_appkit = _bind_watch_screen_changes(monkeypatch)
 
     def _a_fresh_notification_arrives_mid_recompute(**_kwargs: object) -> None:
         on_screen_change(None)
@@ -350,3 +376,112 @@ def test_watch_screen_changes_caps_a_sustained_coalescing_storm(
         bridge.recompute_and_apply_layout.call_count
         == app_module._MAX_COALESCED_SCREEN_CHANGE_RECOMPUTES
     )
+
+
+def test_watch_screen_changes_ignores_a_trailing_self_generated_echo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A notification carrying unchanged real screen geometry must not start a new cycle.
+
+    Regression test: observed in practice after waking a laptop from sleep --
+    even with the burst cap in place, a capped burst's own last Dock-autohide
+    toggle still fires its own trailing `NSApplicationDidChangeScreenParametersNotification`,
+    which can land *after* that burst has already declared itself settled
+    (`busy` cleared). The existing design treats any notification arriving
+    after settling as a brand new, legitimate external event (see
+    `test_watch_screen_changes_handles_a_fresh_notification_after_completion`)
+    -- so as long as `compute_strip_layout()` keeps landing on "full_width",
+    each burst's own trailing echo restarts a fresh, uncapped burst
+    indefinitely, visibly toggling the real Dock forever until the strip is
+    restarted. Toggling Dock auto-hide changes `visibleFrame` but never
+    `NSScreen.frame()` (see `dock_geometry.py`'s module docstring) -- a
+    notification whose real screen geometry is identical to what's already
+    accounted for is indistinguishable from our own echo and must be dropped
+    instead of starting new work, regardless of how much time has passed.
+    """
+    on_screen_change, bridge, fake_appkit = _bind_watch_screen_changes(monkeypatch)
+    # Pin screens() to a fixed value -- every subsequent notification reports
+    # the exact same real geometry, as a self-generated Dock-autohide echo
+    # would.
+    fake_appkit.NSScreen.screens.side_effect = None
+    fake_appkit.NSScreen.screens.return_value = [_fake_ns_screen(x=0)]
+
+    on_screen_change(None)
+    instance = _FakeThread.instances[0]
+    instance.target(**instance.kwargs)  # settles: nothing was pending
+    assert bridge.recompute_and_apply_layout.call_count == 1
+
+    # The capped burst's own trailing echo, arriving after settling.
+    on_screen_change(None)
+
+    assert len(_FakeThread.instances) == 1
+    assert bridge.recompute_and_apply_layout.call_count == 1
+
+
+def test_watch_screen_changes_eventually_recovers_from_a_stuck_full_width_reading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A burst that settles on "full_width" must keep re-checking afterward.
+
+    Regression test: a transient bad reading right after wake (the Dock
+    process or Accessibility tree not fully back up yet) can make every
+    recompute within the capped burst land on "full_width", even though a
+    plain restart moments later (giving the system more time to recover)
+    reliably computes "beside_dock" correctly -- the strip must end up
+    exactly where a restart would put it, not full-width. Once notifications
+    stop arriving (the self-echo filter -- see the test above -- correctly
+    suppresses the toggle's own trailing notification), nothing would
+    otherwise ever re-check: the strip would stay incorrectly full-width
+    until manually restarted, which is just as bad a user experience as the
+    infinite-toggle bug that filter fixes. `_verify_full_width_eventually()`
+    keeps retrying a bounded number of times on its own schedule, independent
+    of any further notification, mimicking what simply waiting (as a user
+    restarting the strip effectively does) achieves for free.
+    """
+    on_screen_change, bridge, _fake_appkit = _bind_watch_screen_changes(monkeypatch)
+    screen = _FakeScreen()
+    bridge.recompute_and_apply_layout.side_effect = [
+        _make_layout(screen, mode="full_width"),
+        _make_layout(screen, mode="full_width"),
+        _make_layout(screen, mode="beside_dock"),
+    ]
+
+    on_screen_change(None)
+    instance = _FakeThread.instances[0]
+    instance.target(**instance.kwargs)
+
+    assert bridge.recompute_and_apply_layout.call_count == 3
+
+
+def test_watch_screen_changes_stops_verifying_once_attempts_are_exhausted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If "beside_dock" genuinely isn't possible, verification must still stop eventually."""
+    on_screen_change, bridge, _fake_appkit = _bind_watch_screen_changes(monkeypatch)
+    bridge.recompute_and_apply_layout.return_value = _make_layout(
+        _FakeScreen(), mode="full_width"
+    )
+
+    on_screen_change(None)
+    instance = _FakeThread.instances[0]
+    instance.target(**instance.kwargs)
+
+    assert bridge.recompute_and_apply_layout.call_count == 1 + len(
+        app_module._POST_SETTLE_VERIFY_DELAYS_SECONDS
+    )
+
+
+def test_watch_screen_changes_does_not_verify_when_already_beside_dock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No need to keep re-checking once settled on the correct, non-overlapping mode."""
+    on_screen_change, bridge, _fake_appkit = _bind_watch_screen_changes(monkeypatch)
+    bridge.recompute_and_apply_layout.return_value = _make_layout(
+        _FakeScreen(), mode="beside_dock"
+    )
+
+    on_screen_change(None)
+    instance = _FakeThread.instances[0]
+    instance.target(**instance.kwargs)
+
+    assert bridge.recompute_and_apply_layout.call_count == 1

@@ -209,7 +209,7 @@ class StripBridge:
             if acquired:
                 self._dock_autohide_lock.release()
 
-    def recompute_and_apply_layout(self, *, full_width_height: int) -> None:
+    def recompute_and_apply_layout(self, *, full_width_height: int) -> StripLayout:
         """Atomically restore, remeasure, and re-apply the strip's layout.
 
         The whole restore -> `compute_strip_layout()` -> `update_layout()`
@@ -224,11 +224,16 @@ class StripBridge:
         recomputation while already in "full_width" would see that
         self-inflicted zero and conclude "beside_dock isn't possible" again,
         forever -- even after reconnecting a monitor with plenty of room.
+
+        Returns the applied layout so `app.py`'s `_watch_screen_changes()` can
+        tell whether it landed on "full_width" and, if so, keep verifying in
+        the background (see `_verify_full_width_eventually()`).
         """
         with self._dock_autohide_lock:
             self.restore_dock_autohide()
             layout = compute_strip_layout(full_width_height=full_width_height)
             self.update_layout(layout)
+            return layout
 
     def update_chip_rects(self, rects: list[dict[str, Any]]) -> None:
         if self._hover_monitor is not None:

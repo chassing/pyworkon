@@ -56,6 +56,11 @@ _RECONNECT_DELAY_SECS = 1.0
 # See `_watch_screen_changes()`'s docstring for why both of these exist.
 _SCREEN_CHANGE_SETTLE_SECONDS = 0.3
 _MAX_COALESCED_SCREEN_CHANGE_RECOMPUTES = 5
+# See `_verify_full_width_eventually()`'s docstring -- how long to wait
+# before each of a bounded number of extra, notification-independent retries
+# after a burst settles on "full_width", to catch up once the Dock/
+# Accessibility tree finishes recovering from a sleep/wake cycle.
+_POST_SETTLE_VERIFY_DELAYS_SECONDS = (2.0, 5.0, 10.0)
 _ICONS_PLACEHOLDER = "/*__PYWORKON_ICONS__*/"
 _FONT_PLACEHOLDER = "__PYWORKON_FONT_BASE64__"
 _IS_POPUP_PLACEHOLDER = "__PYWORKON_IS_POPUP__"
@@ -329,6 +334,63 @@ def _run_daemon_session(
         client.close()
 
 
+def _screen_signature() -> tuple[tuple[float, float, float, float], ...]:
+    """A signature of real, Dock-auto-hide-independent screen geometry.
+
+    Built from `NSScreen.frame()`, not `visibleFrame()` -- toggling Dock
+    auto-hide changes `visibleFrame()` but never `frame()` (see
+    `dock_geometry.py`'s module docstring: that's exactly why `visibleFrame()`
+    is what measures the Dock's reserved space in the first place). Comparing
+    this signature across two notifications tells apart a genuine external
+    display change from our own recompute's self-generated Dock-autohide
+    echo -- see `_watch_screen_changes()`'s docstring for why that
+    distinction matters.
+    """
+    return tuple(
+        (
+            screen.frame().origin.x,
+            screen.frame().origin.y,
+            screen.frame().size.width,
+            screen.frame().size.height,
+        )
+        for screen in AppKit.NSScreen.screens()
+    )
+
+
+def _verify_full_width_eventually(
+    bridge: StripBridge, layout: StripLayout | None
+) -> None:
+    """Keep re-checking after settling on "full_width", on a fixed schedule.
+
+    A no-op unless `layout.mode == "full_width"` -- "beside_dock" never
+    overlaps the Dock, so there's nothing to recover from. Called from
+    `_watch_screen_changes()`'s `_run_recompute()` *after* it has already
+    cleared `busy` and released `lock`, so this runs independently of (and
+    never blocks) further notification handling -- a genuinely new external
+    event arriving during these waits still triggers its own normal burst.
+
+    Runs on whatever background thread `_run_recompute()` was already on, not
+    a new one -- there's no main-thread deadlock risk here (unlike
+    `update_layout()`'s `evaluate_js()` call, see `_watch_screen_changes()`'s
+    docstring), just a long-lived daemon thread sleeping between a bounded
+    number of direct `recompute_and_apply_layout()` calls.
+
+    Deliberately bypasses the self-echo filter (`_screen_signature()`/
+    `last_signature`) entirely -- these are scheduled, direct calls, not
+    reactions to a notification, so there's no risk of them feeding back into
+    `_on_screen_change()` and restarting a notification-driven burst (any
+    notification *they* cause reports the same, still-unchanged real screen
+    geometry, so the filter correctly ignores it on that side independently).
+    """
+    if layout is None or layout.mode != "full_width":
+        return
+    for delay in _POST_SETTLE_VERIFY_DELAYS_SECONDS:
+        time.sleep(delay)
+        layout = bridge.recompute_and_apply_layout(full_width_height=STRIP_HEIGHT)
+        if layout.mode != "full_width":
+            return
+
+
 def _watch_screen_changes(bridge: StripBridge) -> None:
     """Recompute and re-apply the strip's layout whenever the screen setup changes.
 
@@ -397,25 +459,70 @@ def _watch_screen_changes(bridge: StripBridge) -> None:
     transiently wrong `compute_strip_layout()` reading this early after wake
     (e.g. the Dock process or Accessibility tree not fully back up yet) can
     only get "stuck" for one capped burst, not forever.
+
+    **In practice, even that cap didn't actually stop it**: confirmed after
+    waking a laptop from sleep, the real Dock kept toggling hidden/shown
+    indefinitely until the strip was restarted. A capped burst's own last
+    `recompute_and_apply_layout()` call still fires its own trailing
+    notification same as any other iteration -- and that notification can
+    easily land *after* the burst has already declared itself settled and
+    cleared `busy`. At that point the existing `busy`/`pending` machinery has
+    no way to tell "this is my own echo from the burst that just ended" apart
+    from "a genuine new external event" -- it's designed to treat the latter
+    as a fresh, legitimate trigger (see `test_watch_screen_changes_handles_a_
+    fresh_notification_after_completion`), so it starts an entirely new,
+    uncapped burst. As long as `compute_strip_layout()` keeps landing on
+    "full_width", every burst's own trailing echo restarts the next one, and
+    the cap only bounds the *size* of each individual burst, never the total
+    number of them. `_screen_signature()` breaks this by comparing real
+    screen geometry (`NSScreen.frame()`) across notifications -- toggling
+    Dock auto-hide changes `visibleFrame()` but never `frame()` (see
+    `dock_geometry.py`'s module docstring), so a notification whose signature
+    is unchanged from the last one actually acted on is indistinguishable
+    from our own echo and is dropped outright, regardless of how much time
+    has passed since the burst that caused it. A genuine external event
+    (display connect/disconnect, resolution change) always changes at least
+    one screen's `frame()`, so it's never filtered.
+
+    **That filter alone isn't sufficient either**: the strip must never settle
+    for "full_width" just because that's what a transiently bad reading
+    happened to produce -- it must end up exactly where a plain restart would
+    put it (e.g. "beside_dock" on a screen with room for it), since a restart
+    reliably computes correctly once given a bit more time for the Dock/
+    Accessibility tree to recover. Once the self-echo filter above suppresses
+    further notifications, nothing would otherwise ever re-check, leaving the
+    strip incorrectly full-width until manually restarted -- see
+    `_verify_full_width_eventually()`, called whenever a burst settles on
+    "full_width", for how this is recovered automatically instead.
     """
     lock = threading.Lock()
     state = {"busy": False, "pending": False}
+    last_signature = [_screen_signature()]
 
     def _run_recompute() -> None:
+        layout: StripLayout | None = None
         for _ in range(_MAX_COALESCED_SCREEN_CHANGE_RECOMPUTES):
-            bridge.recompute_and_apply_layout(full_width_height=STRIP_HEIGHT)
+            layout = bridge.recompute_and_apply_layout(full_width_height=STRIP_HEIGHT)
             time.sleep(_SCREEN_CHANGE_SETTLE_SECONDS)
             with lock:
-                if not state["pending"]:
+                settled = not state["pending"]
+                if settled:
                     state["busy"] = False
-                    return
-                state["pending"] = False
+                else:
+                    state["pending"] = False
+            if settled:
+                _verify_full_width_eventually(bridge, layout)
+                return
         with lock:
             state["busy"] = False
-            state["pending"] = False
+        _verify_full_width_eventually(bridge, layout)
 
     def _on_screen_change(_notification: object) -> None:
+        signature = _screen_signature()
         with lock:
+            if signature == last_signature[0]:
+                return
+            last_signature[0] = signature
             if state["busy"]:
                 state["pending"] = True
                 return
