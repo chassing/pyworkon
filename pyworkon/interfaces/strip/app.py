@@ -59,8 +59,14 @@ _MAX_COALESCED_SCREEN_CHANGE_RECOMPUTES = 5
 # See `_verify_full_width_eventually()`'s docstring -- how long to wait
 # before each of a bounded number of extra, notification-independent retries
 # after a burst settles on "full_width", to catch up once the Dock/
-# Accessibility tree finishes recovering from a sleep/wake cycle.
-_POST_SETTLE_VERIFY_DELAYS_SECONDS = (2.0, 5.0, 10.0)
+# Accessibility tree finishes recovering from a sleep/wake cycle. Confirmed
+# via `pmset -g log` after a real Thunderbolt-docked wake: USB/Thunderbolt/
+# PCIe drivers alone each take 450-750ms just to re-enumerate, on top of
+# whatever the Dock process/Accessibility tree needs afterward -- the
+# original (2.0, 5.0, 10.0) schedule (~17s total) was confirmed, in
+# practice, to run out before a docked wake actually recovered, leaving the
+# strip permanently stuck on "full_width" until manually restarted.
+_POST_SETTLE_VERIFY_DELAYS_SECONDS = (2.0, 5.0, 10.0, 20.0, 30.0)
 _ICONS_PLACEHOLDER = "/*__PYWORKON_ICONS__*/"
 _FONT_PLACEHOLDER = "__PYWORKON_FONT_BASE64__"
 _IS_POPUP_PLACEHOLDER = "__PYWORKON_IS_POPUP__"
