@@ -56,6 +56,7 @@ lazy from pyworkon.interfaces.strip.native import (
     POPUP_MIN_WIDTH,
     clamp_popup_height,
     clamp_popup_width,
+    hide_menu_window,
     hide_popup_window,
     resize_and_position_popup_window,
     show_popup_window,
@@ -113,6 +114,9 @@ class HoverMonitor:
         self._last_other_app: Any = None
         # See `set_reclaim_suspended()` for why this exists.
         self._reclaim_suspended = False
+        # See `set_context_menu_window()` for why this exists.
+        self._menu_window: Window | None = None
+        self._menu_miss_streak = 0
 
     def start(self) -> None:
         threading.Thread(target=self._poll_loop, daemon=True).start()
@@ -122,6 +126,27 @@ class HoverMonitor:
             r["session_name"]: _Rect(r["left"], r["top"], r["width"], r["height"])
             for r in rects
         }
+
+    def set_context_menu_window(self, window: Window | None) -> None:
+        """Register (or clear) the currently-open right-click context menu window.
+
+        The menu window never becomes key (see `native.py`'s
+        `prepare_menu_window()` for why that's a hard requirement, not a
+        missing feature) -- picked deliberately over the picker window's
+        `focus=True`/resign-key dismiss pattern, since a context menu has no
+        actual need of real keyboard focus and making it key would risk the
+        exact keystroke-stealing regression `app.py`'s "must never take
+        focus" section documents. Without key-window resignation to detect
+        "the user clicked away", this poll loop does it instead, the same way
+        it already drives the hover popup without focus: while a menu window
+        is registered, each tick checks whether the mouse is over *either*
+        the strip or the menu window itself, with the same debounce used for
+        leaving a hovered chip (`_LEAVE_DEBOUNCE_TICKS`) -- after enough
+        consecutive misses, the menu is hidden and unregistered.
+        `bridge.py`'s `show_context_menu()`/`hide_context_menu()` call this.
+        """
+        self._menu_window = window
+        self._menu_miss_streak = 0
 
     def set_reclaim_suspended(self, *, suspended: bool) -> None:
         """Pause or resume `_reclaim_activation_if_stolen()`'s watchdog.
@@ -150,8 +175,10 @@ class HoverMonitor:
         """
         while True:
             with contextlib.suppress(Exception):
+                mouse = AppKit.NSEvent.mouseLocation()
                 self._reclaim_activation_if_stolen()
-                self._poll_once(AppKit.NSEvent.mouseLocation())
+                self._poll_once(mouse)
+                self._dismiss_context_menu_if_mouse_left(mouse)
             time.sleep(_POLL_INTERVAL_SECONDS)
 
     def _reclaim_activation_if_stolen(self) -> None:
@@ -242,11 +269,42 @@ class HoverMonitor:
         native = self._popup_window.native
         if native is None or not native.isVisible():
             return False
+        return self._mouse_over_native_frame(native, mouse)
+
+    @staticmethod
+    def _mouse_over_native_frame(native: Any, mouse: Any) -> bool:
         frame = native.frame()
         return (
             frame.origin.x <= mouse.x <= frame.origin.x + frame.size.width
             and frame.origin.y <= mouse.y <= frame.origin.y + frame.size.height
         )
+
+    def _dismiss_context_menu_if_mouse_left(self, mouse: Any) -> None:
+        """Hide the registered context menu window once the mouse has clearly left it.
+
+        See `set_context_menu_window()` for why this poll-driven check exists
+        instead of key-window resignation. "Left" means away from *both* the
+        menu window and the strip itself -- moving from the menu back onto
+        the strip (e.g. to glance at a chip) must not instantly dismiss it.
+        """
+        if self._menu_window is None:
+            return
+        native = self._menu_window.native
+        if native is None or not native.isVisible():
+            self._menu_window = None
+            self._menu_miss_streak = 0
+            return
+        if (
+            self._mouse_over_native_frame(native, mouse)
+            or self._local_point(mouse) is not None
+        ):
+            self._menu_miss_streak = 0
+            return
+        self._menu_miss_streak += 1
+        if self._menu_miss_streak >= _LEAVE_DEBOUNCE_TICKS:
+            hide_menu_window(native)
+            self._menu_window = None
+            self._menu_miss_streak = 0
 
     def _local_point(self, mouse: Any) -> tuple[float, float] | None:
         """Mouse position in webview-local, top-left-origin CSS pixel coordinates."""

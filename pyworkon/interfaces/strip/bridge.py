@@ -7,24 +7,33 @@ interface (like `relay`) that has no dependency on Textual.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 lazy import contextlib
 lazy import json
 lazy import subprocess
+lazy import sys
 lazy import threading
 lazy import webbrowser
 
+lazy from PyObjCTools import AppHelper
+
+from pyworkon.config import user_cache_dir
 from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
-lazy from pyworkon.interfaces.strip.dock_geometry import compute_strip_layout
+lazy from pyworkon.config import Config
 lazy from pyworkon.interfaces.strip.hover_monitor import HoverMonitor
 lazy from pyworkon.interfaces.strip.native import (
+    MENU_WIDTH,
     PICKER_WIDTH,
     capture_frontmost_app,
+    hide_menu_window,
     hide_picker_window,
     hide_popup_window,
     move_picker_window,
     reactivate_app,
+    resize_and_position_menu_window,
     resize_frame,
+    show_menu_window,
     show_picker_window,
 )
 
@@ -39,8 +48,15 @@ COLLAPSED_HEIGHT = 10
 # to -- mirrors the small screen-edge margins `hover_monitor.py` uses for the
 # same kind of "float just above/beside something" positioning.
 _PICKER_SCREEN_MARGIN = 8.0
+# Same idea for the context menu -- keeps a right-click near the screen's
+# right edge from pushing part of the fixed-width menu off-screen.
+_MENU_SCREEN_MARGIN = 8.0
 
 _OSASCRIPT = "/usr/bin/osascript"
+# Crash-safe record of the Dock auto-hide value to restore -- see
+# `recover_dock_autohide_from_unclean_shutdown()` for why this can't just
+# live in memory (`StripBridge._dock_autohide_overridden_from`) alone.
+_DOCK_AUTOHIDE_ORIGINAL_MARKER = user_cache_dir / "strip_dock_autohide_original"
 
 
 def _dock_autohide_enabled() -> bool:
@@ -76,6 +92,47 @@ def _set_dock_autohide(*, enabled: bool) -> None:
     )
 
 
+def recover_dock_autohide_from_unclean_shutdown() -> None:
+    """Undo a previous run's un-restored Dock auto-hide override, if any.
+
+    Must be called once, from `start_strip()`, *before* the first
+    `compute_strip_layout()` call. `StripBridge._sync_dock_autohide_for_mode()`
+    only knows how to restore the user's real original Dock auto-hide value
+    while its own `_dock_autohide_overridden_from` is non-`None` -- in-memory
+    state that's gone the instant the process exits, cleanly or not. A clean
+    exit ("Quit strip") always reaches `start_strip()`'s `finally:` block,
+    which restores it. A `SIGKILL` (`pkill -9`, a crash, the OS going down)
+    does not -- Python's `finally:` blocks never run, so the real Dock is left
+    auto-hidden exactly as "full_width" mode forces it.
+
+    Confirmed via live debug logging to be a real, reproducible, **permanent**
+    bug, not just a cosmetic leftover: the next launch's very first
+    `_sync_dock_autohide_for_mode("full_width")` call (if `config.strip_mode`
+    is persisted as "full_width", which it would be right after a session
+    that was stuck there) sees `_dock_autohide_overridden_from is None` (a
+    brand new `StripBridge`) and captures *the Dock's current, already-
+    forced-true* setting via `_dock_autohide_enabled()` as if it were the
+    user's genuine original preference. From that point on, every
+    `restore_dock_autohide()` call "restores" to that same wrong (`true`)
+    value -- which is also why this produces *zero* visible Dock flashing:
+    every toggle is true -> true, never actually showing the Dock. This class
+    of bug cannot be fixed by retrying -- it has to be prevented from
+    poisoning the baseline in the first place.
+
+    The fix: persist the *real* original value to `_DOCK_AUTOHIDE_ORIGINAL
+    _MARKER` the moment it's first captured (see `_sync_dock_autohide_for_mode()`),
+    remove it the moment it's cleanly restored. Finding it still present at
+    the next launch means the previous run never got that far -- use the
+    persisted value (not the Dock's current, possibly-still-forced setting)
+    to restore the real preference right now, before anything else runs.
+    """
+    if not _DOCK_AUTOHIDE_ORIGINAL_MARKER.exists():
+        return
+    original = _DOCK_AUTOHIDE_ORIGINAL_MARKER.read_text().strip() == "true"
+    _set_dock_autohide(enabled=original)
+    _DOCK_AUTOHIDE_ORIGINAL_MARKER.unlink(missing_ok=True)
+
+
 class StripBridge:
     """Session actions callable from the strip's JavaScript side."""
 
@@ -83,6 +140,7 @@ class StripBridge:
         self._window: Window | None = None
         self._popup_window: Window | None = None
         self._picker_window: Window | None = None
+        self._menu_window: Window | None = None
         self._layout: StripLayout | None = None
         self._collapsed = False
         self._hover_monitor: HoverMonitor | None = None
@@ -95,19 +153,13 @@ class StripBridge:
         # The Dock auto-hide value to restore once we leave "full_width" mode
         # (or quit) -- `None` means we haven't overridden it right now.
         self._dock_autohide_overridden_from: bool | None = None
-        # `NSApplicationDidChangeScreenParametersNotification` can fire more
-        # than once for a single hardware change, each spawning its own
-        # background thread (see `app.py`'s `_watch_screen_changes()`).
-        # Without serializing, two threads can both read
-        # `_dock_autohide_overridden_from` as `None` before either writes it,
-        # each capturing "the current Dock setting" as the value to restore
-        # later -- but by the time the second thread's `_set_dock_autohide()`
-        # call runs, the *first* thread may have already changed it, so the
-        # second thread captures the first thread's override as if it were
-        # the user's real original setting. Reentrant because
-        # `recompute_and_apply_layout()` calls `restore_dock_autohide()`
-        # and `update_layout()` (which itself calls
-        # `_sync_dock_autohide_for_mode()`) while already holding it.
+        # pywebview spawns a new thread per `js_api` call (`js_bridge_call()`)
+        # -- guards against two near-simultaneous `toggle_mode()` clicks (or
+        # `toggle_mode()` racing shutdown's `restore_dock_autohide()`) from
+        # interleaving and corrupting the remembered "original" Dock setting.
+        # Reentrant because `toggle_mode()` calls `update_layout()`, which
+        # itself calls `_sync_dock_autohide_for_mode()`, while already
+        # holding it.
         self._dock_autohide_lock = threading.RLock()
 
     def bind(
@@ -115,6 +167,7 @@ class StripBridge:
         window: Window,
         popup_window: Window,
         picker_window: Window,
+        menu_window: Window,
         *,
         layout: StripLayout,
         collapsed: bool,
@@ -122,6 +175,7 @@ class StripBridge:
         self._window = window
         self._popup_window = popup_window
         self._picker_window = picker_window
+        self._menu_window = menu_window
         self._layout = layout
         self._collapsed = collapsed
         self._hover_monitor = HoverMonitor(window, popup_window)
@@ -129,17 +183,15 @@ class StripBridge:
         self._sync_dock_autohide_for_mode(layout.mode)
 
     def update_layout(self, layout: StripLayout) -> None:
-        """Re-apply a freshly recomputed layout -- e.g. after a display is connected/disconnected.
+        """Apply a freshly computed layout -- called from `bind()` and `toggle_mode()`.
 
         Resizes the strip window to the new placement (keeping the current
         collapsed/expanded state), tells both windows' JS which mode is now
         active (via the `body.beside-dock` CSS class `strip.html` sets), and
-        brings the real Dock's auto-hide setting in line with the new mode --
-        a mode transition at runtime (e.g. disconnecting the external monitor
-        a "beside_dock" layout was anchored to) needs the exact same Dock
-        management `start_strip()` does once at startup, or a resulting
-        "full_width" strip can end up with the Dock left visible, covering
-        the chips in the middle of the screen.
+        brings the real Dock's auto-hide setting in line with the new mode,
+        same as `start_strip()` does once at startup -- a resulting
+        "full_width" strip can otherwise end up with the Dock left visible,
+        covering the chips in the middle of the screen.
         """
         self._layout = layout
         self._resize_to(COLLAPSED_HEIGHT if self._collapsed else layout.height)
@@ -156,37 +208,47 @@ class StripBridge:
         """Enable Dock auto-hide for "full_width", restore it when leaving that mode.
 
         Only "full_width" ever needs the Dock auto-hidden -- "beside_dock"
-        never overlaps it. Tracks the pre-override value so repeated
-        transitions (e.g. monitor unplugged, replugged, unplugged again)
-        always restore the user's *original* setting, not whatever the
-        previous override happened to leave behind. Serialized via
-        `_dock_autohide_lock` -- see `__init__()`'s comment for why.
+        never overlaps it. Tracks the pre-override value so repeated manual
+        toggles (full_width -> beside_dock -> full_width again, via
+        `toggle_mode()`) always restore the user's *original* setting, not
+        whatever the previous override happened to leave behind. Serialized
+        via `_dock_autohide_lock` -- see `__init__()`'s comment for why.
+
+        Persists the captured original to `_DOCK_AUTOHIDE_ORIGINAL_MARKER`
+        the moment it's captured, removes it the moment it's restored -- see
+        `recover_dock_autohide_from_unclean_shutdown()` for why an unclean
+        shutdown (`SIGKILL`, a crash) while that file still exists must never
+        be treated as "the Dock's current setting is the real original" on
+        the next launch.
         """
         with self._dock_autohide_lock:
             if mode == "full_width":
                 if self._dock_autohide_overridden_from is None:
                     self._dock_autohide_overridden_from = _dock_autohide_enabled()
+                    _DOCK_AUTOHIDE_ORIGINAL_MARKER.write_text(
+                        "true" if self._dock_autohide_overridden_from else "false"
+                    )
                     _set_dock_autohide(enabled=True)
             elif self._dock_autohide_overridden_from is not None:
                 _set_dock_autohide(enabled=self._dock_autohide_overridden_from)
                 self._dock_autohide_overridden_from = None
+                _DOCK_AUTOHIDE_ORIGINAL_MARKER.unlink(missing_ok=True)
 
     def restore_dock_autohide(self, *, timeout: float | None = None) -> None:
         """Restore the Dock auto-hide setting we overrode, if any.
 
-        Called on shutdown, and also before every layout remeasurement (see
-        `recompute_and_apply_layout()`) -- a no-op if there's no active
-        override. Serialized via `_dock_autohide_lock` by default (`timeout
-        =None` blocks indefinitely, same as the plain `with` statement this
-        replaced).
+        Called on shutdown, and also at the start of `toggle_mode()` -- a
+        no-op if there's no active override. Serialized via
+        `_dock_autohide_lock` by default (`timeout=None` blocks indefinitely,
+        same as the plain `with` statement this replaced).
 
         `start_strip()`'s shutdown path passes a short `timeout` instead: a
-        background `recompute_and_apply_layout()` call can get stuck forever
-        inside `update_layout()`'s `evaluate_js()` call if the windows are
-        destroyed mid-call (e.g. "Quit strip" racing a screen-change
-        recompute) -- the main thread's run loop that would eventually
-        signal that pending callback back is already gone, so that thread
-        never returns, and it's still holding this very lock. Without a
+        background `toggle_mode()` call can get stuck forever inside
+        `update_layout()`'s `evaluate_js()` call if the windows are destroyed
+        mid-call (e.g. "Quit strip" racing a menu-triggered toggle) -- the
+        main thread's run loop that would eventually signal that pending
+        callback back is already gone, so that thread never returns, and
+        it's still holding this very lock. Without a
         bounded timeout here, shutdown's `finally:` block would hang on the
         same lock forever, and the process would never reach `os._exit(0)`.
         A stuck thread can only be holding the lock *after* its own
@@ -205,39 +267,191 @@ class StripBridge:
             if self._dock_autohide_overridden_from is not None:
                 _set_dock_autohide(enabled=self._dock_autohide_overridden_from)
                 self._dock_autohide_overridden_from = None
+                _DOCK_AUTOHIDE_ORIGINAL_MARKER.unlink(missing_ok=True)
         finally:
             if acquired:
                 self._dock_autohide_lock.release()
 
-    def recompute_and_apply_layout(self, *, full_width_height: int) -> StripLayout:
-        """Atomically restore, remeasure, and re-apply the strip's layout.
+    def toggle_mode(self) -> None:
+        """Flip between "full_width" and "beside_dock" by restarting the strip.
 
-        The whole restore -> `compute_strip_layout()` -> `update_layout()`
-        sequence runs under `_dock_autohide_lock` so a second, concurrent
-        screen-change notification can never interleave with this one and
-        corrupt the remembered "original" Dock setting (see `__init__()`'s
-        comment). Restoring first matters on its own too: `compute_strip
-        _layout()` measures the Dock's reserved height via `NSScreen
-        .visibleFrame()`, which reports zero while the Dock is auto-hidden
-        -- including when *we're* the ones currently forcing it hidden for
-        "full_width" mode. Without restoring the real setting first, every
-        recomputation while already in "full_width" would see that
-        self-inflicted zero and conclude "beside_dock isn't possible" again,
-        forever -- even after reconnecting a monitor with plenty of room.
+        The strip's right-click "Switch mode" menu item -- the *only* way the
+        layout mode ever changes now. See `dock_geometry.py`'s module
+        docstring for why there's no automatic re-evaluation anymore (an
+        earlier design watched for screen/wake/Dock events and continuously
+        retried measurement in the background; it proved impossible to make
+        reliable against a real Thunderbolt dock's sleep/wake and monitor
+        hotplug behavior). Once set, the mode stays exactly as chosen --
+        through sleep, wake, monitor plug/unplug, anything -- until the user
+        explicitly switches it again.
 
-        Returns the applied layout so `app.py`'s `_watch_screen_changes()` can
-        tell whether it landed on "full_width" and, if so, keep verifying in
-        the background (see `_verify_full_width_eventually()`).
+        Does **not** try to measure and apply the new layout live, in this
+        already-running process -- confirmed live, repeatedly, that doing so
+        is unreliable in ways that took several rounds to even characterize
+        (a `dock_geometry._dock_pid()` lookup that silently failed only once
+        the app's own windows were up, then a genuine Dock-reveal-animation
+        timing race once that was fixed). `start_strip()`'s own initial
+        `compute_strip_layout()` call, in contrast, has been 100% reliable
+        throughout this entire investigation -- it always runs before any
+        window exists, in a clean process, with nothing else competing for
+        the Dock's Accessibility state. So: persist the new mode and restart
+        the whole process, reusing that already-proven-reliable path instead
+        of trying to make live remeasurement work.
+
+        Restores the real Dock auto-hide setting *before* relaunching: the
+        new process's first `compute_strip_layout()` call needs the real
+        Dock already in its genuine state, not still forced hidden from this
+        process's "full_width" override, to measure "beside_dock" correctly.
+
+        Saves through a *freshly re-read* `Config()` instance, not the
+        module-level `config` singleton -- that singleton is the snapshot
+        loaded when this process started, and `Config.save()` serializes the
+        *entire* object. Writing it straight back out would silently revert
+        any other setting the user edited in `config.yaml` while the strip
+        was running (confirmed: changing `sidebar_refresh_interval` on disk
+        while the strip stayed up, then switching modes, reverted it back).
+        Re-reading first picks up whatever is on disk *right now* for every
+        other field, so only `strip_mode` actually changes.
         """
-        with self._dock_autohide_lock:
-            self.restore_dock_autohide()
-            layout = compute_strip_layout(full_width_height=full_width_height)
-            self.update_layout(layout)
-            return layout
+        if self._layout is None:
+            return
+        new_mode: StripMode = (
+            "beside_dock" if self._layout.mode == "full_width" else "full_width"
+        )
+        self.restore_dock_autohide()
+        fresh_config = Config()
+        fresh_config.strip_mode = new_mode
+        fresh_config.save()
+        pyworkon_bin = Path(sys.executable).parent / "pyworkon"
+        args = [str(pyworkon_bin), "strip"]
+        if self._collapsed:
+            args.append("--auto-hide")
+        subprocess.Popen(args, start_new_session=True)
+        self.quit()
 
     def update_chip_rects(self, rects: list[dict[str, Any]]) -> None:
         if self._hover_monitor is not None:
             self._hover_monitor.set_chip_rects(rects)
+
+    def show_context_menu(
+        self, items_json: str, click_x: float, click_y: float
+    ) -> None:
+        """Show the right-click context menu in its own window, anchored at the real click position.
+
+        `items_json` is a JS-side-built JSON array (`[{label, action, danger},
+        ...]`), passed straight through unmodified -- content stays owned by
+        `strip.html`, this just renders it into a *different* window and
+        positions that window. `click_x`/`click_y` are the triggering
+        `contextmenu` DOM event's own `clientX`/`clientY` -- page-relative,
+        top-left-origin CSS pixels within the *strip* window (the only window
+        with a context menu handler).
+
+        A genuinely separate window, not a `<div>` inside the strip's own tiny
+        window -- confirmed live (a real screenshot) that the strip window
+        (only `STRIP_HEIGHT`, 56px, tall in full-width mode) clips a
+        multi-item menu, and temporarily growing the *strip's own* window to
+        fit was tried and explicitly rejected (visibly resizing the whole
+        strip just to show a menu). See `native.py`'s `prepare_menu_window()`
+        for the full reasoning, matching `prepare_popup_window()`'s existing
+        pattern for the hover-detail popup.
+
+        An earlier version grabbed `AppKit.NSEvent.mouseLocation()` here
+        instead of taking click coordinates as a parameter -- confirmed live
+        that this reads a noticeably *stale* mouse position: this method runs
+        on pywebview's own per-`js_api`-call thread, and by the time it's
+        even called, it still has a *blocking* `evaluate_js()` round-trip
+        into the menu window ahead of it (to render and measure content
+        height) before it would get around to querying "the current mouse
+        position" -- more than enough time for the mouse to have moved
+        between the actual click and that query, which showed up as "the
+        menu opens far from the cursor." Taking the click position from the
+        triggering DOM event itself instead (`strip.html`'s `clientX`/
+        `clientY`, captured synchronously in the same handler that builds
+        `items_json`) removes that gap entirely. Converted to absolute,
+        bottom-left-origin AppKit screen coordinates the same way
+        `hover_monitor.py`'s `_popup_screen_position()` converts a chip's own
+        page-relative rect: `abs_x = strip_frame.x + click_x`,
+        `abs_y = strip_frame.y + (strip_frame.height - click_y)`. The menu's
+        *bottom-left* corner is anchored exactly there -- AppKit's
+        `NSMakeRect(x, y, ...)` already treats `(x, y)` as a rect's
+        bottom-left origin, so the menu extends up and to the right from the
+        click, matching how the strip's own bottom-docked position leaves no
+        room to extend downward.
+
+        Content is rendered and measured in the menu window's own page first
+        (`window.__showContextMenu()`, returning the measured height, the
+        same "measure via a blocking `evaluate_js()` call" pattern
+        `hover_monitor.py`'s `_process()` already uses for the popup), then
+        the window is resized+positioned *while still hidden*, then shown --
+        in that order, so there's nothing visible yet for a mid-resize
+        rendering gap to show through.
+
+        `abs_x` is clamped to the screen's own width -- a right-click near
+        the screen's right edge would otherwise always extend the
+        fixed-width menu off-screen to the right (anchoring purely at the
+        click, with nothing to keep it on-screen), clipping its labels.
+        Mirrors `_picker_screen_position()`'s own screen-edge clamp.
+
+        Registering the shown window with the hover monitor is itself
+        scheduled via `AppHelper.callAfter`, not called directly -- both
+        `resize_and_position_menu_window()` and `show_menu_window()` only
+        *queue* their native calls on the main thread's run loop and return
+        immediately, so the window may not actually be visible yet by the
+        time this method would otherwise register it. A hover-monitor poll
+        tick landing in that gap would see `native.isVisible()` still
+        `False` and (wrongly) treat that as "already dismissed," forgetting
+        to track the window at all -- the menu would then never auto-dismiss
+        once actually shown, since `set_context_menu_window()` was never
+        called with a recognized window again afterward.
+        `AppHelper.callAfter` preserves call order, so queuing the
+        registration the same way guarantees it only runs once the native
+        show has actually completed.
+        """
+        if self._window is None or self._menu_window is None:
+            return
+        with contextlib.suppress(Exception):
+            strip_native = self._window.native
+            menu_native = self._menu_window.native
+            if strip_native is None or menu_native is None:
+                return
+            height = self._menu_window.evaluate_js(
+                f"window.__showContextMenu({items_json})"
+            )
+            if not height:
+                return
+            strip_frame = strip_native.frame()
+            abs_x = strip_frame.origin.x + click_x
+            screen = strip_native.screen()
+            if screen is not None:
+                screen_frame = screen.frame()
+                min_x = screen_frame.origin.x + _MENU_SCREEN_MARGIN
+                max_x = (
+                    screen_frame.origin.x
+                    + screen_frame.size.width
+                    - MENU_WIDTH
+                    - _MENU_SCREEN_MARGIN
+                )
+                abs_x = max(min_x, min(abs_x, max_x))
+            abs_y = strip_frame.origin.y + (strip_frame.size.height - click_y)
+            resize_and_position_menu_window(
+                menu_native, abs_x, abs_y, MENU_WIDTH, float(height)
+            )
+            show_menu_window(menu_native)
+            hover_monitor = self._hover_monitor
+            menu_window = self._menu_window
+            if hover_monitor is not None:
+                AppHelper.callAfter(hover_monitor.set_context_menu_window, menu_window)
+
+    def hide_context_menu(self) -> None:
+        """Hide the context menu window -- called on an explicit item click or click-away."""
+        if self._hover_monitor is not None:
+            self._hover_monitor.set_context_menu_window(None)
+        if self._menu_window is None:
+            return
+        with contextlib.suppress(Exception):
+            menu_native = self._menu_window.native
+            if menu_native is not None:
+                hide_menu_window(menu_native)
 
     def hide_popup(self) -> None:
         """Hide the popup window on the popup page's own request.
@@ -452,12 +666,13 @@ class StripBridge:
         windows this way (rather than an external `kill`/`pkill`) lets
         `start_strip()`'s `finally` run, restoring the user's original Dock
         auto-hide setting; a `SIGTERM` to the process cannot reach Python code
-        blocked inside pywebview's native run loop. All three windows must be
+        blocked inside pywebview's native run loop. All four windows must be
         destroyed -- `webview.start()` only returns once every window it
-        created has closed, so leaving the (separate, since the two-window
-        popup redesign) popup or picker window open would leave the process
-        hanging.
+        created has closed, so leaving the popup, picker, or context-menu
+        window open would leave the process hanging.
         """
+        if self._menu_window is not None:
+            self._menu_window.destroy()
         if self._picker_window is not None:
             self._picker_window.destroy()
         if self._popup_window is not None:

@@ -569,6 +569,122 @@ def test_popup_screen_position_returns_none_when_strip_native_is_missing(
     assert monitor._popup_screen_position("s1", 360) is None
 
 
+def _make_menu_window(
+    *, visible: bool = True, frame: _FakeFrame | None = None
+) -> MagicMock:
+    menu_window = MagicMock()
+    menu_window.native.isVisible.return_value = visible
+    menu_window.native.frame.return_value = frame or _FakeFrame(
+        origin=_FakePoint(500, 56), size=_FakeSize(220, 80)
+    )
+    return menu_window
+
+
+def test_set_context_menu_window_resets_the_miss_streak(
+    fake_appkit: MagicMock,
+) -> None:
+    monitor = _make_monitor(fake_appkit)
+    monitor._menu_miss_streak = 2
+
+    monitor.set_context_menu_window(_make_menu_window())
+
+    assert monitor._menu_miss_streak == 0
+
+
+def test_dismiss_context_menu_is_noop_without_a_registered_menu(
+    fake_appkit: MagicMock,
+) -> None:
+    monitor = _make_monitor(fake_appkit)
+    _set_mouse(fake_appkit, x=0, y=0)
+
+    monitor._dismiss_context_menu_if_mouse_left(_mouse(fake_appkit))  # must not raise
+
+
+def test_dismiss_context_menu_clears_immediately_when_window_not_visible(
+    fake_appkit: MagicMock,
+) -> None:
+    """A menu already hidden some other way (e.g. an explicit item click) must not linger."""
+    monitor = _make_monitor(fake_appkit)
+    menu_window = _make_menu_window(visible=False)
+    monitor.set_context_menu_window(menu_window)
+    _set_mouse(fake_appkit, x=0, y=0)
+
+    monitor._dismiss_context_menu_if_mouse_left(_mouse(fake_appkit))
+
+    assert monitor._menu_window is None
+    menu_window.native.orderOut_.assert_not_called()
+
+
+def test_dismiss_context_menu_stays_open_while_mouse_is_over_the_menu(
+    fake_appkit: MagicMock,
+) -> None:
+    monitor = _make_monitor(fake_appkit)
+    menu_frame = _FakeFrame(origin=_FakePoint(500, 56), size=_FakeSize(220, 80))
+    menu_window = _make_menu_window(frame=menu_frame)
+    monitor.set_context_menu_window(menu_window)
+    _set_mouse(fake_appkit, x=550, y=90)  # inside the menu's own frame
+
+    for _ in range(hover_monitor_module._LEAVE_DEBOUNCE_TICKS + 1):
+        monitor._dismiss_context_menu_if_mouse_left(_mouse(fake_appkit))
+
+    assert monitor._menu_window is menu_window  # never hidden -- still registered
+
+
+def test_dismiss_context_menu_stays_open_while_mouse_is_over_the_strip(
+    fake_appkit: MagicMock,
+) -> None:
+    """Moving from the menu back onto the strip (e.g. to glance at a chip) must not close it."""
+    monitor = _make_monitor(fake_appkit)
+    menu_window = _make_menu_window()  # far away from the strip window
+    monitor.set_context_menu_window(menu_window)
+    _set_mouse(fake_appkit, x=50, y=36)  # inside the strip window's own frame
+
+    for _ in range(hover_monitor_module._LEAVE_DEBOUNCE_TICKS + 1):
+        monitor._dismiss_context_menu_if_mouse_left(_mouse(fake_appkit))
+
+    assert monitor._menu_window is menu_window
+
+
+def test_dismiss_context_menu_hides_after_debounced_misses_away_from_both(
+    fake_appkit: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monitor = _make_monitor(fake_appkit)
+    menu_window = _make_menu_window()
+    monitor.set_context_menu_window(menu_window)
+    hide_calls: list[object] = []
+    monkeypatch.setattr(hover_monitor_module, "hide_menu_window", hide_calls.append)
+    # Far from both the menu window and the strip window.
+    _set_mouse(fake_appkit, x=5000, y=5000)
+
+    for _ in range(hover_monitor_module._LEAVE_DEBOUNCE_TICKS - 1):
+        monitor._dismiss_context_menu_if_mouse_left(_mouse(fake_appkit))
+    assert monitor._menu_window is menu_window
+    assert hide_calls == []
+
+    monitor._dismiss_context_menu_if_mouse_left(_mouse(fake_appkit))
+
+    assert hide_calls == [menu_window.native]
+    assert monitor._menu_window is None
+    assert monitor._menu_miss_streak == 0
+
+
+def test_dismiss_context_menu_resets_the_miss_streak_on_a_hit(
+    fake_appkit: MagicMock,
+) -> None:
+    monitor = _make_monitor(fake_appkit)
+    menu_window = _make_menu_window()
+    monitor.set_context_menu_window(menu_window)
+    _set_mouse(fake_appkit, x=5000, y=5000)  # miss
+    monitor._dismiss_context_menu_if_mouse_left(_mouse(fake_appkit))
+    assert monitor._menu_miss_streak == 1
+
+    _set_mouse(fake_appkit, x=550, y=90)  # back over the menu
+    monitor._dismiss_context_menu_if_mouse_left(_mouse(fake_appkit))
+
+    assert monitor._menu_miss_streak == 0
+    assert monitor._menu_window is menu_window
+
+
 def test_start_spawns_a_daemon_polling_thread(monkeypatch: pytest.MonkeyPatch) -> None:
     window = MagicMock()
     popup_window = MagicMock()

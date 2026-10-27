@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --card: #20252afc;
+    --border: #ffffff1d;
+    --text: #e9ebef;
+    --red: #f09a9e;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    background: transparent;
+    overflow: hidden;
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--text);
+    user-select: none;
+  }
+  #menu {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  }
+  .ctx-item {
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .ctx-item:hover { background: rgba(255, 255, 255, 0.08); }
+  .ctx-item.--danger { color: var(--red); }
+</style>
+</head>
+<body>
+<div id="menu"></div>
+<script>
+// Mirrors `strip.html`'s own `escapeHtml()` -- safe for both text-node
+// content and double- or single-quoted attribute values.
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Called from `bridge.py`'s `show_context_menu()` via a blocking
+// `evaluate_js()` call -- renders `items` (a list of
+// `{label, action, danger, data}` objects, built by `strip.html`'s
+// right-click handler) and returns the measured content height, the same
+// "measure via a blocking evaluate_js() call" pattern `strip.html`'s own
+// `__showPopupFor()` already uses for the hover popup's dynamic sizing.
+window.__showContextMenu = function (items) {
+  const menu = document.getElementById("menu");
+  menu.innerHTML = items
+    .map((item) => {
+      const cls = item.danger ? "ctx-item --danger" : "ctx-item";
+      const dataAttrs = Object.entries(item.data || {})
+        .map(([key, value]) => ` data-${key}="${escapeHtml(value)}"`)
+        .join("");
+      return `<div class="${cls}" data-action="${escapeHtml(item.action)}"${dataAttrs}>${escapeHtml(item.label)}</div>`;
+    })
+    .join("");
+  // `#menu`'s own `scrollHeight`, not `document.body.scrollHeight` -- `body`
+  // is `height: 100%` (so `#menu` fills the whole window once correctly
+  // sized), which makes `document.body.scrollHeight` report the window's
+  // *current* (stale, previous) height rather than the menu's true content
+  // height whenever that content is shorter than the window already is.
+  // That self-referential measurement left the window too tall, with
+  // `#menu`'s actual (shorter) box sitting at the top of it -- visually a
+  // gap between the real menu and the window's bottom edge (anchored at the
+  // click), which read as "the menu opens too far above the mouse."
+  return Math.ceil(menu.scrollHeight);
+};
+
+document.getElementById("menu").addEventListener("click", (ev) => {
+  const item = ev.target.closest(".ctx-item");
+  if (item) {
+    if (item.dataset.action === "kill" && item.dataset.session) {
+      // The context menu's "Kill session" item is itself the confirmation --
+      // a second dialog on top of it would just be an extra click for no reason.
+      pywebview.api.kill_session(item.dataset.session);
+    } else if (item.dataset.action === "quit") {
+      pywebview.api.quit();
+    } else if (item.dataset.action === "toggle-mode") {
+      pywebview.api.toggle_mode();
+    }
+  }
+  pywebview.api.hide_context_menu();
+});
+</script>
+</body>
+</html>

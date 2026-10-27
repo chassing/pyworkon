@@ -17,26 +17,32 @@ lazy import contextlib
 lazy import importlib.resources
 lazy import json
 lazy import os
-lazy import threading
 
-lazy import AppKit
 lazy import webview
 
 from pyworkon.daemon.client import DaemonClient, DaemonNotRunningError
 from pyworkon.daemon.protocol import SidebarStatePayload
 from pyworkon.icons import DASHBOARD_ICONS
-from pyworkon.interfaces.strip.bridge import COLLAPSED_HEIGHT, STRIP_HEIGHT, StripBridge
+from pyworkon.interfaces.strip.bridge import (
+    COLLAPSED_HEIGHT,
+    STRIP_HEIGHT,
+    StripBridge,
+    recover_dock_autohide_from_unclean_shutdown,
+)
 from pyworkon.interfaces.strip.schema import to_strip_payload
 lazy from pyworkon.config import config
 lazy from pyworkon.interfaces.strip.dock_geometry import compute_strip_layout
 lazy from pyworkon.interfaces.strip.hotkey import register_hotkey
 lazy from pyworkon.interfaces.strip.native import (
+    MENU_WIDTH,
     PICKER_HEIGHT,
     PICKER_WIDTH,
     POPUP_MAX_HEIGHT,
     POPUP_MAX_WIDTH,
+    POPUP_MIN_HEIGHT,
     POPUP_MIN_WIDTH,
     hide_from_dock,
+    prepare_menu_window,
     prepare_picker_window,
     prepare_popup_window,
     prepare_window,
@@ -53,20 +59,6 @@ if TYPE_CHECKING:
 
 STATIC_DIR = Path(__file__).parent / "static"
 _RECONNECT_DELAY_SECS = 1.0
-# See `_watch_screen_changes()`'s docstring for why both of these exist.
-_SCREEN_CHANGE_SETTLE_SECONDS = 0.3
-_MAX_COALESCED_SCREEN_CHANGE_RECOMPUTES = 5
-# See `_verify_full_width_eventually()`'s docstring -- how long to wait
-# before each of a bounded number of extra, notification-independent retries
-# after a burst settles on "full_width", to catch up once the Dock/
-# Accessibility tree finishes recovering from a sleep/wake cycle. Confirmed
-# via `pmset -g log` after a real Thunderbolt-docked wake: USB/Thunderbolt/
-# PCIe drivers alone each take 450-750ms just to re-enumerate, on top of
-# whatever the Dock process/Accessibility tree needs afterward -- the
-# original (2.0, 5.0, 10.0) schedule (~17s total) was confirmed, in
-# practice, to run out before a docked wake actually recovered, leaving the
-# strip permanently stuck on "full_width" until manually restarted.
-_POST_SETTLE_VERIFY_DELAYS_SECONDS = (2.0, 5.0, 10.0, 20.0, 30.0)
 _ICONS_PLACEHOLDER = "/*__PYWORKON_ICONS__*/"
 _FONT_PLACEHOLDER = "__PYWORKON_FONT_BASE64__"
 _IS_POPUP_PLACEHOLDER = "__PYWORKON_IS_POPUP__"
@@ -132,6 +124,17 @@ def _render_picker_html() -> str:
     return template.replace(_FONT_PLACEHOLDER, _font_base64())
 
 
+def _render_menu_html() -> str:
+    """Render `menu.html` -- the right-click context menu's own page.
+
+    No icon/font injection needed, unlike `strip.html`/`picker.html`: the
+    menu is plain text items only, built and passed in explicitly by
+    `bridge.py`'s `show_context_menu()` -- there is no daemon state or
+    Nerd Font glyph involved.
+    """
+    return (STATIC_DIR / "menu.html").read_text(encoding="utf-8")
+
+
 def _initial_create_coords(layout: StripLayout, height: int) -> tuple[int, int]:
     """Convert `layout`'s absolute placement into `create_window(x=, y=)`'s own convention.
 
@@ -163,8 +166,8 @@ def _initial_create_coords(layout: StripLayout, height: int) -> tuple[int, int]:
 
 def _build_windows(
     bridge: StripBridge, *, layout: StripLayout, auto_hide: bool
-) -> tuple[Window, Window, Window]:
-    """Create the strip's pywebview window and its two separate child windows.
+) -> tuple[Window, Window, Window, Window]:
+    """Create the strip's pywebview window and its three separate child windows.
 
     `focus=False` is load-bearing, not a default left alone, for *both*
     windows: pywebview's own `WindowHost.canBecomeKeyWindow`
@@ -196,6 +199,13 @@ def _build_windows(
     search box. See `native.py`'s `prepare_picker_window()` and `bridge.py`'s
     `open_project_picker()`/`close_project_picker()` for how focus is handed
     back the instant it closes.
+
+    The menu is a *fourth* window, for the right-click context menu -- see
+    `native.py`'s `prepare_menu_window()` for why it needs its own window
+    (same reasoning as the popup) and why it stays `focus=False` (unlike the
+    picker -- a context menu has no actual need of real keyboard focus, and
+    making it key would risk the exact keystroke-stealing regression this
+    whole function's own docstring describes).
     """
     height = COLLAPSED_HEIGHT if auto_hide else layout.height
     create_x, create_y = _initial_create_coords(layout, height)
@@ -278,20 +288,53 @@ def _build_windows(
     if picker_window is None:
         msg = "pywebview failed to create the strip's project picker window"
         raise RuntimeError(msg)
-    bridge.bind(window, popup_window, picker_window, layout=layout, collapsed=auto_hide)
-    return window, popup_window, picker_window
+    menu_window = webview.create_window(
+        "pyworkon-strip-menu",
+        html=_render_menu_html(),
+        js_api=bridge,
+        screen=layout.screen,
+        # Position/size are irrelevant at creation time -- always moved and
+        # resized (`bridge.py`'s `show_context_menu()`) before it's ever
+        # shown, and it starts hidden (`prepare_menu_window()`).
+        x=0,
+        y=0,
+        width=MENU_WIDTH,
+        height=POPUP_MIN_HEIGHT,
+        frameless=True,
+        easy_drag=False,
+        on_top=True,
+        transparent=True,
+        vibrancy=False,
+        focus=False,
+        resizable=False,
+        shadow=False,
+        text_select=False,
+    )
+    if menu_window is None:
+        msg = "pywebview failed to create the strip's context menu window"
+        raise RuntimeError(msg)
+    bridge.bind(
+        window,
+        popup_window,
+        picker_window,
+        menu_window,
+        layout=layout,
+        collapsed=auto_hide,
+    )
+    return window, popup_window, picker_window, menu_window
 
 
 def _finalize_native_window(
     window: Window,
     popup_window: Window,
     picker_window: Window,
+    menu_window: Window,
     layout: StripLayout,
     *,
     height: int,
     on_picker_lost_focus: Callable[[], None],
 ) -> None:
-    """One-time native setup for all three windows, then an initial strip resize."""
+    """One-time native setup for all four windows, then an initial strip resize."""
     with contextlib.suppress(Exception):
         native = window.native
         if native is not None:
@@ -305,6 +348,10 @@ def _finalize_native_window(
         picker_native = picker_window.native
         if picker_native is not None:
             prepare_picker_window(picker_native, on_picker_lost_focus)
+    with contextlib.suppress(Exception):
+        menu_native = menu_window.native
+        if menu_native is not None:
+            prepare_menu_window(menu_native)
     hide_from_dock()
 
 
@@ -340,213 +387,11 @@ def _run_daemon_session(
         client.close()
 
 
-def _screen_signature() -> tuple[tuple[float, float, float, float], ...]:
-    """A signature of real, Dock-auto-hide-independent screen geometry.
-
-    Built from `NSScreen.frame()`, not `visibleFrame()` -- toggling Dock
-    auto-hide changes `visibleFrame()` but never `frame()` (see
-    `dock_geometry.py`'s module docstring: that's exactly why `visibleFrame()`
-    is what measures the Dock's reserved space in the first place). Comparing
-    this signature across two notifications tells apart a genuine external
-    display change from our own recompute's self-generated Dock-autohide
-    echo -- see `_watch_screen_changes()`'s docstring for why that
-    distinction matters.
-    """
-    return tuple(
-        (
-            screen.frame().origin.x,
-            screen.frame().origin.y,
-            screen.frame().size.width,
-            screen.frame().size.height,
-        )
-        for screen in AppKit.NSScreen.screens()
-    )
-
-
-def _verify_full_width_eventually(
-    bridge: StripBridge, layout: StripLayout | None
-) -> None:
-    """Keep re-checking after settling on "full_width", on a fixed schedule.
-
-    A no-op unless `layout.mode == "full_width"` -- "beside_dock" never
-    overlaps the Dock, so there's nothing to recover from. Called from
-    `_watch_screen_changes()`'s `_run_recompute()` *after* it has already
-    cleared `busy` and released `lock`, so this runs independently of (and
-    never blocks) further notification handling -- a genuinely new external
-    event arriving during these waits still triggers its own normal burst.
-
-    Runs on whatever background thread `_run_recompute()` was already on, not
-    a new one -- there's no main-thread deadlock risk here (unlike
-    `update_layout()`'s `evaluate_js()` call, see `_watch_screen_changes()`'s
-    docstring), just a long-lived daemon thread sleeping between a bounded
-    number of direct `recompute_and_apply_layout()` calls.
-
-    Deliberately bypasses the self-echo filter (`_screen_signature()`/
-    `last_signature`) entirely -- these are scheduled, direct calls, not
-    reactions to a notification, so there's no risk of them feeding back into
-    `_on_screen_change()` and restarting a notification-driven burst (any
-    notification *they* cause reports the same, still-unchanged real screen
-    geometry, so the filter correctly ignores it on that side independently).
-    """
-    if layout is None or layout.mode != "full_width":
-        return
-    for delay in _POST_SETTLE_VERIFY_DELAYS_SECONDS:
-        time.sleep(delay)
-        layout = bridge.recompute_and_apply_layout(full_width_height=STRIP_HEIGHT)
-        if layout.mode != "full_width":
-            return
-
-
-def _watch_screen_changes(bridge: StripBridge) -> None:
-    """Recompute and re-apply the strip's layout whenever the screen setup changes.
-
-    Covers external-monitor connect/disconnect and the Dock resizing or
-    moving -- `NSApplicationDidChangeScreenParametersNotification` fires for
-    both (confirmed empirically: toggling Dock auto-hide alone changes
-    `visibleFrame`, which triggers it). `NSNotificationCenter` delivers to a
-    block-based observer **synchronously, on whatever thread posts it** --
-    for this particular notification, that's AppKit's main thread. That
-    matters because `bridge.update_layout()` calls `Window.evaluate_js()`,
-    which pywebview implements as `AppHelper.callAfter(eval); semaphore
-    .acquire()` (see `webview/platforms/cocoa.py`) -- a blocking wait for a
-    callback that can only run once the main thread's run loop is free to
-    process it. Calling that *from* the main thread is a guaranteed
-    deadlock: the thread blocks on the semaphore and can never get back to
-    its own run loop to unblock itself. `hover_monitor.py`'s poll thread
-    gets this right by construction (it's never the main thread); this
-    callback isn't, so the actual update work is handed off to a plain
-    background thread instead of running inline.
-
-    macOS can post this notification more than once for a single hardware
-    change, each spawning its own background thread here -- `StripBridge
-    .recompute_and_apply_layout()` serializes the whole restore/measure/
-    apply sequence internally so concurrent threads can't interleave and
-    corrupt the remembered Dock auto-hide setting.
-
-    **The toggle itself is also exactly the kind of change this notification
-    fires for** -- `recompute_and_apply_layout()` can toggle the real Dock
-    auto-hide setting up to twice per call (restore the user's original
-    value, then re-apply the override for "full_width"), and each real
-    toggle changes `visibleFrame`, posting *another* notification. An earlier
-    version suppressed any notification arriving within a fixed time window
-    of the last one -- that's wrong in both directions: a slow recompute
-    (e.g. a sluggish `osascript` call) can let its own self-generated
-    notification land *outside* the window, restarting the whole cycle; and a
-    genuinely new external event landing *inside* the window (two real
-    changes in quick succession, e.g. swapping which external monitor is
-    plugged in) was silently dropped with no trailing recompute, leaving the
-    strip's geometry stale until some unrelated third event happened to come
-    along. A `busy`/`pending` pair fixes both, independent of timing: while a
-    recompute is in flight, *any* further notification (self-generated or
-    real) only sets `pending` instead of starting a second thread; once the
-    in-flight recompute returns, it loops and runs again if `pending` was
-    set, then stops -- coalescing however many notifications arrived during
-    the run into trailing recomputes that reflect the latest state, rather
-    than dropping them. `_on_screen_change` runs synchronously on the main
-    thread (see above) but `_run_recompute` doesn't, so the shared state is a
-    dict guarded by `lock`.
-
-    Two things that first version was still missing, confirmed in practice
-    after waking a laptop from sleep and logging back in: the real Dock
-    visibly flickered between hidden and shown for a while, and the strip was
-    stuck on "full_width" geometry afterward until manually restarted.
-    First, checking `pending` the instant `recompute_and_apply_layout()`
-    returns can run *before* that same call's own Dock-toggle notification
-    has actually arrived -- declaring the cycle settled a few milliseconds
-    too early starts a brand-new, unnecessary cycle instead of coalescing
-    into this one. `_SCREEN_CHANGE_SETTLE_SECONDS` is a short pause before
-    that check to give it a chance to land. Second, a real burst of
-    notifications (display reattaching, login window dismissing, Dock
-    relaunching) can keep arriving faster than that pause, in which case an
-    uncapped loop never stops -- toggling the Dock, and therefore re-
-    triggering itself, every single iteration. `_MAX_COALESCED_SCREEN_
-    CHANGE_RECOMPUTES` bounds a single burst to a fixed number of iterations;
-    the very next notification after that starts a fresh one, so a
-    transiently wrong `compute_strip_layout()` reading this early after wake
-    (e.g. the Dock process or Accessibility tree not fully back up yet) can
-    only get "stuck" for one capped burst, not forever.
-
-    **In practice, even that cap didn't actually stop it**: confirmed after
-    waking a laptop from sleep, the real Dock kept toggling hidden/shown
-    indefinitely until the strip was restarted. A capped burst's own last
-    `recompute_and_apply_layout()` call still fires its own trailing
-    notification same as any other iteration -- and that notification can
-    easily land *after* the burst has already declared itself settled and
-    cleared `busy`. At that point the existing `busy`/`pending` machinery has
-    no way to tell "this is my own echo from the burst that just ended" apart
-    from "a genuine new external event" -- it's designed to treat the latter
-    as a fresh, legitimate trigger (see `test_watch_screen_changes_handles_a_
-    fresh_notification_after_completion`), so it starts an entirely new,
-    uncapped burst. As long as `compute_strip_layout()` keeps landing on
-    "full_width", every burst's own trailing echo restarts the next one, and
-    the cap only bounds the *size* of each individual burst, never the total
-    number of them. `_screen_signature()` breaks this by comparing real
-    screen geometry (`NSScreen.frame()`) across notifications -- toggling
-    Dock auto-hide changes `visibleFrame()` but never `frame()` (see
-    `dock_geometry.py`'s module docstring), so a notification whose signature
-    is unchanged from the last one actually acted on is indistinguishable
-    from our own echo and is dropped outright, regardless of how much time
-    has passed since the burst that caused it. A genuine external event
-    (display connect/disconnect, resolution change) always changes at least
-    one screen's `frame()`, so it's never filtered.
-
-    **That filter alone isn't sufficient either**: the strip must never settle
-    for "full_width" just because that's what a transiently bad reading
-    happened to produce -- it must end up exactly where a plain restart would
-    put it (e.g. "beside_dock" on a screen with room for it), since a restart
-    reliably computes correctly once given a bit more time for the Dock/
-    Accessibility tree to recover. Once the self-echo filter above suppresses
-    further notifications, nothing would otherwise ever re-check, leaving the
-    strip incorrectly full-width until manually restarted -- see
-    `_verify_full_width_eventually()`, called whenever a burst settles on
-    "full_width", for how this is recovered automatically instead.
-    """
-    lock = threading.Lock()
-    state = {"busy": False, "pending": False}
-    last_signature = [_screen_signature()]
-
-    def _run_recompute() -> None:
-        layout: StripLayout | None = None
-        for _ in range(_MAX_COALESCED_SCREEN_CHANGE_RECOMPUTES):
-            layout = bridge.recompute_and_apply_layout(full_width_height=STRIP_HEIGHT)
-            time.sleep(_SCREEN_CHANGE_SETTLE_SECONDS)
-            with lock:
-                settled = not state["pending"]
-                if settled:
-                    state["busy"] = False
-                else:
-                    state["pending"] = False
-            if settled:
-                _verify_full_width_eventually(bridge, layout)
-                return
-        with lock:
-            state["busy"] = False
-        _verify_full_width_eventually(bridge, layout)
-
-    def _on_screen_change(_notification: object) -> None:
-        signature = _screen_signature()
-        with lock:
-            if signature == last_signature[0]:
-                return
-            last_signature[0] = signature
-            if state["busy"]:
-                state["pending"] = True
-                return
-            state["busy"] = True
-        threading.Thread(target=_run_recompute, kwargs={}, daemon=True).start()
-
-    AppKit.NSNotificationCenter.defaultCenter().addObserverForName_object_queue_usingBlock_(
-        "NSApplicationDidChangeScreenParametersNotification",
-        None,
-        None,
-        _on_screen_change,
-    )
-
-
 def _listen_daemon(
     window: Window,
     popup_window: Window,
     picker_window: Window,
+    menu_window: Window,
     bridge: StripBridge,
     layout: StripLayout,
     height: int,
@@ -554,7 +399,7 @@ def _listen_daemon(
     """Entry point for `webview.start()`'s background thread.
 
     This thread is started before pywebview's own `create_window()` calls on
-    the main thread, so none of the three windows may be shown yet -- wait
+    the main thread, so none of the four windows may be shown yet -- wait
     for every `shown` event before touching their frames, or our own
     positioning would race pywebview's initial placement and could be
     clobbered by it.
@@ -569,15 +414,16 @@ def _listen_daemon(
     window.events.shown.wait(15)
     popup_window.events.shown.wait(15)
     picker_window.events.shown.wait(15)
+    menu_window.events.shown.wait(15)
     _finalize_native_window(
         window,
         popup_window,
         picker_window,
+        menu_window,
         layout,
         height=height,
         on_picker_lost_focus=bridge.on_picker_lost_focus,
     )
-    _watch_screen_changes(bridge)
     if config.strip_hotkey:
         with contextlib.suppress(Exception):
             register_hotkey(config.strip_hotkey, bridge.toggle_project_picker)
@@ -589,29 +435,55 @@ def _listen_daemon(
 def start_strip(*, auto_hide: bool = False) -> None:
     """Launch the strip window and block until it's closed.
 
-    Computes the strip's layout once at startup (`dock_geometry
-    .compute_strip_layout()`): beside the Dock's icon area when there's
-    enough room, otherwise falling back to the original full-width behavior.
-    Only the full-width fallback auto-hides the real Dock for the strip's
-    lifetime -- it occupies the same screen real estate there, so leaving the
-    Dock shown would make the two visibly overlap -- restoring whatever the
-    user had set beforehand on exit. In beside-dock mode, the Dock stays
-    exactly as the user has it. `StripBridge` owns this for the whole
-    session, not just at startup/shutdown -- see `bridge.py`'s
-    `_sync_dock_autohide_for_mode()` -- since a runtime mode change (e.g. an
-    external monitor a "beside_dock" layout was anchored to gets
-    disconnected) needs the exact same management applied again.
+    Computes the strip's layout once at startup for whichever mode
+    `config.strip_mode` persists (`"full_width"` by default) --
+    `dock_geometry.compute_strip_layout()` no longer decides *between* modes
+    on its own. An earlier design tried to automatically detect and
+    continuously re-verify whether "beside_dock" was possible (watching for
+    screen/wake/Dock-autohide changes and retrying measurement in the
+    background) -- torn out after it proved impossible to make reliable
+    against a real Thunderbolt dock's sleep/wake and monitor hotplug
+    behavior (the Dock's own Accessibility state and auto-hide preference
+    could not be measured consistently enough, no matter the retry schedule).
+    The mode is now a plain, user-controlled setting: the strip's right-click
+    context menu's "Switch mode" item (`StripBridge.toggle_mode()`) is the
+    *only* way it ever changes, and it stays exactly as set -- through sleep,
+    wake, monitor plug/unplug, anything -- until the user explicitly switches
+    it again.
+
+    Only "full_width" auto-hides the real Dock for the strip's lifetime -- it
+    occupies the same screen real estate there, so leaving the Dock shown
+    would make the two visibly overlap -- restoring whatever the user had set
+    beforehand on exit. In "beside_dock" mode, the Dock stays exactly as the
+    user has it.
+
+    `recover_dock_autohide_from_unclean_shutdown()` runs first, before the
+    very first `compute_strip_layout()` call -- see its own docstring for why
+    a previous run's `SIGKILL`/crash while overriding the real Dock auto-hide
+    setting must be cleaned up before anything else measures the Dock, not
+    after.
     """
-    layout = compute_strip_layout(full_width_height=STRIP_HEIGHT)
+    recover_dock_autohide_from_unclean_shutdown()
+    layout = compute_strip_layout(
+        mode=config.strip_mode, full_width_height=STRIP_HEIGHT
+    )
     bridge = StripBridge()
     try:
-        window, popup_window, picker_window = _build_windows(
+        window, popup_window, picker_window, menu_window = _build_windows(
             bridge, layout=layout, auto_hide=auto_hide
         )
         height = COLLAPSED_HEIGHT if auto_hide else layout.height
         webview.start(
             _listen_daemon,
-            [window, popup_window, picker_window, bridge, layout, height],
+            [
+                window,
+                popup_window,
+                picker_window,
+                menu_window,
+                bridge,
+                layout,
+                height,
+            ],
             debug=False,
         )
     finally:

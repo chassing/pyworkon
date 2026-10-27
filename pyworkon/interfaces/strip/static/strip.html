@@ -386,33 +386,30 @@
   .check-row:first-child { border-top: 0; }
   .check-icon { color: var(--red); flex: none; }
   .check-icon.icon { font-size: 0.85em; }
+  .check-icon.success { color: var(--green); }
   .check-name { flex: 1; min-width: 0; color: #b6c1cc; line-height: 1.45; overflow-wrap: anywhere; }
   .check-state { font-size: 12px; color: #bc8b93; white-space: nowrap; flex: none; }
   .check-state.pending { color: #b8a27b; }
+  .check-state.success { color: var(--green); }
   .check-external { color: #687583; flex: none; font-size: 0.85em; }
   details { margin-top: 9px; }
   summary { display: flex; align-items: center; gap: 7px; cursor: pointer; list-style: none; font-size: 13px; color: #8f9ca9; padding: 4px 0; }
   summary::-webkit-details-marker { display: none; }
-  /* A divider between the shown failed/pending rows and the collapsed
-     successful-checks list -- omitted when the success list follows the
-     summary directly with no rows above it (nothing to divide). */
-  .check-rows + .check-list { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
   .chevron { color: #6e7b89; font-size: 14px; margin-left: auto; transition: transform 0.15s ease; }
   details[open] .chevron { transform: rotate(90deg); }
   /* No `max-height`/`overflow-y` of its own -- `#popup` is already the one
      scroll container for the whole card. A second nested scrollbar here
      produced two visible scrollbars at once when expanded. */
-  .check-list { padding: 6px 0 0 20px; color: #9faab7; font-size: 13px; }
-  .check-list div { padding: 3px 0; overflow-wrap: anywhere; }
-  .state-open { color: var(--green); }
-  .state-closed { color: var(--red); }
-  .state-merged { color: var(--purple); }
-  .state-failure { color: var(--red); }
-  .state-pending { color: var(--yellow); }
-  .state-draft { color: var(--dim); }
-  .review-approved { color: var(--green); }
-  .review-changes { color: var(--red); }
-  .review-pending { color: var(--yellow); }
+  /* Review/PR-state badges -- same pill recipe as `.check-count-passed`
+     (tinted background at the color's own hex + low alpha), so "Approved"/
+     "Open pull request" read as the same kind of status badge as the CI
+     checks overview ("4 running · 9 passed") right below them. */
+  .review-badge { padding: 2px 7px; border-radius: 5px; }
+  .review-badge.--approved, .review-badge.--open { color: var(--green); background: #8cc9a511; }
+  .review-badge.--changes, .review-badge.--closed { color: var(--red); background: #f09a9e11; }
+  .review-badge.--pending { color: var(--yellow); background: #e9bd7511; }
+  .review-badge.--merged { color: var(--purple); background: #b18cf222; }
+  .review-badge.--draft { color: var(--dim); background: rgba(255, 255, 255, 0.08); }
   .reviews-block { padding-top: 0.3rem; border-top: 1px solid var(--border); }
   .review-header-icon { color: var(--yellow); }
   .review-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -454,8 +451,7 @@
      `#popup` is ever shown in this mode; it fills the entire (separate)
      window instead of being absolutely positioned above the strip. --- */
   body.popup-window #strip,
-  body.popup-window #handle,
-  body.popup-window #ctxmenu {
+  body.popup-window #handle {
     display: none !important;
   }
   /* `height: 100%`, not `auto` -- the window is *always* already sized
@@ -492,28 +488,6 @@
     box-shadow: none;
   }
 
-  /* --- Context menu --- */
-  #ctxmenu {
-    position: fixed;
-    display: none;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 4px;
-    min-width: 160px;
-    z-index: 2000;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
-  }
-  #ctxmenu.--visible { display: block; }
-  .ctx-item {
-    padding: 6px 10px;
-    font-size: 12px;
-    color: var(--text);
-    cursor: pointer;
-    border-radius: 4px;
-  }
-  .ctx-item:hover { background: rgba(255, 255, 255, 0.08); }
-  .ctx-item.--danger { color: var(--red); }
 </style>
 </head>
 <body>
@@ -524,7 +498,6 @@
   <div id="add-toggle" class="add-toggle" title="Open a new session"><span class="icon">+</span></div>
 </div>
 <div id="popup"></div>
-<div id="ctxmenu"></div>
 
 <script>
 // This same page is loaded by both the strip window and its separate
@@ -727,36 +700,30 @@ function renderBranch(session) {
   `;
 }
 
-const REVIEW_ICON_INFO = {
-  approved: {key: "reviewApproved", cls: "review-approved"},
-  changes_requested: {key: "reviewChangesRequested", cls: "review-changes"},
-  pending: {key: "reviewPending", cls: "review-pending"},
+const REVIEW_BADGE = {
+  approved: {cls: "--approved", text: "Approved"},
+  changes_requested: {cls: "--changes", text: "Changes requested"},
+  pending: {cls: "--pending", text: "Review pending"},
 };
-const REVIEW_TEXT = {
-  approved: "Approved",
-  changes_requested: "Changes requested",
-  pending: "Review pending",
-};
-const STATE_TEXT = {
-  open: "Open pull request",
-  closed: "Closed pull request",
+const STATE_BADGE = {
+  open: {cls: "--open", text: "Open pull request"},
+  closed: {cls: "--closed", text: "Closed pull request"},
 };
 
+// Review status and PR state render as the same kind of pill badge as the
+// CI checks overview ("4 running · 9 passed") -- see `.review-badge` --
+// rather than a plain icon+text sentence, so the two sections read
+// consistently at a glance.
 function renderReviewLine(pr) {
   if (pr.is_draft) {
-    return `<div class="review"><span class="${iconClass("stateDraft", "state-draft")}">${ICONS.stateDraft || ""}</span>Draft pull request</div>`;
+    return `<div class="review"><span class="review-badge --draft">Draft pull request</span></div>`;
   }
-  const review = REVIEW_ICON_INFO[pr.review_status];
-  const reviewText = REVIEW_TEXT[pr.review_status];
-  const reviewPart = review && reviewText
-    ? `<span class="${iconClass(review.key, review.cls)}">${ICONS[review.key]}</span>${reviewText}`
+  const review = REVIEW_BADGE[pr.review_status];
+  const reviewPart = review
+    ? `<span class="review-badge ${review.cls}">${review.text}</span>`
     : "";
-  // Merged is useful information worth a glance, not a footnote -- a small
-  // badge instead of folding it into the same muted sentence as open/closed.
-  const statePart =
-    pr.state === "merged"
-      ? `<span class="badge --merged">Merged</span>`
-      : STATE_TEXT[pr.state] || STATE_TEXT.open;
+  const state = pr.state === "merged" ? {cls: "--merged", text: "Merged"} : STATE_BADGE[pr.state] || STATE_BADGE.open;
+  const statePart = `<span class="review-badge ${state.cls}">${state.text}</span>`;
   const sep = reviewPart ? `<span class="separator">·</span>` : "";
   return `<div class="review">${reviewPart}${sep}${statePart}</div>`;
 }
@@ -823,8 +790,11 @@ function stripCommonPrefix(name, prefix) {
 function renderCheckRow(check, commonPrefix) {
   const displayName = stripCommonPrefix(check.name, commonPrefix);
   const isPending = check.status === "pending";
+  const isSuccess = check.status === "success";
   const icon = isPending
     ? `<span class="check-icon" data-spin="true">${SPIN_FRAMES[0]}</span>`
+    : isSuccess
+    ? `<span class="${iconClass("ciSuccess", "check-icon success")}">${ICONS.ciSuccess}</span>`
     : `<span class="${iconClass("ciFailure", "check-icon")}">${ICONS.ciFailure}</span>`;
   const linkIcon = check.url
     ? `<span class="${iconClass("externalLink", "check-external")}">${ICONS.externalLink}</span>`
@@ -833,11 +803,13 @@ function renderCheckRow(check, commonPrefix) {
   // status label and padding all count as "the check", so clicking anywhere
   // on it (not just a narrow strip of text) should open the browser.
   const urlAttr = check.url ? ` data-url="${escapeHtml(check.url)}"` : "";
+  const stateCls = isPending ? " pending" : isSuccess ? " success" : "";
+  const stateText = isPending ? "Running" : isSuccess ? "Passed" : "Failed";
   return `
     <div class="check-row"${urlAttr}>
       ${icon}
       <span class="check-name">${escapeHtml(displayName)}</span>
-      <span class="check-state${isPending ? " pending" : ""}">${isPending ? "Running" : "Failed"}</span>
+      <span class="check-state${stateCls}">${stateText}</span>
       ${linkIcon}
     </div>
   `;
@@ -864,20 +836,15 @@ function renderChecksSection(pr) {
   const hasIssues = groups.failure.length > 0 || groups.pending.length > 0;
   const commonPrefix = commonCheckPrefix(checks);
   const contextLabel = commonPrefix ? `<span class="section-context">${escapeHtml(commonPrefix)}</span>` : "";
-  const rows = [...groups.failure, ...groups.pending].map((c) => renderCheckRow(c, commonPrefix)).join("");
-  const successItems = groups.success
-    .map((c) => {
-      const urlAttr = c.url ? ` data-url="${escapeHtml(c.url)}"` : "";
-      return `<div${urlAttr}>${escapeHtml(stripCommonPrefix(c.name, commonPrefix))}</div>`;
-    })
+  const rows = [...groups.failure, ...groups.pending, ...groups.success]
+    .map((c) => renderCheckRow(c, commonPrefix))
     .join("");
   return `
     <div class="section checks-block">
       <div class="section-heading"><div class="section-label">Checks</div>${contextLabel}</div>
       <details${hasIssues ? " open" : ""}>
         <summary class="check-overview">${renderCheckOverviewParts(groups)}<span class="chevron">›</span></summary>
-        ${hasIssues ? `<div class="check-rows">${rows}</div>` : ""}
-        ${groups.success.length ? `<div class="check-list">${successItems}</div>` : ""}
+        <div class="check-rows">${rows}</div>
       </details>
     </div>
   `;
@@ -1201,47 +1168,41 @@ function updateState(payload) {
 
 // ---- Context menu ----
 
-function positionMenu(menu, x, y) {
-  menu.classList.add("--visible");
-  const h = menu.offsetHeight;
-  const w = menu.offsetWidth;
-  menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - w - 4))}px`;
-  menu.style.top = `${Math.max(4, y - h - 8)}px`;
-}
-
+// The context menu renders in its own separate native window (menu.html,
+// see native.py's `prepare_menu_window()`), not inside this page -- the
+// strip window itself is only `STRIP_HEIGHT` (56px) tall in full-width
+// mode, far shorter than a multi-item menu needs, and a native window clips
+// its WKWebView content to its own frame, so a menu positioned outside that
+// frame simply wouldn't render. This page only builds the item list and
+// hands it to Python (`show_context_menu()`) *along with this event's own
+// `clientX`/`clientY`* -- not left for Python to re-query
+// `NSEvent.mouseLocation()` later, which measured a noticeably stale mouse
+// position in practice: `show_context_menu()` runs on pywebview's
+// per-js_api-call thread, and before it can even read the mouse it first
+// does a *blocking* `evaluate_js()` round-trip into the menu window to
+// render and measure content height, so by the time it got around to
+// querying "the current mouse position" the user had often already moved
+// the mouse toward the menu. Capturing `clientX`/`clientY` synchronously,
+// right here in the same event that triggered the menu, removes that gap
+// entirely -- `show_context_menu()` just converts this page-relative point
+// into absolute screen coordinates itself. Dismissal is handled entirely by
+// `hover_monitor.py`'s poll loop once the mouse leaves that window, the
+// same mechanism already used for the hover popup.
 stripEl.addEventListener("contextmenu", (ev) => {
   ev.preventDefault();
-  const menu = document.getElementById("ctxmenu");
   const chip = ev.target.closest(".chip");
-  if (chip) {
-    menu.innerHTML = `<div class="ctx-item --danger" data-action="kill">Kill session</div>`;
-    menu.dataset.session = chip.dataset.session;
-  } else {
-    menu.innerHTML = `<div class="ctx-item --danger" data-action="quit">Quit strip</div>`;
-    delete menu.dataset.session;
-  }
-  positionMenu(menu, ev.clientX, ev.clientY);
-});
-
-document.getElementById("ctxmenu").addEventListener("click", (ev) => {
-  const item = ev.target.closest(".ctx-item");
-  const menu = document.getElementById("ctxmenu");
-  if (item) {
-    if (item.dataset.action === "kill" && menu.dataset.session) {
-      // The context menu's "Kill session" item is itself the confirmation --
-      // a second dialog on top of it would just be an extra click for no reason.
-      pywebview.api.kill_session(menu.dataset.session);
-    } else if (item.dataset.action === "quit") {
-      pywebview.api.quit();
-    }
-  }
-  menu.classList.remove("--visible");
-});
-
-document.addEventListener("click", (ev) => {
-  if (!ev.target.closest("#ctxmenu")) {
-    document.getElementById("ctxmenu").classList.remove("--visible");
-  }
+  const items = chip
+    ? [{ label: "Kill session", action: "kill", danger: true, data: { session: chip.dataset.session } }]
+    : [
+        {
+          label: document.body.classList.contains("beside-dock")
+            ? "Switch to full width"
+            : "Switch to beside Dock",
+          action: "toggle-mode",
+        },
+        { label: "Quit strip", action: "quit", danger: true },
+      ];
+  pywebview.api.show_context_menu(JSON.stringify(items), ev.clientX, ev.clientY);
 });
 
 document.getElementById("handle").addEventListener("click", () => {

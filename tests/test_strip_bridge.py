@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 from typing import Self
 from unittest.mock import MagicMock
 
 import pytest
+import yaml
 
+from pyworkon import config as config_module
+from pyworkon.config import Config
 from pyworkon.interfaces.strip import bridge as bridge_module
 from pyworkon.interfaces.strip.bridge import COLLAPSED_HEIGHT, STRIP_HEIGHT, StripBridge
 from pyworkon.interfaces.strip.dock_geometry import StripLayout
@@ -39,12 +43,17 @@ def fake_hover_monitor(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
 
 @pytest.fixture(autouse=True)
-def fake_dock_autohide(monkeypatch: pytest.MonkeyPatch) -> dict[str, bool]:
+def fake_dock_autohide(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> dict[str, bool]:
     """Fake out real `osascript`/System Events calls.
 
     `bind()`'s default "full_width" layout would otherwise toggle the
     *real* Dock auto-hide on every test run, which must never happen
-    outside an explicit, asked-for real-environment test.
+    outside an explicit, asked-for real-environment test. Also redirects
+    `_DOCK_AUTOHIDE_ORIGINAL_MARKER` to `tmp_path` -- otherwise every test
+    exercising `_sync_dock_autohide_for_mode()`/`restore_dock_autohide()`
+    would write/unlink a real file under the real user cache dir.
     """
     state = {"enabled": False}
     monkeypatch.setattr(
@@ -55,6 +64,11 @@ def fake_dock_autohide(monkeypatch: pytest.MonkeyPatch) -> dict[str, bool]:
         state["enabled"] = enabled
 
     monkeypatch.setattr(bridge_module, "_set_dock_autohide", _set)
+    monkeypatch.setattr(
+        bridge_module,
+        "_DOCK_AUTOHIDE_ORIGINAL_MARKER",
+        tmp_path / "strip_dock_autohide_original",
+    )
     return state
 
 
@@ -108,6 +122,16 @@ class _FakeWindow:
         frame.size.width = 1920.0
         frame.size.height = 56.0
         self.native.frame.return_value = frame
+        # Same reasoning for `.screen().frame()` -- `show_context_menu()`'s
+        # screen-edge clamp does arithmetic on it too, which a bare
+        # `MagicMock` would silently fail on inside its own
+        # `contextlib.suppress(Exception)` block, confirmed the same way.
+        screen_frame = MagicMock()
+        screen_frame.origin.x = 0.0
+        screen_frame.origin.y = 0.0
+        screen_frame.size.width = 1920.0
+        screen_frame.size.height = 1080.0
+        self.native.screen.return_value.frame.return_value = screen_frame
 
 
 def test_switch_session_calls_daemon_client(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -153,7 +177,12 @@ def test_bind_creates_and_starts_a_hover_monitor(
     popup_window = _FakeWindow()
 
     bridge.bind(
-        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+        window,
+        popup_window,
+        _FakeWindow(),
+        _FakeWindow(),
+        layout=_make_layout(),
+        collapsed=False,
     )  # type: ignore[arg-type]
 
     fake_hover_monitor.assert_called_once_with(window, popup_window)
@@ -167,7 +196,12 @@ def test_update_chip_rects_forwards_to_the_hover_monitor(
     window = _FakeWindow()
     popup_window = _FakeWindow()
     bridge.bind(
-        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+        window,
+        popup_window,
+        _FakeWindow(),
+        _FakeWindow(),
+        layout=_make_layout(),
+        collapsed=False,
     )  # type: ignore[arg-type]
     rects = [{"session_name": "s1", "left": 0, "top": 0, "width": 10, "height": 10}]
 
@@ -186,7 +220,12 @@ def test_quit_destroys_both_windows() -> None:
     window = _FakeWindow()
     popup_window = _FakeWindow()
     bridge.bind(
-        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+        window,
+        popup_window,
+        _FakeWindow(),
+        _FakeWindow(),
+        layout=_make_layout(),
+        collapsed=False,
     )  # type: ignore[arg-type]
 
     bridge.quit()
@@ -205,13 +244,116 @@ def test_toggle_collapse_shrinks_then_expands() -> None:
     window = _FakeWindow()
     popup_window = _FakeWindow()
     layout = _make_layout(x=0, y=0, width=1920, height=STRIP_HEIGHT)
-    bridge.bind(window, popup_window, _FakeWindow(), layout=layout, collapsed=False)  # type: ignore[arg-type]
+    bridge.bind(
+        window,
+        popup_window,
+        _FakeWindow(),
+        _FakeWindow(),
+        layout=layout,
+        collapsed=False,
+    )  # type: ignore[arg-type]
 
     bridge.toggle_collapse()
     assert _last_frame_rect(window) == (0, 0, 1920, COLLAPSED_HEIGHT)
 
     bridge.toggle_collapse()
     assert _last_frame_rect(window) == (0, 0, 1920, STRIP_HEIGHT)
+
+
+def test_show_context_menu_without_bound_windows_is_noop() -> None:
+    StripBridge().show_context_menu("[]", 0.0, 0.0)  # must not raise
+
+
+def test_hide_context_menu_without_bound_window_is_noop() -> None:
+    StripBridge().hide_context_menu()  # must not raise
+
+
+def test_show_context_menu_renders_positions_and_shows_the_menu_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The menu's bottom-left corner must land exactly at the real click position.
+
+    Not the popup's own chip-relative anchoring (see `hover_monitor.py`'s
+    `_popup_screen_position()`) -- the menu "starts there": `click_x`/
+    `click_y` (the triggering DOM event's own page-relative `clientX`/
+    `clientY`, top-left origin) are converted into absolute, bottom-left
+    AppKit screen coordinates via the *strip* window's own native frame
+    (`_FakeWindow`'s default frame is origin (0, 0), size (1920, 56)), then
+    used as the new window's rect's bottom-left origin directly. Not
+    `AppKit.NSEvent.mouseLocation()` -- confirmed live that re-querying the
+    "current" mouse position later (after a blocking round-trip into the
+    menu window to measure its content) reads a stale, moved-on position.
+    """
+    bridge = StripBridge()
+    _window, _popup_window, _picker_window, menu_window = _bind_with_fakes(bridge)
+    menu_window.evaluate_js.return_value = 120
+    resize_calls: list[tuple[object, float, float, float, float]] = []
+    monkeypatch.setattr(
+        bridge_module,
+        "resize_and_position_menu_window",
+        lambda native, x, y, w, h: resize_calls.append((native, x, y, w, h)),
+    )
+    show_calls: list[object] = []
+    monkeypatch.setattr(bridge_module, "show_menu_window", show_calls.append)
+
+    bridge.show_context_menu('[{"label": "Quit strip", "action": "quit"}]', 400.0, 10.0)
+
+    (script,) = menu_window.evaluate_js.call_args[0]
+    assert "__showContextMenu" in script
+    assert resize_calls == [
+        (menu_window.native, 400.0, 46.0, bridge_module.MENU_WIDTH, 120.0)
+    ]
+    assert show_calls == [menu_window.native]
+
+
+def test_show_context_menu_registers_the_window_with_the_hover_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_hover_monitor: MagicMock,
+) -> None:
+    bridge = StripBridge()
+    _window, _popup_window, _picker_window, menu_window = _bind_with_fakes(bridge)
+    menu_window.evaluate_js.return_value = 120
+    monkeypatch.setattr(
+        bridge_module, "resize_and_position_menu_window", lambda *_a: None
+    )
+    monkeypatch.setattr(bridge_module, "show_menu_window", lambda *_a: None)
+
+    bridge.show_context_menu("[]", 0.0, 0.0)
+
+    fake_hover_monitor.return_value.set_context_menu_window.assert_called_once_with(
+        menu_window
+    )
+
+
+def test_show_context_menu_does_not_show_when_measured_height_is_falsy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed/empty `evaluate_js()` measurement must not show a garbage-sized window."""
+    bridge = StripBridge()
+    _window, _popup_window, _picker_window, menu_window = _bind_with_fakes(bridge)
+    menu_window.evaluate_js.return_value = None
+    show_calls: list[object] = []
+    monkeypatch.setattr(bridge_module, "show_menu_window", show_calls.append)
+
+    bridge.show_context_menu("[]", 0.0, 0.0)
+
+    assert show_calls == []
+
+
+def test_hide_context_menu_hides_the_window_and_clears_the_hover_monitor(
+    monkeypatch: pytest.MonkeyPatch, fake_hover_monitor: MagicMock
+) -> None:
+    bridge = StripBridge()
+    _window, _popup_window, _picker_window, menu_window = _bind_with_fakes(bridge)
+    hide_calls: list[object] = []
+    monkeypatch.setattr(bridge_module, "hide_menu_window", hide_calls.append)
+
+    bridge.hide_context_menu()
+
+    assert hide_calls == [menu_window.native]
+    fake_hover_monitor.return_value.set_context_menu_window.assert_called_once_with(
+        None
+    )
 
 
 def test_toggle_collapse_hides_the_popup_window(
@@ -224,7 +366,12 @@ def test_toggle_collapse_hides_the_popup_window(
     window = _FakeWindow()
     popup_window = _FakeWindow()
     bridge.bind(
-        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+        window,
+        popup_window,
+        _FakeWindow(),
+        _FakeWindow(),
+        layout=_make_layout(),
+        collapsed=False,
     )  # type: ignore[arg-type]
 
     bridge.toggle_collapse()
@@ -237,7 +384,12 @@ def test_update_layout_resizes_the_strip_to_the_new_placement() -> None:
     window = _FakeWindow()
     popup_window = _FakeWindow()
     bridge.bind(
-        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+        window,
+        popup_window,
+        _FakeWindow(),
+        _FakeWindow(),
+        layout=_make_layout(),
+        collapsed=False,
     )  # type: ignore[arg-type]
 
     bridge.update_layout(
@@ -253,7 +405,12 @@ def test_update_layout_keeps_the_collapsed_height() -> None:
     window = _FakeWindow()
     popup_window = _FakeWindow()
     bridge.bind(
-        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=True
+        window,
+        popup_window,
+        _FakeWindow(),
+        _FakeWindow(),
+        layout=_make_layout(),
+        collapsed=True,
     )  # type: ignore[arg-type]
 
     bridge.update_layout(
@@ -268,7 +425,12 @@ def test_update_layout_pushes_the_new_mode_to_both_windows() -> None:
     window = _FakeWindow()
     popup_window = _FakeWindow()
     bridge.bind(
-        window, popup_window, _FakeWindow(), layout=_make_layout(), collapsed=False
+        window,
+        popup_window,
+        _FakeWindow(),
+        _FakeWindow(),
+        layout=_make_layout(),
+        collapsed=False,
     )  # type: ignore[arg-type]
 
     bridge.update_layout(_make_layout(mode="beside_dock"))
@@ -289,6 +451,7 @@ def test_bind_enables_dock_autohide_for_full_width_mode(
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="full_width"),
         collapsed=False,
     )
@@ -303,6 +466,7 @@ def test_bind_leaves_dock_autohide_alone_for_beside_dock_mode(
     bridge = StripBridge()
 
     bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
@@ -324,6 +488,7 @@ def test_update_layout_enables_dock_autohide_when_falling_back_to_full_width(
     fake_dock_autohide["enabled"] = False
     bridge = StripBridge()
     bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
@@ -351,6 +516,7 @@ def test_update_layout_restores_the_original_setting_when_returning_to_beside_do
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="full_width"),
         collapsed=False,
     )
@@ -370,6 +536,7 @@ def test_update_layout_restores_the_original_off_value(
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="full_width"),
         collapsed=False,
     )
@@ -378,6 +545,78 @@ def test_update_layout_restores_the_original_off_value(
     bridge.update_layout(_make_layout(mode="beside_dock"))
 
     assert fake_dock_autohide["enabled"] is False  # restored to the original off
+
+
+def test_bind_writes_the_crash_safe_marker_for_full_width_mode() -> None:
+    """Regression test for the "stuck full-width forever, never flashes" bug.
+
+    Confirmed live (via debug logging against a real running process): a
+    `SIGKILL`/crash while overridden leaves the marker on disk; the *next*
+    launch's first "full_width" capture must not blindly trust the Dock's
+    current (already-forced) setting as if it were the user's real original
+    -- see `recover_dock_autohide_from_unclean_shutdown()`. That recovery can
+    only work if the marker is actually written the moment the override
+    happens, which this test covers.
+    """
+    marker = bridge_module._DOCK_AUTOHIDE_ORIGINAL_MARKER
+    assert not marker.exists()
+    bridge = StripBridge()
+
+    bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        layout=_make_layout(mode="full_width"),
+        collapsed=False,
+    )
+
+    assert marker.read_text() == "false"
+
+
+def test_update_layout_removes_the_marker_on_clean_restore() -> None:
+    """A clean transition back out of "full_width" must clear the marker too.
+
+    Otherwise the *next* process launch would wrongly think the previous run
+    crashed mid-override and "recover" a value that was already correctly
+    restored.
+    """
+    marker = bridge_module._DOCK_AUTOHIDE_ORIGINAL_MARKER
+    bridge = StripBridge()
+    bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        layout=_make_layout(mode="full_width"),
+        collapsed=False,
+    )
+    assert marker.exists()
+
+    bridge.update_layout(_make_layout(mode="beside_dock"))
+
+    assert not marker.exists()
+
+
+def test_restore_dock_autohide_removes_the_marker(
+    fake_dock_autohide: dict[str, bool],
+) -> None:
+    """The shutdown path (`restore_dock_autohide()`) must also clear the marker."""
+    marker = bridge_module._DOCK_AUTOHIDE_ORIGINAL_MARKER
+    bridge = StripBridge()
+    bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        layout=_make_layout(mode="full_width"),
+        collapsed=False,
+    )
+    assert marker.exists()
+
+    bridge.restore_dock_autohide()
+
+    assert not marker.exists()
 
 
 def test_repeated_transitions_recapture_a_fresh_previous_value_each_time(
@@ -390,6 +629,7 @@ def test_repeated_transitions_recapture_a_fresh_previous_value_each_time(
     fake_dock_autohide["enabled"] = False
     bridge = StripBridge()
     bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
@@ -418,6 +658,7 @@ def test_restore_dock_autohide_is_a_noop_without_an_override(
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="beside_dock"),
         collapsed=False,
     )
@@ -436,6 +677,7 @@ def test_restore_dock_autohide_restores_on_shutdown(
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="full_width"),
         collapsed=False,
     )
@@ -446,66 +688,206 @@ def test_restore_dock_autohide_restores_on_shutdown(
     assert fake_dock_autohide["enabled"] is False
 
 
-def test_recompute_and_apply_layout_serializes_concurrent_calls(
+def test_toggle_mode_without_bound_window_is_noop() -> None:
+    StripBridge().toggle_mode()  # must not raise
+
+
+def test_toggle_mode_flips_full_width_to_beside_dock_and_relaunches(
     fake_dock_autohide: dict[str, bool],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Regression test for a real race across concurrent screen-change threads.
+    """The strip's right-click "Switch mode" item -- the only way the mode ever changes now.
 
-    Without serializing the whole restore -> measure -> apply sequence, two
-    threads can both read "no override yet" before either writes it, each
-    capturing the *other's* in-flight change as if it were the user's real
-    original Dock setting -- an original `False` could come back as `True`
-    after "restoration". Proven here directly: `_dock_autohide_enabled()` is
-    made deliberately slow, and concurrently-launched threads must never
-    have more than one of them inside the critical section at once.
+    Does not try to measure/apply the new layout live, in-process -- see
+    `toggle_mode()`'s own docstring for why that turned out to be unreliable
+    across several rounds of live debugging. Instead: restore the real Dock
+    auto-hide setting, persist the new mode, and restart the whole process,
+    reusing `start_strip()`'s own initial measurement.
     """
     bridge = StripBridge()
     bridge.bind(
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        layout=_make_layout(mode="full_width"),
+        collapsed=False,
+    )
+    fake_config = MagicMock(strip_mode="full_width")
+    monkeypatch.setattr(bridge_module, "Config", lambda: fake_config)
+    popen_calls: list[list[str]] = []
+    monkeypatch.setattr(
+        bridge_module.subprocess,
+        "Popen",
+        lambda args, **_kwargs: popen_calls.append(args),
+    )
+
+    bridge.toggle_mode()
+
+    assert fake_config.strip_mode == "beside_dock"
+    fake_config.save.assert_called_once()
+    assert len(popen_calls) == 1
+    assert popen_calls[0][-1] == "strip"
+    assert "--auto-hide" not in popen_calls[0]
+
+
+def test_toggle_mode_flips_beside_dock_to_full_width_and_relaunches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = StripBridge()
+    bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
         layout=_make_layout(mode="beside_dock"),
         collapsed=False,
     )
-
-    active = 0
-    max_concurrent = 0
-    counter_lock = threading.Lock()
-
-    def slow_enabled() -> bool:
-        nonlocal active, max_concurrent
-        with counter_lock:
-            active += 1
-            max_concurrent = max(max_concurrent, active)
-        time.sleep(0.05)
-        with counter_lock:
-            active -= 1
-        return fake_dock_autohide["enabled"]
-
-    monkeypatch.setattr(bridge_module, "_dock_autohide_enabled", slow_enabled)
+    fake_config = MagicMock(strip_mode="beside_dock")
+    monkeypatch.setattr(bridge_module, "Config", lambda: fake_config)
+    popen_calls: list[list[str]] = []
     monkeypatch.setattr(
-        bridge_module,
-        "compute_strip_layout",
-        lambda **_kwargs: _make_layout(mode="full_width"),
+        bridge_module.subprocess,
+        "Popen",
+        lambda args, **_kwargs: popen_calls.append(args),
     )
 
-    threads = [
-        threading.Thread(
-            target=bridge.recompute_and_apply_layout, kwargs={"full_width_height": 56}
-        )
-        for _ in range(5)
-    ]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(timeout=5)
+    bridge.toggle_mode()
 
-    assert max_concurrent == 1
-    # Only the *first* thread to actually run should have captured anything
-    # -- every later thread finds an override already in place and does
-    # nothing further, exactly as `_sync_dock_autohide_for_mode()` intends.
-    assert fake_dock_autohide["enabled"] is True
+    assert fake_config.strip_mode == "full_width"
+    fake_config.save.assert_called_once()
+    assert len(popen_calls) == 1
+
+
+def test_toggle_mode_restores_dock_autohide_before_relaunching(
+    fake_dock_autohide: dict[str, bool],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The new process's own startup measurement needs the real Dock already un-hidden.
+
+    Otherwise its first `compute_strip_layout(mode="beside_dock")` call would
+    see the Dock still forced hidden by *this* process's "full_width"
+    override and immediately fall back to "full_width" again.
+    """
+    bridge = StripBridge()
+    bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        layout=_make_layout(mode="full_width"),
+        collapsed=False,
+    )
+    assert fake_dock_autohide["enabled"] is True  # forced on by bind()
+    monkeypatch.setattr(bridge_module, "Config", MagicMock())
+    monkeypatch.setattr(bridge_module.subprocess, "Popen", lambda *_a, **_kw: None)
+
+    bridge.toggle_mode()
+
+    assert fake_dock_autohide["enabled"] is False  # restored to the real original
+
+
+def test_toggle_mode_preserves_collapsed_state_across_relaunch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bridge = StripBridge()
+    bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        layout=_make_layout(mode="full_width"),
+        collapsed=True,
+    )
+    monkeypatch.setattr(bridge_module, "Config", MagicMock())
+    popen_calls: list[list[str]] = []
+    monkeypatch.setattr(
+        bridge_module.subprocess,
+        "Popen",
+        lambda args, **_kwargs: popen_calls.append(args),
+    )
+
+    bridge.toggle_mode()
+
+    assert "--auto-hide" in popen_calls[0]
+
+
+def test_toggle_mode_destroys_all_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    window, popup_window, picker_window, menu_window = (
+        _FakeWindow(),
+        _FakeWindow(),
+        _FakeWindow(),
+        _FakeWindow(),
+    )
+    bridge = StripBridge()
+    bridge.bind(
+        window,  # type: ignore[arg-type]
+        popup_window,  # type: ignore[arg-type]
+        picker_window,  # type: ignore[arg-type]
+        menu_window,  # type: ignore[arg-type]
+        layout=_make_layout(mode="full_width"),
+        collapsed=False,
+    )
+    monkeypatch.setattr(bridge_module, "Config", MagicMock())
+    monkeypatch.setattr(bridge_module.subprocess, "Popen", lambda *_a, **_kw: None)
+
+    bridge.toggle_mode()
+
+    window.destroy.assert_called_once()
+    popup_window.destroy.assert_called_once()
+    picker_window.destroy.assert_called_once()
+    menu_window.destroy.assert_called_once()
+
+
+def test_toggle_mode_does_not_overwrite_concurrent_config_edits(
+    fake_dock_autohide: dict[str, bool],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression test: `toggle_mode()` must not clobber unrelated settings.
+
+    `config` is the snapshot loaded once at process startup; `Config.save()`
+    serializes the *entire* instance. Saving through that stale singleton
+    would silently revert any other field the user edited in `config.yaml`
+    on disk while the strip stayed running -- reproduced here by changing
+    `sidebar_refresh_interval` on disk (simulating a concurrent edit) *after*
+    binding the bridge, then confirming it survives a mode switch. Uses the
+    real `Config`/`yaml` round-trip (not a mock) since the bug is in exactly
+    that round-trip.
+    """
+    settings_path = tmp_path / "config.yaml"
+    monkeypatch.setitem(Config.model_config, "yaml_file", settings_path)
+    # Defense in depth: `Config.save()` now reads its write target from
+    # `model_config["yaml_file"]` (patched above), but redirecting the
+    # module-level `user_config_file` too means a future regression there
+    # still can't reach the real on-disk config from this test -- see
+    # `pyworkon.config.Config.save()`'s own docstring for why this matters.
+    monkeypatch.setattr(config_module, "user_config_file", settings_path)
+    settings_path.write_text(
+        yaml.dump({"sidebar_refresh_interval": 5, "strip_mode": "full_width"}),
+        encoding="utf-8",
+    )
+    bridge = StripBridge()
+    bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        _FakeWindow(),  # type: ignore[arg-type]
+        layout=_make_layout(mode="full_width"),
+        collapsed=False,
+    )
+    # Concurrent edit, made on disk while the strip is already running.
+    settings_path.write_text(
+        yaml.dump({"sidebar_refresh_interval": 30, "strip_mode": "full_width"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(bridge_module.subprocess, "Popen", lambda *_a, **_kw: None)
+
+    bridge.toggle_mode()
+
+    saved = yaml.safe_load(settings_path.read_text(encoding="utf-8"))
+    assert saved["sidebar_refresh_interval"] == 30
+    assert saved["strip_mode"] == "beside_dock"
 
 
 def test_restore_dock_autohide_does_not_hang_forever_if_the_lock_is_stuck(
@@ -513,19 +895,19 @@ def test_restore_dock_autohide_does_not_hang_forever_if_the_lock_is_stuck(
 ) -> None:
     """Regression test: shutdown must never hang on a permanently-stuck worker.
 
-    A background `recompute_and_apply_layout()` call can get stuck forever
-    inside `update_layout()`'s `evaluate_js()` call if the windows are
-    destroyed mid-call (e.g. "Quit strip" racing a screen-change recompute)
-    -- the main thread's run loop that would eventually signal the pending
-    callback back is already gone. That thread still holds
-    `_dock_autohide_lock` the whole time it's stuck. Without a bounded
-    timeout, `start_strip()`'s shutdown `finally: bridge.restore_dock
-    _autohide()` would block on that same lock forever, and the process
-    would never reach `os._exit(0)`.
+    A background `toggle_mode()` call can get stuck forever inside
+    `update_layout()`'s `evaluate_js()` call if the windows are destroyed
+    mid-call (e.g. "Quit strip" racing a menu-triggered toggle) -- the main
+    thread's run loop that would eventually signal the pending callback back
+    is already gone. That thread still holds `_dock_autohide_lock` the whole
+    time it's stuck. Without a bounded timeout, `start_strip()`'s shutdown
+    `finally: bridge.restore_dock_autohide()` would block on that same lock
+    forever, and the process would never reach `os._exit(0)`.
     """
     fake_dock_autohide["enabled"] = False
     bridge = StripBridge()
     bridge.bind(
+        _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
         _FakeWindow(),  # type: ignore[arg-type]
@@ -557,23 +939,38 @@ def test_restore_dock_autohide_does_not_hang_forever_if_the_lock_is_stuck(
 
 def _bind_with_fakes(
     bridge: StripBridge,
-) -> tuple[_FakeWindow, _FakeWindow, _FakeWindow]:
+) -> tuple[_FakeWindow, _FakeWindow, _FakeWindow, _FakeWindow]:
     window = _FakeWindow()
     popup_window = _FakeWindow()
     picker_window = _FakeWindow()
+    menu_window = _FakeWindow()
     bridge.bind(
-        window, popup_window, picker_window, layout=_make_layout(), collapsed=False
+        window,
+        popup_window,
+        picker_window,
+        menu_window,
+        layout=_make_layout(),
+        collapsed=False,
     )  # type: ignore[arg-type]
-    return window, popup_window, picker_window
+    return window, popup_window, picker_window, menu_window
 
 
 def test_quit_destroys_the_picker_window_too() -> None:
     bridge = StripBridge()
-    _window, _popup_window, picker_window = _bind_with_fakes(bridge)
+    _window, _popup_window, picker_window, _menu_window = _bind_with_fakes(bridge)
 
     bridge.quit()
 
     picker_window.destroy.assert_called_once()
+
+
+def test_quit_destroys_the_menu_window_too() -> None:
+    bridge = StripBridge()
+    _window, _popup_window, _picker_window, menu_window = _bind_with_fakes(bridge)
+
+    bridge.quit()
+
+    menu_window.destroy.assert_called_once()
 
 
 def test_open_project_picker_captures_the_frontmost_app(
@@ -595,7 +992,7 @@ def test_open_project_picker_moves_and_shows_the_picker_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bridge = StripBridge()
-    _window, _popup_window, picker_window = _bind_with_fakes(bridge)
+    _window, _popup_window, picker_window, _menu_window = _bind_with_fakes(bridge)
     monkeypatch.setattr(bridge_module, "capture_frontmost_app", lambda: None)
     move_calls: list[object] = []
     show_calls: list[object] = []
@@ -616,7 +1013,7 @@ def test_open_project_picker_syncs_the_toggle_button_to_open(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bridge = StripBridge()
-    window, _popup_window, _picker_window = _bind_with_fakes(bridge)
+    window, _popup_window, _picker_window, _menu_window = _bind_with_fakes(bridge)
     monkeypatch.setattr(bridge_module, "capture_frontmost_app", lambda: None)
     monkeypatch.setattr(bridge_module, "move_picker_window", lambda *_args: None)
     monkeypatch.setattr(bridge_module, "show_picker_window", lambda *_args: None)
@@ -632,7 +1029,7 @@ def test_close_project_picker_hides_and_reactivates_the_captured_app(
 ) -> None:
     """The explicit-close path (select a project, press Escape) must hand focus back."""
     bridge = StripBridge()
-    _window, _popup_window, picker_window = _bind_with_fakes(bridge)
+    _window, _popup_window, picker_window, _menu_window = _bind_with_fakes(bridge)
     captured = object()
     monkeypatch.setattr(bridge_module, "capture_frontmost_app", lambda: captured)
     monkeypatch.setattr(bridge_module, "move_picker_window", lambda *_args: None)
@@ -654,7 +1051,7 @@ def test_close_project_picker_syncs_the_toggle_button_to_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bridge = StripBridge()
-    window, _popup_window, _picker_window = _bind_with_fakes(bridge)
+    window, _popup_window, _picker_window, _menu_window = _bind_with_fakes(bridge)
     monkeypatch.setattr(bridge_module, "hide_picker_window", lambda *_args: None)
     monkeypatch.setattr(bridge_module, "reactivate_app", lambda *_args: None)
 
@@ -675,7 +1072,7 @@ def test_on_picker_lost_focus_hides_without_reactivating_anything(
     clicked into.
     """
     bridge = StripBridge()
-    _window, _popup_window, picker_window = _bind_with_fakes(bridge)
+    _window, _popup_window, picker_window, _menu_window = _bind_with_fakes(bridge)
     captured = object()
     monkeypatch.setattr(bridge_module, "capture_frontmost_app", lambda: captured)
     monkeypatch.setattr(bridge_module, "move_picker_window", lambda *_args: None)
@@ -697,7 +1094,7 @@ def test_on_picker_lost_focus_syncs_the_toggle_button_to_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bridge = StripBridge()
-    window, _popup_window, _picker_window = _bind_with_fakes(bridge)
+    window, _popup_window, _picker_window, _menu_window = _bind_with_fakes(bridge)
     monkeypatch.setattr(bridge_module, "hide_picker_window", lambda *_args: None)
 
     bridge.on_picker_lost_focus()
@@ -719,7 +1116,7 @@ def test_enter_project_closes_the_picker(monkeypatch: pytest.MonkeyPatch) -> Non
     recorder = _RecordingDaemonClient()
     monkeypatch.setattr(bridge_module, "DaemonClient", lambda: recorder)
     bridge = StripBridge()
-    _window, _popup_window, picker_window = _bind_with_fakes(bridge)
+    _window, _popup_window, picker_window, _menu_window = _bind_with_fakes(bridge)
     hide_calls: list[object] = []
     monkeypatch.setattr(bridge_module, "hide_picker_window", hide_calls.append)
     monkeypatch.setattr(bridge_module, "reactivate_app", lambda *_args: None)
