@@ -281,26 +281,28 @@
   .chip-status.status-busy { color: var(--yellow); }
   .chip-status.status-waiting { color: var(--red); }
   .chip-status.status-failed { color: var(--red); }
-  .chip-status.status-idle { color: #788492; font-size: 16px; }
+  .chip-status.status-review { color: var(--yellow); }
 
   /* --- Hover popup (full detail) --- */
+  /* The strip window itself never shows this element: hover details render in
+     the separate popup window, whose own rule further down
+     (`body.popup-window #popup`) turns it into that window's entire content.
+     Everything the old in-strip-window layout carried went with it --
+     `position: absolute; bottom: 56px` above the chip row, the fixed
+     280-360px wide / 300px tall box, its drop shadow, and the
+     `#popup.--visible` class that used to do the showing: nothing ever set
+     that class, and every sizing/positioning property here is owned by the
+     popup-window rule instead. `display: none` stays as the strip window's
+     own permanent hiding (the popup-window rule overrides it). */
   #popup {
-    position: absolute;
-    bottom: 56px;
     display: none;
-    min-width: 280px;
-    max-width: 360px;
-    max-height: 300px;
     overflow-y: auto;
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 13px;
     padding: 17px 19px 13px;
-    box-shadow: 0 18px 50px #0006, 0 2px 8px #0004;
-    z-index: 1000;
     user-select: text;
   }
-  #popup.--visible { display: block; }
   #popup > * + * { margin-top: 0.5rem; }
   .row {
     display: flex;
@@ -363,6 +365,10 @@
      would, which would otherwise silently lose that fight. */
   .section { border-top: 1px solid var(--line); padding-top: 14px; }
   .section-heading { display: flex; justify-content: space-between; align-items: center; }
+  /* One link color for the whole card: the PR link and the review-request
+     titles share this exact shade, and neither is underlined -- underlining
+     only some of them made two visually different "click this to open the
+     browser" affordances sit in the same popup. */
   .pr-link { color: #b0c5e8; font-size: 14px; }
   .pr-link .icon { font-size: 13px; }
   .pr-title { overflow-wrap: anywhere; min-width: 0; color: #e1e5eb; font-size: 16px; line-height: 1.6; margin: 8px 0 9px; }
@@ -372,7 +378,6 @@
   /* Covers every clickable link in the popup: PR link, review-request links,
      and any CI check row with a url, regardless of its status. */
   [data-url] { cursor: pointer; }
-  .link-accent { color: var(--accent); text-decoration: underline; }
   /* Small context text to the right of a section label -- the CI provider
      name next to "Checks" ("Red Hat Konflux"), the agent count next to "AI". */
   .section-context { font-size: 13px; color: #7e8b98; }
@@ -402,17 +407,20 @@
      produced two visible scrollbars at once when expanded. */
   /* Review/PR-state badges -- same pill recipe as `.check-count-passed`
      (tinted background at the color's own hex + low alpha), so "Approved"/
-     "Open pull request" read as the same kind of status badge as the CI
-     checks overview ("4 running · 9 passed") right below them. */
+     "Merged" read as the same kind of status badge as the CI checks overview
+     ("4 running · 9 passed") right below them. There is deliberately no
+     "open" variant: an open PR is the default, so an "Open pull request"
+     pill said nothing while competing for the same glance as "Approved". */
   .review-badge { padding: 2px 7px; border-radius: 5px; }
-  .review-badge.--approved, .review-badge.--open { color: var(--green); background: #8cc9a511; }
+  .review-badge.--approved { color: var(--green); background: #8cc9a511; }
   .review-badge.--changes, .review-badge.--closed { color: var(--red); background: #f09a9e11; }
   .review-badge.--pending { color: var(--yellow); background: #e9bd7511; }
   .review-badge.--merged { color: var(--purple); background: #b18cf222; }
   .review-badge.--draft { color: var(--dim); background: rgba(255, 255, 255, 0.08); }
-  .reviews-block { padding-top: 0.3rem; border-top: 1px solid var(--border); }
-  .review-header-icon { color: var(--yellow); }
-  .review-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Same link color as `.pr-link` above; `flex: none` + `nowrap` keep the
+     author intact so the *title* absorbs the truncation instead. */
+  .review-title { color: #b0c5e8; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .review-author { flex: none; white-space: nowrap; }
   .agent-icon { color: var(--magenta); }
   .agent-name { color: var(--dim); }
   .agent-row-working { color: var(--yellow); }
@@ -478,14 +486,9 @@
      silently rendering past the real viewport. */
   body.popup-window #popup {
     display: block !important;
-    position: static;
-    bottom: auto;
-    min-width: 0;
-    max-width: none;
     width: 100%;
     height: 100%;
     max-height: 100vh;
-    box-shadow: none;
   }
 
 </style>
@@ -556,8 +559,6 @@ function iconClass(key, extra) {
   return parts.join(" ");
 }
 
-const ICON_SPACER = `<span class="icon"></span>`;
-
 // Safe for both text-node content *and* double- or single-quoted attribute
 // values. `textContent` -> `innerHTML` alone escapes `&`/`<`/`>` but not
 // quote characters (they're only special inside an attribute, not in text
@@ -627,19 +628,23 @@ function renderPrBadge(pr) {
 // ONE combined status icon per chip, covering both AI agent status and
 // PR/MR CI check status -- never two separate spinners. Priority (highest
 // first), exactly:
-//   agent waiting              -> "?" (agentWaiting icon), regardless of CI
-//   agent working OR CI pending -> spinner
-//   CI failed                  -> "x" (ciFailure icon)
-//   agent idle (none of above) -> dim idle icon
-//   no agent and no CI info    -> nothing
+//   agent waiting                -> "?" (agentWaiting icon), regardless of CI
+//   agent working OR CI pending  -> spinner
+//   CI failed                    -> "x" (ciFailure icon)
+//   review requested, else idle  -> eye icon -- only reached once nothing
+//                                    above needed attention, so it never
+//                                    competes with a real "come look" signal
+//   everything idle (agent idle/absent, no CI issue, no review) -> nothing,
+//     same "reserve color/icons for what matters" rule the chip background
+//     itself follows (no `.chip.--ok` tint either)
 function renderChipStatus(session) {
   const pr = session.pr;
   const agents = session.agents || [];
   const agentWaiting = agents.some((a) => a.status === "waiting");
   const agentWorking = agents.some((a) => a.status === "working");
-  const agentIdle = agents.some((a) => a.status === "idle");
   const ciPending = pr && !pr.is_draft && pr.status === "pending";
   const ciFailed = pr && hasFailedCheck(pr);
+  const reviewRequested = (session.review_prs || []).length > 0;
 
   if (agentWaiting) {
     return `<div class="chip-status status-waiting"><span class="${iconClass("agentWaiting")}">${ICONS.agentWaiting}</span></div>`;
@@ -650,8 +655,8 @@ function renderChipStatus(session) {
   if (ciFailed) {
     return `<div class="chip-status status-failed"><span class="${iconClass("ciFailure")}">${ICONS.ciFailure}</span></div>`;
   }
-  if (agentIdle) {
-    return `<div class="chip-status status-idle"><span class="${iconClass("agentIdle")}">${ICONS.agentIdle}</span></div>`;
+  if (reviewRequested) {
+    return `<div class="chip-status status-review"><span class="${iconClass("reviewRequest")}">${ICONS.reviewRequest}</span></div>`;
   }
   return "";
 }
@@ -705,26 +710,37 @@ const REVIEW_BADGE = {
   changes_requested: {cls: "--changes", text: "Changes requested"},
   pending: {cls: "--pending", text: "Review pending"},
 };
+// Only states that deviate from "open" get a badge. "Open pull request" was
+// pure noise: open is what an open PR already is, and it rendered as a second
+// green pill right next to "Approved", both competing for the same glance.
+// A PR that is open but not approved now shows just its review badge
+// ("Review pending"/"Changes requested"), or no line at all when there is no
+// review status -- the pull request section above already says it is open.
 const STATE_BADGE = {
-  open: {cls: "--open", text: "Open pull request"},
   closed: {cls: "--closed", text: "Closed pull request"},
+  merged: {cls: "--merged", text: "Merged"},
 };
 
 // Review status and PR state render as the same kind of pill badge as the
 // CI checks overview ("4 running · 9 passed") -- see `.review-badge` --
 // rather than a plain icon+text sentence, so the two sections read
-// consistently at a glance.
+// consistently at a glance. A draft is one more pill in that same line, not
+// an early return: a draft that was closed (the normal end for abandoned
+// work -- neither GitHub nor GitLab lets a draft be merged) still has to say
+// "Closed", the same way the TUI puts terminal state ahead of draft.
 function renderReviewLine(pr) {
-  if (pr.is_draft) {
-    return `<div class="review"><span class="review-badge --draft">Draft pull request</span></div>`;
-  }
-  const review = REVIEW_BADGE[pr.review_status];
+  const review = pr.is_draft
+    ? {cls: "--draft", text: "Draft pull request"}
+    : REVIEW_BADGE[pr.review_status];
   const reviewPart = review
     ? `<span class="review-badge ${review.cls}">${review.text}</span>`
     : "";
-  const state = pr.state === "merged" ? {cls: "--merged", text: "Merged"} : STATE_BADGE[pr.state] || STATE_BADGE.open;
-  const statePart = `<span class="review-badge ${state.cls}">${state.text}</span>`;
-  const sep = reviewPart ? `<span class="separator">·</span>` : "";
+  const state = STATE_BADGE[pr.state];
+  const statePart = state
+    ? `<span class="review-badge ${state.cls}">${state.text}</span>`
+    : "";
+  if (!reviewPart && !statePart) return "";
+  const sep = reviewPart && statePart ? `<span class="separator">·</span>` : "";
   return `<div class="review">${reviewPart}${sep}${statePart}</div>`;
 }
 
@@ -738,8 +754,11 @@ function renderPrLink(pr, ownerRepo) {
 
 function renderPr(pr, ownerRepo) {
   if (!pr) return "";
+  // Draft is signalled by the faded title plus the "Draft pull request" pill
+  // below it -- a third `[Draft] ` prefix in the title text itself only
+  // repeated the same fact in the same three lines.
   const titleClass = pr.is_draft ? "pr-title draft" : "pr-title";
-  const title = (pr.is_draft ? "[Draft] " : "") + escapeHtml(pr.title);
+  const title = escapeHtml(pr.title);
   return `
     <div class="section pr-block">
       <div class="section-heading">
@@ -850,17 +869,26 @@ function renderChecksSection(pr) {
   `;
 }
 
+// Mirrors Branch/Pull Request/Checks/AI: a `.section` heading (label + count
+// context) followed by full per-review detail -- previously a bespoke
+// `.reviews-block` with an inline eye icon and a "(N)" count baked into the
+// label text, which made this the only section that didn't match the
+// others' look.
 function renderReviewRequests(reviewPrs) {
   if (!reviewPrs || reviewPrs.length === 0) return "";
+  const countLabel = `${reviewPrs.length} ${reviewPrs.length === 1 ? "review" : "reviews"}`;
   const items = reviewPrs.map((pr) => `
-    <div class="row">
-      <span class="row-left">${ICON_SPACER}<span class="review-title link-accent" data-url="${escapeHtml(pr.url)}">${escapeHtml(pr.title)} (#${pr.number})</span></span>
-      <span class="dim">${escapeHtml(pr.author)}</span>
+    <div class="row" data-url="${escapeHtml(pr.url)}">
+      <span class="row-left">
+        <span class="review-title">${escapeHtml(pr.title)} (#${pr.number})</span>
+        <span class="${iconClass("externalLink", "check-external")}">${ICONS.externalLink}</span>
+      </span>
+      <span class="dim review-author">by ${escapeHtml(pr.author)}</span>
     </div>
   `).join("");
   return `
-    <div class="reviews-block">
-      <div class="row dim"><span class="row-left"><span class="${iconClass("reviewRequest", "review-header-icon")}">${ICONS.reviewRequest}</span><span>Reviews requested (${reviewPrs.length})</span></span></div>
+    <div class="section reviews-block">
+      <div class="section-heading"><div class="section-label">Review requests</div><span class="section-context">${countLabel}</span></div>
       ${items}
     </div>
   `;
