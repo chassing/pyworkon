@@ -16,6 +16,7 @@ import yaml
 from click.testing import CliRunner
 from pydantic import ValidationError
 
+from pyworkon import config as config_module
 from pyworkon.config import Config, config
 from pyworkon.daemon import project_mgr, tmux_mgr
 from pyworkon.daemon.client import DaemonClient
@@ -38,6 +39,13 @@ _COMMANDS = (
 def settings_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "config.yaml"
     monkeypatch.setitem(Config.model_config, "yaml_file", path)
+    # Defense in depth for `Config.save()` specifically: it now reads its
+    # write target from `model_config["yaml_file"]` (patched above), but a
+    # future regression reintroducing a hardcoded `pyworkon.config.
+    # user_config_file` reference must still be unable to ever touch the
+    # real file from a test -- confirmed the hard way that this exact gap
+    # once let a test overwrite the real on-disk config.
+    monkeypatch.setattr(config_module, "user_config_file", path)
     monkeypatch.delenv("PYWORKON_AI_AGENT_COMMAND", raising=False)
     return path
 
@@ -83,6 +91,34 @@ def test_ai_agent_command_loads_from_environment(
     monkeypatch.setenv("PYWORKON_AI_AGENT_COMMAND", "claude --model sonnet")
 
     assert Config().ai_agent_command == "claude --model sonnet"
+
+
+def test_save_writes_to_the_configured_yaml_file_not_the_real_one(
+    settings_file: Path,
+) -> None:
+    """Regression test: `save()` must never fall back to the real config file.
+
+    `save()` used to hardcode `user_config_file` (the module-level global)
+    instead of reading `self.model_config["yaml_file"]` -- harmless in
+    production, where the two are always the same value, but a test (or any
+    other code) redirecting `Config.model_config["yaml_file"]` the same way
+    `settings_file` does here would have `.save()` silently write a
+    mostly-default instance over the user's *real* on-disk config instead of
+    the redirected path. Confirmed the hard way: exactly this happened while
+    testing `StripBridge.toggle_mode()`, wiping real `providers` entries.
+    """
+    settings_file.write_text(
+        yaml.safe_dump({"ai_agent_command": "opencode"}), encoding="utf-8"
+    )
+    loaded = Config()
+
+    loaded.ai_agent_command = "claude --model sonnet"
+    loaded.save()
+
+    assert (
+        yaml.safe_load(settings_file.read_text(encoding="utf-8"))["ai_agent_command"]
+        == "claude --model sonnet"
+    )
 
 
 @pytest.mark.parametrize("command", ["", "  ", "'' --model test", "claude --model '"])

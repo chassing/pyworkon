@@ -90,6 +90,7 @@ module = [
     "AppKit",
     "PyObjCTools.*",
     "objc",
+    "Quartz",
     "appdirs.*",
     "diskcache.*",
     "fuzzyfinder.*",

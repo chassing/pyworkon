@@ -395,6 +395,90 @@ def hide_picker_window(native: Any) -> None:
     AppHelper.callAfter(_apply)
 
 
+# Fixed width for the right-click context menu's own window -- unlike the
+# hover popup (arbitrary PR/check content), this is always just one or two
+# short text rows, so only *height* needs to be dynamic (measured the same
+# way the popup's is, via `__showContextMenu()`'s returned `scrollHeight`).
+MENU_WIDTH = 220
+
+
+def prepare_menu_window(native: Any) -> None:
+    """One-time setup for the right-click context menu's own window.
+
+    The menu used to be rendered as a plain `<div>` inside the strip's own
+    tiny window -- confirmed live (a real screenshot) that this looked
+    visibly broken: a native window clips its WKWebView content to its own
+    frame, and the strip window is only `STRIP_HEIGHT` (56px) tall in
+    full-width mode, far shorter than even a two-item menu needs. Growing the
+    *strip's own* window to fit was tried and explicitly rejected (by the
+    user) -- the strip visibly resizing just to show a menu looked wrong.
+    Giving the menu its own window, exactly like `prepare_popup_window()`
+    already does for the hover-detail popup and for the identical reason
+    (resizing in place, before anything is visible, with the strip's own
+    window never touched at all), sidesteps both problems at once.
+
+    `focus=False` (set one layer up, in `app.py`'s `_build_windows()`) keeps
+    this window exactly as focus-proof as the strip and popup windows -- a
+    context menu doesn't need real keyboard input, just clicks, which
+    `WKView.acceptsFirstMouse:` already delivers regardless of key status
+    (see `_build_windows()`'s own docstring). Dismissal-on-click-away is
+    handled by `hover_monitor.py`'s poll loop instead of key-window
+    resignation (see `HoverMonitor.set_context_menu_window()`) -- the picker
+    window's `focus=True`/resign-key pattern was deliberately *not* reused
+    here, since making this window key risks exactly the keystroke-stealing
+    regression `app.py`'s "must never take focus" section documents, for a
+    window that has no actual need of real keyboard focus in the first place.
+
+    Starts hidden via `orderOut_()`, same as `prepare_popup_window()`.
+    """
+
+    def _apply() -> None:
+        native.setStyleMask_(_BORDERLESS)
+        native.setCollectionBehavior_(_ALL_SPACES_STATIONARY)
+        native.setLevel_(_BELOW_DOCK_LEVEL)
+        native.orderOut_(None)
+
+    AppHelper.callAfter(_apply)
+
+
+def resize_and_position_menu_window(
+    native: Any, x: float, y: float, width: float, height: float
+) -> None:
+    """Resize and move the menu window -- always called *before* showing it.
+
+    `(x, y)` is the AppKit bottom-left-origin screen position of the
+    window's own origin -- `bridge.py`'s `show_context_menu()` sets this to
+    the real click position (converted from the triggering DOM event's own
+    `clientX`/`clientY` via the strip window's frame, clamped to the
+    screen's width), per an explicit requirement: the menu's bottom-left
+    corner anchors exactly where the user right-clicked (extending up and to
+    the right from there), not positioned relative to the strip's own frame
+    the way the hover popup is. Resizing here never risks a visible flash
+    (compare `resize_frame()`'s docstring): always called while still
+    hidden.
+    """
+
+    def _apply() -> None:
+        frame = AppKit.NSMakeRect(x, y, width, height)
+        native.setFrame_display_(frame, _REDISPLAY_IMMEDIATELY)
+
+    AppHelper.callAfter(_apply)
+
+
+def show_menu_window(native: Any) -> None:
+    def _apply() -> None:
+        native.orderFrontRegardless()
+
+    AppHelper.callAfter(_apply)
+
+
+def hide_menu_window(native: Any) -> None:
+    def _apply() -> None:
+        native.orderOut_(None)
+
+    AppHelper.callAfter(_apply)
+
+
 def capture_frontmost_app() -> Any:
     """Snapshot whichever app is frontmost right now, to reactivate later.
 

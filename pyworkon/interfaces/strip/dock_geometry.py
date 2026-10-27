@@ -1,12 +1,23 @@
-"""Detect whether the strip can fit beside the real macOS Dock.
+"""Compute the strip's on-screen placement for the given, already-decided mode.
 
 The strip's original behavior (see `app.py`) replaces the Dock entirely:
 auto-hide it, take the full screen width. On a large-enough display there's
 no need for that trade-off -- the strip can sit directly beside the Dock's
 own icon area, matching its height, so neither ever overlaps a window nor
-the other. `compute_strip_layout()` decides, at startup and on every
-`NSApplicationDidChangeScreenParametersNotification`, whether that's
-possible right now, and if so, computes exactly where.
+the other.
+
+`compute_strip_layout()` does **not** decide which mode to use -- the mode
+(`"full_width"` or `"beside_dock"`) is a plain, user-controlled setting
+persisted in `config.strip_mode`, changed only via the strip's right-click
+"Switch mode" menu item (`StripBridge.toggle_mode()`). An earlier design had
+this module decide automatically, re-verifying on every screen/wake/Dock
+event via a background watcher -- torn out after it proved impossible to
+make reliable against a real Thunderbolt dock's sleep/wake and monitor
+hotplug behavior; the Dock's own Accessibility/auto-hide state could not be
+measured consistently enough for any retry schedule to be trustworthy. This
+module now only answers "where exactly, for the mode I've already been
+told to use" -- called once at startup and once per manual mode switch,
+never on a timer or in response to any notification.
 
 Two pieces of information are needed, from two different APIs:
 
@@ -68,6 +79,7 @@ lazy import subprocess
 
 from webview.screen import Screen
 lazy import AppKit
+lazy import Quartz
 lazy import webview
 
 _logger = logging.getLogger(__name__)
@@ -192,12 +204,28 @@ def _cfstring_value(cf: Any, ref: Any) -> str:
 
 
 def _dock_pid() -> int | None:
-    apps = AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_(
-        "com.apple.dock"
+    """Find the Dock process's PID via its on-screen window, not `NSRunningApplication`.
+
+    `AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_
+    ("com.apple.dock")` is the obvious API for this, and is what this used to
+    call -- but confirmed live (direct side-by-side comparison logged from a
+    real running strip) that it can unreliably return an *empty* list once a
+    pywebview/WKWebView app's own windows are fully up, even though the Dock
+    process is obviously running. `CGWindowListCopyWindowInfo` -- a Core
+    Graphics/WindowServer level query, unrelated to `NSRunningApplication`'s
+    own "list of GUI applications" bookkeeping -- found the correct PID in
+    that exact same moment. `compute_strip_layout()` is now only ever called
+    from `start_strip()`'s initial, pre-window measurement anyway (see the
+    module docstring), where this was never observed to fail either way --
+    kept as the more robust choice regardless.
+    """
+    windows = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionAll, Quartz.kCGNullWindowID
     )
-    if not apps:
-        return None
-    return int(apps[0].processIdentifier())
+    for w in windows:
+        if w.get("kCGWindowOwnerName") == "Dock":
+            return int(w["kCGWindowOwnerPID"])
+    return None
 
 
 def _find_dock_list(hi: Any, cf: Any, app_elem: Any) -> Any | None:
@@ -439,13 +467,21 @@ def _beside_dock_layout(placement: _DockPlacement) -> StripLayout | None:
     return None
 
 
-def compute_strip_layout(*, full_width_height: int) -> StripLayout:
-    """Decide the strip's mode and exact on-screen placement.
+def compute_strip_layout(*, mode: StripMode, full_width_height: int) -> StripLayout:
+    """Compute the on-screen placement for the given, already-decided mode.
 
-    Always returns a usable layout -- falls back to `"full_width"` on
-    `webview.screens[0]` (or, once the Dock's actual screen is known, on
-    that screen) whenever beside-dock placement isn't possible.
+    Does not decide *between* modes -- see the module docstring for why.
+    `"full_width"` is trivial and can never fail (just the primary screen's
+    own width, no Dock measurement at all). `"beside_dock"` measures the real
+    Dock's position/size once; if that's not possible right now
+    (Accessibility permission missing, Dock process not found, not enough
+    room beside it, ...) it falls back to full-width geometry for this one
+    computation -- a one-time degradation of *this call's result*, not an
+    automatic mode change: the caller decides whether/what to persist based
+    on the `StripLayout.mode` actually returned.
     """
+    if mode == "full_width":
+        return _full_width_layout(webview.screens[0], full_width_height)
     placement = _resolve_dock_placement()
     if placement is None:
         return _full_width_layout(webview.screens[0], full_width_height)

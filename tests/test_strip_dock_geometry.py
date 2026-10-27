@@ -120,13 +120,41 @@ def _patch_dock(
     monkeypatch.setattr(dock_geometry_module, "_dock_orientation", lambda: orientation)
 
 
+def test_full_width_mode_never_measures_the_dock(
+    fake_appkit: MagicMock, fake_webview: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`mode="full_width"` is trivial and must not touch the Dock at all.
+
+    `compute_strip_layout()` no longer decides *between* modes (see the
+    module docstring) -- the caller already knows which one it wants.
+    Requesting "full_width" explicitly must short-circuit before any
+    Accessibility/AX call, so it can never fail regardless of Dock state.
+    """
+    _set_single_screen(fake_appkit, fake_webview, dock_reserved_height=84)
+    dock_pid_calls: list[None] = []
+    monkeypatch.setattr(
+        dock_geometry_module, "_dock_pid", lambda: dock_pid_calls.append(None)
+    )
+
+    layout = compute_strip_layout(
+        mode="full_width", full_width_height=_FULL_WIDTH_HEIGHT
+    )
+
+    assert layout.mode == "full_width"
+    assert layout.width == pytest.approx(3840 - 2 * 4.0)
+    assert layout.height == _FULL_WIDTH_HEIGHT
+    assert dock_pid_calls == []
+
+
 def test_falls_back_to_full_width_when_dock_process_not_found(
     fake_appkit: MagicMock, fake_webview: MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _set_single_screen(fake_appkit, fake_webview, dock_reserved_height=84)
     _patch_dock(monkeypatch, pid=None)
 
-    layout = compute_strip_layout(full_width_height=_FULL_WIDTH_HEIGHT)
+    layout = compute_strip_layout(
+        mode="beside_dock", full_width_height=_FULL_WIDTH_HEIGHT
+    )
 
     assert layout.mode == "full_width"
     assert layout.width == pytest.approx(3840 - 2 * 4.0)
@@ -140,7 +168,9 @@ def test_falls_back_to_full_width_when_icon_area_unavailable(
     _set_single_screen(fake_appkit, fake_webview, dock_reserved_height=84)
     _patch_dock(monkeypatch, icon_area=None)
 
-    layout = compute_strip_layout(full_width_height=_FULL_WIDTH_HEIGHT)
+    layout = compute_strip_layout(
+        mode="beside_dock", full_width_height=_FULL_WIDTH_HEIGHT
+    )
 
     assert layout.mode == "full_width"
 
@@ -155,7 +185,9 @@ def test_falls_back_to_full_width_for_non_bottom_dock_orientation(
     _set_single_screen(fake_appkit, fake_webview, dock_reserved_height=84)
     _patch_dock(monkeypatch, orientation=orientation)
 
-    layout = compute_strip_layout(full_width_height=_FULL_WIDTH_HEIGHT)
+    layout = compute_strip_layout(
+        mode="beside_dock", full_width_height=_FULL_WIDTH_HEIGHT
+    )
 
     assert layout.mode == "full_width"
 
@@ -167,7 +199,9 @@ def test_missing_orientation_key_is_treated_as_bottom(
     _set_single_screen(fake_appkit, fake_webview, dock_reserved_height=84)
     _patch_dock(monkeypatch, orientation=None)
 
-    layout = compute_strip_layout(full_width_height=_FULL_WIDTH_HEIGHT)
+    layout = compute_strip_layout(
+        mode="beside_dock", full_width_height=_FULL_WIDTH_HEIGHT
+    )
 
     assert layout.mode == "beside_dock"
 
@@ -179,7 +213,9 @@ def test_falls_back_to_full_width_when_dock_is_auto_hidden(
     _set_single_screen(fake_appkit, fake_webview, dock_reserved_height=0)
     _patch_dock(monkeypatch)
 
-    layout = compute_strip_layout(full_width_height=_FULL_WIDTH_HEIGHT)
+    layout = compute_strip_layout(
+        mode="beside_dock", full_width_height=_FULL_WIDTH_HEIGHT
+    )
 
     assert layout.mode == "full_width"
     assert layout.height == _FULL_WIDTH_HEIGHT
@@ -200,7 +236,9 @@ def test_beside_dock_placement_matches_real_measured_geometry(
     )
     _patch_dock(monkeypatch, icon_area=(1154.0, 2072.0, 1532.0, 78.0))
 
-    layout = compute_strip_layout(full_width_height=_FULL_WIDTH_HEIGHT)
+    layout = compute_strip_layout(
+        mode="beside_dock", full_width_height=_FULL_WIDTH_HEIGHT
+    )
 
     assert layout.mode == "beside_dock"
     assert layout.height == 84
@@ -220,7 +258,9 @@ def test_beside_dock_picks_right_side_when_left_is_too_narrow(
     )
     _patch_dock(monkeypatch, icon_area=(100.0, 2072.0, 1700.0, 78.0))
 
-    layout = compute_strip_layout(full_width_height=_FULL_WIDTH_HEIGHT)
+    layout = compute_strip_layout(
+        mode="beside_dock", full_width_height=_FULL_WIDTH_HEIGHT
+    )
 
     assert layout.mode == "beside_dock"
     assert layout.x == pytest.approx(1800.0 + 8.0)  # dock_right + margin
@@ -237,7 +277,9 @@ def test_falls_back_to_full_width_laptop_screen_too_small(
     # Dock centered, ~1516px wide -- leaves ~130px per side on a 1800px screen.
     _patch_dock(monkeypatch, icon_area=(142.0, 1091.0, 1516.0, 78.0))
 
-    layout = compute_strip_layout(full_width_height=_FULL_WIDTH_HEIGHT)
+    layout = compute_strip_layout(
+        mode="beside_dock", full_width_height=_FULL_WIDTH_HEIGHT
+    )
 
     assert layout.mode == "full_width"
     assert layout.width == pytest.approx(1800 - 2 * 4.0)
@@ -250,7 +292,9 @@ def test_falls_back_when_dock_bounds_do_not_match_any_screen(
     # Icon area far outside any known screen's bounds.
     _patch_dock(monkeypatch, icon_area=(99999.0, 99999.0, 100.0, 50.0))
 
-    layout = compute_strip_layout(full_width_height=_FULL_WIDTH_HEIGHT)
+    layout = compute_strip_layout(
+        mode="beside_dock", full_width_height=_FULL_WIDTH_HEIGHT
+    )
 
     assert layout.mode == "full_width"
 
@@ -283,7 +327,44 @@ def test_picks_the_screen_the_dock_actually_lives_on(
     # screen's own bottom edge (518), within tolerance.
     _patch_dock(monkeypatch, icon_area=(4840.0, 1558.0, 1000.0, 78.0))
 
-    layout = compute_strip_layout(full_width_height=_FULL_WIDTH_HEIGHT)
+    layout = compute_strip_layout(
+        mode="beside_dock", full_width_height=_FULL_WIDTH_HEIGHT
+    )
 
     assert layout.screen.x == 3840
     assert layout.mode == "beside_dock"
+
+
+def test_dock_pid_finds_pid_via_cgwindowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression test for a real "Switch mode" button doing nothing.
+
+    `AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_
+    ("com.apple.dock")` -- the obvious API, and what `_dock_pid()` used to
+    call -- confirmed live (direct side-by-side comparison logged from the
+    real running strip) to unreliably return an *empty* list specifically
+    once the strip's own windows/WKWebView processes are fully running, even
+    though the Dock process is definitely alive -- so every "beside_dock"
+    measurement silently failed and the strip stayed "full_width" forever.
+    `CGWindowListCopyWindowInfo` found the correct PID in that exact same
+    moment, so `_dock_pid()` uses that instead.
+    """
+    fake_quartz = MagicMock()
+    fake_quartz.CGWindowListCopyWindowInfo.return_value = [
+        {"kCGWindowOwnerName": "Finder", "kCGWindowOwnerPID": 111},
+        {"kCGWindowOwnerName": "Dock", "kCGWindowOwnerPID": 39936},
+    ]
+    monkeypatch.setattr(dock_geometry_module, "Quartz", fake_quartz)
+
+    assert dock_geometry_module._dock_pid() == 39936
+
+
+def test_dock_pid_returns_none_when_dock_window_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_quartz = MagicMock()
+    fake_quartz.CGWindowListCopyWindowInfo.return_value = [
+        {"kCGWindowOwnerName": "Finder", "kCGWindowOwnerPID": 111},
+    ]
+    monkeypatch.setattr(dock_geometry_module, "Quartz", fake_quartz)
+
+    assert dock_geometry_module._dock_pid() is None
