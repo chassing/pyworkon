@@ -199,7 +199,17 @@
     max-width: 260px;
     flex: none;
   }
-  .chip:hover { background: #ffffff09; border-color: #b7c6db45; }
+  /* Deliberately no `:hover` rule here, for the same reason the `.add-toggle`
+     button above has none -- clicking a chip calls `switch_session()`, which
+     backgrounds this never-key window (see `native.py`'s `prepare_window()`),
+     so the `mouseleave` that would normally clear `:hover` never reliably
+     arrives. The clicked chip was getting stuck tinted, which looked like a
+     persistent "current session" indicator even though it's just a stale
+     CSS pseudo-class -- there's no state here that tracks the actually
+     active tmux session, so the tint never moved when it changed elsewhere
+     (tmux itself, the project picker). Real hover feedback (the detail
+     popup) is already driven reliably by `hover_monitor.py`'s own polling,
+     independent of this. */
   .chip.--pending { background: #d6ac6410; border-color: #e9bd7525; }
   .chip.--attention { background: #d17c8110; border-color: #f09a9e35; }
   /* A blocked agent is the one "attention" case that gets a blink on top of
